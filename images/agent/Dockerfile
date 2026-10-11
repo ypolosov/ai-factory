@@ -1,6 +1,6 @@
 # Образ исполнителя фабрики: обвязки агентов за одним контрактом (factory-agent)
-# и публикация результата (factory-publish). scripts/stand-up.sh собирает его прямо
-# в dind runner агента и проверок, когда содержимое этого каталога меняется.
+# и публикация результата (factory-publish). scripts/stand-up.sh собирает его на хосте
+# и загружает в Docker заданий агента и проверок, когда содержимое каталога меняется.
 FROM docker.io/library/node:24.21.0-bookworm-slim
 
 RUN apt-get update \

@@ -14,6 +14,16 @@ runner:
   fetch_interval: 2s
   report_interval: 1s
   labels: ["@LABEL@:docker://@IMAGE@"]
+  # Задания выходят наружу только через прокси фабрики (список разрешённых адресов);
+  # Forgejo и шлюз - напрямую.
+  envs:
+    HTTP_PROXY: http://egress:3128
+    HTTPS_PROXY: http://egress:3128
+    http_proxy: http://egress:3128
+    https_proxy: http://egress:3128
+    NO_PROXY: localhost,127.0.0.1,forgejo,gateway,egress
+    no_proxy: localhost,127.0.0.1,forgejo,gateway,egress
+    NODE_USE_ENV_PROXY: "1"
 cache:
   # Общий кэш выключен: урок атаки Clinejection - задание по событию задачи
   # не должно писать в кэш, который читают другие задания.

@@ -143,6 +143,15 @@ ensure_gateway() {
 		config/gateway/config.yaml.tmpl >.state/gateway/gateway.yaml
 }
 
+# ensure_deployer - токен бота для статусов выкладки в .state/deployer/ (монтируется целиком).
+ensure_deployer() {
+	mkdir -p .state/deployer
+	chmod 700 .state/deployer
+	if ! cmp -s .state/bot.token .state/deployer/bot.token; then
+		(umask 077 && cp .state/bot.token .state/deployer/bot.token)
+	fi
+}
+
 # wait_gateway - ждёт, пока шлюз начнёт отвечать на список моделей.
 wait_gateway() {
 	_gw="http://127.0.0.1:${GATEWAY_PORT}"
@@ -162,18 +171,33 @@ dind() {
 	docker compose exec -T "$_n-dind" docker -H unix:///var/run/dind/docker.sock "$@"
 }
 
-# build_agent_image - собирает образ исполнителя в dind runner агента и копирует
-# в dind проверок, если содержимое images/agent изменилось с прошлой сборки.
+# build_agent_image - собирает образ исполнителя на хосте и загружает в Docker заданий
+# агента и проверок, если содержимое images/agent изменилось с прошлой сборки.
+# Docker заданий в интернет не ходит, поэтому собирать в нём нельзя.
 build_agent_image() {
 	_sum=$(find images/agent -type f -exec sha256sum {} + | sort | sha256sum | cut -c1-16)
 	if [ "$(cat .state/agent-image.sum 2>/dev/null)" = "$_sum" ]; then
 		return 0
 	fi
 	log "образ исполнителя: сборка (несколько минут при первом запуске)"
-	tar -C images/agent -cf - . | dind agent build -q -t "$AGENT_IMAGE" - >/dev/null
-	dind agent save "$AGENT_IMAGE" | dind ci load -q >/dev/null
+	docker build -q -t "$AGENT_IMAGE" images/agent >/dev/null
+	for _d in agent ci; do
+		docker save "$AGENT_IMAGE" | dind "$_d" load -q >/dev/null
+	done
 	printf '%s' "$_sum" >.state/agent-image.sum
 	log "образ исполнителя: $AGENT_IMAGE готов"
+}
+
+# preload_job_images - готовые образы заданий (container: image: в workflow шаблонов)
+# загружаются в Docker проверок с хоста: Docker заданий за образами в интернет не ходит.
+preload_job_images() {
+	grep -ho 'image: docker\.io/[^ ]*' examples/*/.forgejo/workflows/*.yml | cut -d' ' -f2 | sort -u |
+		while read -r _img; do
+			dind ci image inspect "$_img" >/dev/null 2>&1 && continue
+			log "образ заданий: $_img"
+			docker pull -q "$_img" >/dev/null
+			docker save "$_img" | dind ci load -q >/dev/null
+		done
 }
 
 # wait_runners ИМЯ... - ждёт, пока runner выйдут на связь с Forgejo.

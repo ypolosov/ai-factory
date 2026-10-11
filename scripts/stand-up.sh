@@ -1,5 +1,6 @@
 #!/bin/sh
-# Поднимает ядро стенда фабрики: Forgejo, администратора, бота и три runner.
+# Поднимает стенд фабрики: Forgejo, администратора, бота, три runner, шлюз моделей
+# и службу выкладки.
 # Повторный запуск безопасен: готовые учётки, токены и регистрации не трогает.
 set -eu
 cd "$(dirname "$0")/.."
@@ -23,8 +24,10 @@ for name in agent ci deploy; do
 	ensure_runner "$name"
 done
 ensure_gateway
+ensure_deployer
 
-log "runner и шлюз: запуск"
+log "runner, шлюз, прокси выхода и служба выкладки: запуск"
+docker compose build -q deployer egress
 docker compose up -d >/dev/null
 if [ -n "${RUNNERS_CHANGED:-}" ]; then
 	# shellcheck disable=SC2086 # список имён через пробел
@@ -34,5 +37,6 @@ fi
 wait_runners agent ci deploy
 wait_gateway
 build_agent_image
+preload_job_images
 
 log "готово: $FORGEJO_URL, вход $FORGEJO_ADMIN_USER, пароль в .state/admin.password"
