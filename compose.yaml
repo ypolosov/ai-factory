@@ -62,8 +62,7 @@ services:
     <<: *runner
     depends_on: [forgejo, agent-dind]
     volumes:
-      - ./.state/runner-agent.yaml:/config/runner.yaml:ro
-      - ./.state/runner-agent.token:/config/token:ro
+      - ./.state/runner-agent:/config:ro
       - runner-agent-data:/data
       - agent-dind-sock:/var/run/dind
 
@@ -78,8 +77,7 @@ services:
     <<: *runner
     depends_on: [forgejo, ci-dind]
     volumes:
-      - ./.state/runner-ci.yaml:/config/runner.yaml:ro
-      - ./.state/runner-ci.token:/config/token:ro
+      - ./.state/runner-ci:/config:ro
       - runner-ci-data:/data
       - ci-dind-sock:/var/run/dind
 
@@ -94,10 +92,24 @@ services:
     <<: *runner
     depends_on: [forgejo, deploy-dind]
     volumes:
-      - ./.state/runner-deploy.yaml:/config/runner.yaml:ro
-      - ./.state/runner-deploy.token:/config/token:ro
+      - ./.state/runner-deploy:/config:ro
       - runner-deploy-data:/data
       - deploy-dind-sock:/var/run/dind
+
+  gateway:
+    image: cr.agentgateway.dev/agentgateway:v1.6.0
+    restart: unless-stopped
+    # Свой uid: файлы ключей в .state/ читает только их владелец.
+    user: "1000:1000"
+    command: ["-f", "/state/gateway.yaml"]
+    volumes:
+      # Каталоги, а не одиночные файлы: Docker Desktop теряет смонтированный
+      # файл, если его заменить новым (sed -i, mv).
+      - ./.state/gateway:/state:ro
+      - ./.state/gateway-db:/db
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-4000}:4000"
+    networks: [factory]
 
 volumes:
   forgejo-data:

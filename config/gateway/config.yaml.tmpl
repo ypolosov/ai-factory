@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+# Шлюз моделей стенда (agentgateway 1.6.0). scripts/stand-up.sh подставляет
+# хэши ключей и дневной бюджет и кладёт результат в .state/gateway.yaml.
+#
+# Три пути к моделям:
+# - открытые модели по API провайдера (OpenRouter): ключ провайдера знает только шлюз;
+# - подписка Claude: запрос уходит в Anthropic как есть, с токеном самого клиента;
+# - подписка Codex: запрос уходит в бэкенд ChatGPT как есть, с токеном клиента.
+# Каждый клиент предъявляет ключ шлюза в заголовке x-gateway-key, задача
+# помечается заголовком x-task-id - по нему считается цена принятого изменения.
+config:
+  adminAddr: "off"
+  readinessAddr: 0.0.0.0:15021
+  statsAddr: 0.0.0.0:15020
+  # Цены открытых моделей OpenRouter за 1M токенов (прайс на 11.10.2026, для GLM-5.3 -
+  # верхняя цена среди провайдеров). Без них шлюз не знает цену и бюджет не списывается.
+  # Встроенный каталог (модели Anthropic и др.) остаётся, это надстройка.
+  modelCatalog:
+    - inline:
+        providers:
+          openrouter:
+            models:
+              "z-ai/glm-5.3-flash":
+                rates: { input: "0.15", output: "0.50" }
+              "z-ai/glm-5.3":
+                rates: { input: "1.40", output: "4.80" }
+              "deepseek/deepseek-v4.1-flash":
+                rates: { input: "0.30", output: "1.20" }
+  # Бюджеты ключей и журнал запросов (токены, цена, время) - в SQLite.
+  database:
+    url: /db/gateway.sqlite
+  logging:
+    format: json
+    database:
+      url: /db/gateway.sqlite
+
+frontendPolicies:
+  accessLog:
+    add:
+      task_id: 'request.headers["x-task-id"]'
+      attempt: 'request.headers["x-attempt"]'
+    database:
+      # Без текста подсказок и ответов: только метаданные, токены и цена.
+      llm: metadata
+      add:
+        task_id: 'request.headers["x-task-id"]'
+        attempt: 'request.headers["x-attempt"]'
+
+llm:
+  port: 4000
+  policies:
+    apiKey:
+      mode: strict
+      location:
+        header:
+          name: x-gateway-key
+      keys:
+        # Агент на открытых моделях: платит по токенам, поэтому дневной бюджет в долларах.
+        - keyHash: "sha256:@AGENT_API_HASH@"
+          metadata:
+            name: agent-api
+            role: agent
+          allowedModels: ["default", "hard", "alt"]
+          budgets:
+            - name: daily
+              limit:
+                unit: USD
+                amount: @AGENT_DAILY_USD@
+              window:
+                rolling: 24h
+              onBudgetExceeded: Block
+        # Агент на подписках владельца: цена фиксированная, денежного бюджета нет;
+        # шлюз пишет теневую цену и токены для учёта.
+        - keyHash: "sha256:@AGENT_SUB_HASH@"
+          metadata:
+            name: agent-sub
+            role: agent
+          allowedModels: ["claude-*", "gpt-*"]
+        # Владелец: все модели, для ручных проверок.
+        - keyHash: "sha256:@OWNER_HASH@"
+          metadata:
+            name: owner
+            role: owner
+  models:
+    # Открытые модели: псевдонимы, которые видят исполнители.
+    - name: default
+      provider: openrouter
+      params:
+        model: z-ai/glm-5.3-flash
+        apiKey:
+          file: /state/openrouter.key
+    - name: hard
+      provider: openrouter
+      params:
+        model: z-ai/glm-5.3
+        apiKey:
+          file: /state/openrouter.key
+    - name: alt
+      provider: openrouter
+      params:
+        model: deepseek/deepseek-v4.1-flash
+        apiKey:
+          file: /state/openrouter.key
+    # Подписка Claude: шлюз не подставляет ключ, токен клиента и anthropic-beta
+    # уходят без изменений.
+    - name: "claude-*"
+      provider: anthropic
+      passthrough: detect
+    # Подписка Codex: бэкенд ChatGPT в формате Responses, токен клиента без изменений.
+    - name: "gpt-*"
+      provider:
+        custom:
+          formats:
+            - type: responses
+      params:
+        baseUrl: https://chatgpt.com/backend-api/codex
+      passthrough: detect

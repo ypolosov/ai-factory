@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 . ./scripts/lib.sh
 
-need docker curl jq od sed awk
+need docker curl jq od sed awk sha256sum
 load_env
 mkdir -p .state
 chmod 700 .state
@@ -22,9 +22,11 @@ ensure_token "$FORGEJO_BOT_USER" bot "write:repository,write:issue"
 for name in agent ci deploy; do
 	ensure_runner "$name"
 done
+ensure_gateway
 
-log "runner: запуск"
+log "runner и шлюз: запуск"
 docker compose up -d >/dev/null
 wait_runners agent ci deploy
+wait_gateway
 
 log "готово: $FORGEJO_URL, вход $FORGEJO_ADMIN_USER, пароль в .state/admin.password"
