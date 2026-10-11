@@ -1,0 +1,38 @@
+# Настройки runner стенда. scripts/stand-up.sh подставляет @LABEL@ и @UUID@
+# и кладёт результат в .state/runner-<имя>.yaml. Полный список ключей:
+# forgejo-runner generate-config (образ code.forgejo.org/forgejo/runner:13.2.0).
+log:
+  level: info
+  job_level: info
+runner:
+  file: .runner
+  capacity: 1
+  timeout: 1h
+  shutdown_timeout: 5m
+  insecure: false
+  fetch_timeout: 30s
+  fetch_interval: 2s
+  report_interval: 1s
+  labels: ["@LABEL@:docker://docker.io/library/alpine:3.24"]
+cache:
+  # Общий кэш выключен: урок атаки Clinejection - задание по событию задачи
+  # не должно писать в кэш, который читают другие задания.
+  enabled: false
+container:
+  # Задания живут в сетевом пространстве своего dind: видят Forgejo по имени,
+  # но не видят Docker API (сокет не монтируется, docker_host: "-").
+  network: host
+  privileged: false
+  options:
+  workdir_parent:
+  valid_volumes: []
+  docker_host: "-"
+  force_pull: false
+host:
+  workdir_parent:
+server:
+  connections:
+    forgejo:
+      url: http://forgejo:3000/
+      uuid: @UUID@
+      token_url: file:/config/token

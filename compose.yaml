@@ -1,0 +1,115 @@
+# Ядро стенда фабрики (сборка С1): git-хостинг Forgejo и три runner.
+# У каждого runner свой Docker-in-Docker: задания агента, проверок и выкладки
+# не видят друг друга и Docker хоста. Порты публикуются только на 127.0.0.1.
+# Запуск - через scripts/stand-up.sh: он готовит .state/ до старта runner.
+name: ai-factory
+
+x-dind: &dind
+  image: docker.io/library/docker:29.9.0-dind
+  restart: unless-stopped
+  # dind требует privileged; сами задания запускаются без privileged
+  # (container.privileged: false в настройках runner).
+  privileged: true
+  environment:
+    DOCKER_TLS_CERTDIR: ""
+  networks: [factory]
+
+x-runner: &runner
+  image: code.forgejo.org/forgejo/runner:13.2.0
+  restart: unless-stopped
+  command: ["forgejo-runner", "daemon", "--config", "/config/runner.yaml"]
+  environment:
+    # Docker API только через unix-сокет в общем томе: по сети он не слушает,
+    # и контейнеры заданий до него не дотягиваются.
+    DOCKER_HOST: unix:///var/run/dind/docker.sock
+  networks: [factory]
+
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:15.0.9
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__server__DOMAIN: localhost
+      FORGEJO__server__HTTP_PORT: "3000"
+      FORGEJO__server__ROOT_URL: http://localhost:${FORGEJO_HTTP_PORT:-3000}/
+      FORGEJO__server__DISABLE_SSH: "true"
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__actions__ENABLED: "true"
+      FORGEJO__repository__DEFAULT_BRANCH: main
+    volumes:
+      - forgejo-data:/data
+    ports:
+      - "127.0.0.1:${FORGEJO_HTTP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    networks: [factory]
+
+  agent-dind:
+    <<: *dind
+    command: ["dockerd", "--host=unix:///var/run/dind/docker.sock", "--group=1000"]
+    volumes:
+      - agent-dind-sock:/var/run/dind
+      - agent-dind-lib:/var/lib/docker
+
+  runner-agent:
+    <<: *runner
+    depends_on: [forgejo, agent-dind]
+    volumes:
+      - ./.state/runner-agent.yaml:/config/runner.yaml:ro
+      - ./.state/runner-agent.token:/config/token:ro
+      - runner-agent-data:/data
+      - agent-dind-sock:/var/run/dind
+
+  ci-dind:
+    <<: *dind
+    command: ["dockerd", "--host=unix:///var/run/dind/docker.sock", "--group=1000"]
+    volumes:
+      - ci-dind-sock:/var/run/dind
+      - ci-dind-lib:/var/lib/docker
+
+  runner-ci:
+    <<: *runner
+    depends_on: [forgejo, ci-dind]
+    volumes:
+      - ./.state/runner-ci.yaml:/config/runner.yaml:ro
+      - ./.state/runner-ci.token:/config/token:ro
+      - runner-ci-data:/data
+      - ci-dind-sock:/var/run/dind
+
+  deploy-dind:
+    <<: *dind
+    command: ["dockerd", "--host=unix:///var/run/dind/docker.sock", "--group=1000"]
+    volumes:
+      - deploy-dind-sock:/var/run/dind
+      - deploy-dind-lib:/var/lib/docker
+
+  runner-deploy:
+    <<: *runner
+    depends_on: [forgejo, deploy-dind]
+    volumes:
+      - ./.state/runner-deploy.yaml:/config/runner.yaml:ro
+      - ./.state/runner-deploy.token:/config/token:ro
+      - runner-deploy-data:/data
+      - deploy-dind-sock:/var/run/dind
+
+volumes:
+  forgejo-data:
+  agent-dind-sock:
+  agent-dind-lib:
+  runner-agent-data:
+  ci-dind-sock:
+  ci-dind-lib:
+  runner-ci-data:
+  deploy-dind-sock:
+  deploy-dind-lib:
+  runner-deploy-data:
+
+networks:
+  factory: {}

@@ -1,0 +1,16 @@
+# Пустышка для проверки ядра стенда: по одному заданию на каждый runner.
+on: [push]
+
+jobs:
+  agent:
+    runs-on: agent
+    steps:
+      - run: echo "runner agent ok" && head -n 1 /etc/os-release
+  ci:
+    runs-on: ci
+    steps:
+      - run: echo "runner ci ok" && head -n 1 /etc/os-release
+  deploy:
+    runs-on: deploy
+    steps:
+      - run: echo "runner deploy ok" && head -n 1 /etc/os-release
