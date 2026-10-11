@@ -1,10 +1,12 @@
 .PHONY: check up smoke gateway-check down
 
-SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh
+SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
+	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
+	images/agent/factory-publish images/agent/factory-untrusted
 
 check:
 	shellcheck -x -P . $(SCRIPTS)
-	shfmt -d scripts/
+	shfmt -d $(SCRIPTS)
 	docker compose config -q
 
 up:

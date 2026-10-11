@@ -1,0 +1,71 @@
+#!/bin/sh
+# Публикация результата агента: проверка патча и PR от имени бота.
+# Работает в отдельном задании без ключа модели; токен записи - только здесь.
+#
+# Вход: --result КАТАЛОГ (agent.patch, run.json от factory-agent); FORGEJO_URL
+#       (внутренний адрес), REPO (владелец/имя), ISSUE (номер), ISSUE_TITLE, BOT_TOKEN.
+# Выход: ветка agent/issue-НОМЕР и PR "Closes #НОМЕР".
+set -eu
+
+result=""
+while [ $# -gt 0 ]; do
+	case $1 in
+	--result) result=$2 && shift 2 ;;
+	*) echo "неизвестный аргумент: $1" >&2 && exit 2 ;;
+	esac
+done
+[ -d "$result" ] || { echo "нужен --result КАТАЛОГ" >&2 && exit 2; }
+result=$(cd "$result" && pwd)
+: "${FORGEJO_URL:?}" "${REPO:?}" "${ISSUE:?}" "${ISSUE_TITLE:?}" "${BOT_TOKEN:?}"
+
+patch=$result/agent.patch
+[ -s "$patch" ] || { echo "агент не внёс изменений - PR не нужен" >&2 && exit 1; }
+
+# Детерминированные ворота до любой записи. Пути смотрим во всех заголовках
+# патча, включая переименования и копирование.
+if grep -E '^(diff --git |rename (from|to) |copy (from|to) |\+\+\+ |--- )' "$patch" |
+	grep -Eq '(^|[ /])\.(forgejo|github)/'; then
+	echo "патч меняет CI (.forgejo/ или .github/) - отклонён" >&2
+	exit 1
+fi
+lines=$(git apply --numstat "$patch" | awk '{ s += $1 + $2 } END { print s + 0 }')
+[ "$lines" -le 3000 ] || { echo "патч слишком большой: $lines строк" >&2 && exit 1; }
+bytes=$(wc -c <"$patch")
+[ "$bytes" -le 1048576 ] || { echo "патч слишком большой: $bytes байт" >&2 && exit 1; }
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+creds=$work/.git-credentials
+host=${FORGEJO_URL#http://}
+printf 'http://factory-bot:%s@%s\n' "$BOT_TOKEN" "$host" >"$creds"
+chmod 600 "$creds"
+printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$work/auth.header"
+chmod 600 "$work/auth.header"
+git() { command git -c credential.helper="store --file=$creds" "$@"; }
+
+git clone -q "$FORGEJO_URL/$REPO.git" "$work/repo"
+cd "$work/repo"
+git apply --check "$patch"
+branch=agent/issue-$ISSUE
+git switch -q -c "$branch"
+git apply --index "$patch"
+git -c user.name=factory-bot -c user.email=bot@factory.local commit -q -m "agent: #$ISSUE $ISSUE_TITLE"
+git push -q -f origin "$branch"
+
+run=$(cat "$result/run.json")
+body=$(jq -n --arg issue "$ISSUE" --argjson run "$run" \
+	'"Closes #" + $issue + "\n\nИсполнитель: " + $run.executor + ", модель: " + $run.model
+	+ ", задача шлюза: " + $run.task_id + ", время: " + ($run.seconds | tostring) + " с."')
+data=$(jq -n --arg head "$branch" --arg title "agent: $ISSUE_TITLE" --argjson body "$body" \
+	'{head: $head, base: "main", title: $title, body: $body}')
+code=$(curl -s -o "$work/pr.json" -w '%{http_code}' -X POST \
+	-H @"$work/auth.header" -H 'Content-Type: application/json' \
+	--data "$data" "$FORGEJO_URL/api/v1/repos/$REPO/pulls")
+case $code in
+201) echo "PR: $(jq -r .html_url "$work/pr.json")" ;;
+409 | 422) echo "PR для $branch уже открыт - ветка обновлена" ;;
+*)
+	echo "не удалось открыть PR: HTTP $code $(cat "$work/pr.json")" >&2
+	exit 1
+	;;
+esac

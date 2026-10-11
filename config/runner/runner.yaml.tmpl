@@ -1,5 +1,5 @@
-# Настройки runner стенда. scripts/stand-up.sh подставляет @LABEL@ и @UUID@
-# и кладёт результат в .state/runner-<имя>.yaml. Полный список ключей:
+# Настройки runner стенда. scripts/stand-up.sh подставляет @LABEL@, @IMAGE@ и @UUID@
+# и кладёт результат в .state/runner-<имя>/runner.yaml. Полный список ключей:
 # forgejo-runner generate-config (образ code.forgejo.org/forgejo/runner:13.2.0).
 log:
   level: info
@@ -13,7 +13,7 @@ runner:
   fetch_timeout: 30s
   fetch_interval: 2s
   report_interval: 1s
-  labels: ["@LABEL@:docker://docker.io/library/alpine:3.24"]
+  labels: ["@LABEL@:docker://@IMAGE@"]
 cache:
   # Общий кэш выключен: урок атаки Clinejection - задание по событию задачи
   # не должно писать в кэш, который читают другие задания.

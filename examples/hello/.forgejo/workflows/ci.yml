@@ -1,0 +1,18 @@
+# Проверки PR: тесты проекта. Детерминированные ворота перед решением человека;
+# без зелёного "ci / test" ветку main не слить (защита ставит scripts/setup-repo.sh).
+name: ci
+on: [pull_request]
+
+jobs:
+  test:
+    runs-on: ci
+    steps:
+      - name: Рабочая копия PR
+        run: |
+          git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
+          cd work
+          git fetch -q origin "pull/${{ github.event.pull_request.number }}/head"
+          git checkout -q FETCH_HEAD
+          chown -R node:node .
+      - name: Тесты (код из PR - недоверенный, без токенов задания)
+        run: cd work && factory-untrusted npm test

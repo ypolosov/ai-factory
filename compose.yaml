@@ -14,6 +14,15 @@ x-dind: &dind
     DOCKER_TLS_CERTDIR: ""
   networks: [factory]
 
+# Адрес Forgejo один для людей и для заданий - ROOT_URL (http://127.0.0.1:3000):
+# по нему Forgejo строит ссылки на артефакты и клоны. Задания живут в сетевом
+# пространстве своего dind, поэтому там 127.0.0.1:3000 пробрасывается к Forgejo.
+# Адрес - IPv4, а не localhost: localhost внутри может означать ::1.
+x-loopback: &loopback
+  image: docker.io/alpine/socat:1.8.1.1
+  restart: unless-stopped
+  command: ["tcp-listen:${FORGEJO_HTTP_PORT:-3000},bind=127.0.0.1,fork,reuseaddr", "tcp-connect:forgejo:3000"]
+
 x-runner: &runner
   image: code.forgejo.org/forgejo/runner:13.2.0
   restart: unless-stopped
@@ -32,9 +41,9 @@ services:
       USER_UID: "1000"
       USER_GID: "1000"
       FORGEJO__database__DB_TYPE: sqlite3
-      FORGEJO__server__DOMAIN: localhost
+      FORGEJO__server__DOMAIN: 127.0.0.1
       FORGEJO__server__HTTP_PORT: "3000"
-      FORGEJO__server__ROOT_URL: http://localhost:${FORGEJO_HTTP_PORT:-3000}/
+      FORGEJO__server__ROOT_URL: http://127.0.0.1:${FORGEJO_HTTP_PORT:-3000}/
       FORGEJO__server__DISABLE_SSH: "true"
       FORGEJO__security__INSTALL_LOCK: "true"
       FORGEJO__service__DISABLE_REGISTRATION: "true"
@@ -58,6 +67,11 @@ services:
       - agent-dind-sock:/var/run/dind
       - agent-dind-lib:/var/lib/docker
 
+  agent-loopback:
+    <<: *loopback
+    network_mode: service:agent-dind
+    depends_on: [agent-dind]
+
   runner-agent:
     <<: *runner
     depends_on: [forgejo, agent-dind]
@@ -73,6 +87,11 @@ services:
       - ci-dind-sock:/var/run/dind
       - ci-dind-lib:/var/lib/docker
 
+  ci-loopback:
+    <<: *loopback
+    network_mode: service:ci-dind
+    depends_on: [ci-dind]
+
   runner-ci:
     <<: *runner
     depends_on: [forgejo, ci-dind]
@@ -87,6 +106,11 @@ services:
     volumes:
       - deploy-dind-sock:/var/run/dind
       - deploy-dind-lib:/var/lib/docker
+
+  deploy-loopback:
+    <<: *loopback
+    network_mode: service:deploy-dind
+    depends_on: [deploy-dind]
 
   runner-deploy:
     <<: *runner

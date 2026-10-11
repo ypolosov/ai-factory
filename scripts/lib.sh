@@ -24,6 +24,7 @@ load_env() {
 	: "${FORGEJO_HTTP_PORT:=3000}" "${FORGEJO_ADMIN_USER:=factory-admin}" "${FORGEJO_ADMIN_EMAIL:=admin@factory.local}"
 	: "${FORGEJO_BOT_USER:=factory-bot}" "${FORGEJO_BOT_EMAIL:=bot@factory.local}"
 	: "${GATEWAY_PORT:=4000}" "${GATEWAY_AGENT_DAILY_USD:=2}"
+	: "${AGENT_IMAGE:=factory/agent:stand}"
 	set +a
 	FORGEJO_URL="http://127.0.0.1:${FORGEJO_HTTP_PORT}"
 }
@@ -96,9 +97,22 @@ ensure_runner() {
 		chmod 600 "$_dir/token"
 	fi
 	# Флаг строковый, значение не читается: секрет приходит через stdin, а не через аргументы.
-	_uuid=$(fj forgejo-cli actions register --name "runner-$1" --secret-stdin=- <"$_dir/token" | tail -n 1)
+	# Метки - явно: повторная регистрация без них стирает метки, и задания перестают находить runner.
+	_uuid=$(fj forgejo-cli actions register --name "runner-$1" --labels "$1" --secret-stdin=- <"$_dir/token" | tail -n 1)
 	printf '%s' "$_uuid" | grep -Eq '^[0-9a-f-]{36}$' || die "регистрация runner-$1 не вернула UUID: $_uuid"
-	sed -e "s/@LABEL@/$1/" -e "s/@UUID@/$_uuid/" config/runner/runner.yaml.tmpl >"$_dir/runner.yaml"
+	case $1 in
+	agent | ci) _image=$AGENT_IMAGE ;;
+	*) _image=docker.io/library/alpine:3.24 ;;
+	esac
+	sed -e "s/@LABEL@/$1/" -e "s|@IMAGE@|$_image|" -e "s/@UUID@/$_uuid/" \
+		config/runner/runner.yaml.tmpl >"$_dir/runner.yaml.new"
+	# Runner читает настройки только при старте: изменившиеся отмечаем для перезапуска.
+	if cmp -s "$_dir/runner.yaml.new" "$_dir/runner.yaml"; then
+		rm -f "$_dir/runner.yaml.new"
+	else
+		mv "$_dir/runner.yaml.new" "$_dir/runner.yaml"
+		RUNNERS_CHANGED="${RUNNERS_CHANGED:-} runner-$1"
+	fi
 	log "runner-$1 зарегистрирован"
 }
 
@@ -139,6 +153,27 @@ wait_gateway() {
 		sleep 2
 	done
 	log "шлюз на связи: $_gw"
+}
+
+# dind ИМЯ команда... - docker внутри dind runner ИМЯ.
+dind() {
+	_n=$1
+	shift
+	docker compose exec -T "$_n-dind" docker -H unix:///var/run/dind/docker.sock "$@"
+}
+
+# build_agent_image - собирает образ исполнителя в dind runner агента и копирует
+# в dind проверок, если содержимое images/agent изменилось с прошлой сборки.
+build_agent_image() {
+	_sum=$(find images/agent -type f -exec sha256sum {} + | sort | sha256sum | cut -c1-16)
+	if [ "$(cat .state/agent-image.sum 2>/dev/null)" = "$_sum" ]; then
+		return 0
+	fi
+	log "образ исполнителя: сборка (несколько минут при первом запуске)"
+	tar -C images/agent -cf - . | dind agent build -q -t "$AGENT_IMAGE" - >/dev/null
+	dind agent save "$AGENT_IMAGE" | dind ci load -q >/dev/null
+	printf '%s' "$_sum" >.state/agent-image.sum
+	log "образ исполнителя: $AGENT_IMAGE готов"
 }
 
 # wait_runners ИМЯ... - ждёт, пока runner выйдут на связь с Forgejo.

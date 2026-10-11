@@ -1,0 +1,49 @@
+#!/bin/sh
+# Запускает недоверенный код (обвязку агента, тесты из PR) от пользователя node
+# с чистым окружением. По документации Forgejo каждый шаг задания получает
+# автоматический токен задания (FORGEJO_TOKEN, GITHUB_TOKEN); недоверенному коду
+# он не достаётся: переменные проходят только по списку, а окружение процессов
+# root пользователю node не видно. Фоновые процессы недоверенного кода не
+# переживают его и не дожидаются следующих шагов задания.
+#
+# Использование: factory-untrusted [-e ИМЯ]... [--] КОМАНДА [АРГУМЕНТЫ]
+#   -e ИМЯ - передать ещё и эту переменную окружения.
+set -eu
+
+keep="PATH LANG LC_ALL TERM NODE_VERSION OPENCODE_CONFIG OPENCODE_DISABLE_AUTOUPDATE
+OPENCODE_DISABLE_LSP_DOWNLOAD OPENCODE_DISABLE_MODELS_FETCH DISABLE_AUTOUPDATER
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+while [ $# -gt 0 ]; do
+	case $1 in
+	-e)
+		keep="$keep $2"
+		shift 2
+		;;
+	--)
+		shift
+		break
+		;;
+	*) break ;;
+	esac
+done
+[ $# -gt 0 ] || { echo "нужна команда" >&2 && exit 2; }
+
+_val=""
+for _name in $keep; do
+	case $_name in
+	*[!A-Za-z0-9_]* | [0-9]*) echo "плохое имя переменной: $_name" >&2 && exit 2 ;;
+	esac
+	eval "_set=\${$_name+x}"
+	if [ -n "$_set" ]; then
+		eval "_val=\$$_name"
+		set -- "$_name=$_val" "$@"
+	fi
+done
+
+set +e
+setpriv --reuid=node --regid=node --init-groups --no-new-privs \
+	env -i HOME=/home/node USER=node "$@"
+rc=$?
+set -e
+setpriv --reuid=node --regid=node --init-groups sh -c 'kill -9 -1' 2>/dev/null || true
+exit "$rc"

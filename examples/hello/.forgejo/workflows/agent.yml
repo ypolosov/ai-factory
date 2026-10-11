@@ -1,0 +1,55 @@
+# Задача с меткой agent -> агент в песочнице -> PR от бота.
+# Два задания: агент работает без права записи в git, а PR открывает задание
+# без ключа модели. Патч передаётся между ними артефактом.
+name: agent
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    if: github.event.label.name == 'agent'
+    runs-on: agent
+    timeout-minutes: 40
+    steps:
+      - name: Рабочая копия (только чтение)
+        run: git clone -q --depth 1 "${{ github.server_url }}/${{ github.repository }}.git" work
+      - name: Текст задачи - в файл, как недоверенный ввод
+        env:
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+        run: printf '# %s\n\n%s\n' "$TITLE" "$BODY" > task.md
+      - name: Агент
+        env:
+          GATEWAY_URL: http://gateway:4000
+          GATEWAY_KEY: ${{ secrets.AGENT_GATEWAY_KEY }}
+          TASK_ID: issue-${{ github.event.issue.number }}-run-${{ github.run_number }}
+          FACTORY_EXECUTOR: ${{ vars.FACTORY_EXECUTOR }}
+          FACTORY_MODEL: ${{ vars.FACTORY_MODEL }}
+        run: cd work && factory-agent --task ../task.md --out ../out
+      - name: Журнал агента
+        if: always()
+        run: tail -n 60 out/agent.log || true
+      - name: Результат - артефактом (и при неудаче, для разбора)
+        if: always()
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: agent-result
+          path: out/
+
+  publish:
+    needs: implement
+    runs-on: ci
+    steps:
+      - uses: https://code.forgejo.org/forgejo/download-artifact@v4
+        with:
+          name: agent-result
+          path: out
+      - name: Проверка патча и PR от бота
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: factory-publish --result out

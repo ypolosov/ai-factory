@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "provider": {
+    "gateway": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Factory gateway",
+      "options": {
+        "baseURL": "{env:GATEWAY_URL}/v1",
+        "apiKey": "unused",
+        "headers": {
+          "x-gateway-key": "{env:GATEWAY_KEY}",
+          "x-task-id": "{env:TASK_ID}"
+        }
+      },
+      "models": {
+        "default": { "name": "GLM-5.3-Flash" },
+        "hard": { "name": "GLM-5.3" },
+        "alt": { "name": "DeepSeek-V4.1-Flash" }
+      }
+    }
+  }
+}

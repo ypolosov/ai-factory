@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 . ./scripts/lib.sh
 
-need docker curl jq od sed awk sha256sum
+need docker curl jq od sed awk sha256sum cmp tar
 load_env
 mkdir -p .state
 chmod 700 .state
@@ -26,7 +26,13 @@ ensure_gateway
 
 log "runner и шлюз: запуск"
 docker compose up -d >/dev/null
+if [ -n "${RUNNERS_CHANGED:-}" ]; then
+	# shellcheck disable=SC2086 # список имён через пробел
+	docker compose restart $RUNNERS_CHANGED >/dev/null
+	log "перезапущены с новыми настройками:$RUNNERS_CHANGED"
+fi
 wait_runners agent ci deploy
 wait_gateway
+build_agent_image
 
 log "готово: $FORGEJO_URL, вход $FORGEJO_ADMIN_USER, пароль в .state/admin.password"
