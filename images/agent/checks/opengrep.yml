@@ -1,0 +1,44 @@
+# Правила статического анализа фабрики (Opengrep) для JavaScript и TypeScript.
+# Правила свои, под лицензией репозитория: наборы сообщества semgrep-rules и
+# opengrep-rules идут с условием Commons Clause и не проходят требование
+# "только лицензии OSI". Проверка самих правил: opengrep scan --test checks/
+rules:
+  - id: factory.js.eval-dynamic
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: eval с нелитеральным аргументом выполняет произвольный код
+    patterns:
+      - pattern: eval($X)
+      - pattern-not: eval("...")
+
+  - id: factory.js.function-constructor
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Function собирает и выполняет код из строки
+    pattern-either:
+      - pattern: new Function(...)
+      - pattern: Function(...)
+
+  - id: factory.js.shell-command-from-string
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: команда оболочки собрана из строки с подстановкой - риск внедрения команд; аргументы передавайте массивом (execFile, spawn)
+    patterns:
+      - pattern-either:
+          - pattern: exec(...)
+          - pattern: execSync(...)
+          - pattern: $CP.exec(...)
+          - pattern: $CP.execSync(...)
+      - pattern-either:
+          - pattern: $F(`...${$X}...`, ...)
+          - pattern: $F("..." + $X, ...)
+          - pattern: $F($X + "...", ...)
+
+  - id: factory.js.tls-verification-disabled
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: проверка TLS-сертификатов отключена
+    pattern-either:
+      - pattern: |
+          {..., rejectUnauthorized: false, ...}
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"

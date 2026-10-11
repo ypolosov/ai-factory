@@ -1,5 +1,5 @@
 #!/bin/sh
-# Заводит задачу с меткой agent и ждёт: прогон агента, PR от бота, проверки PR.
+# Заводит задачу с меткой agent и ждёт: прогон агента, PR от бота, статусы проверок PR.
 # Использование: scripts/new-task.sh РЕПОЗИТОРИЙ "Заголовок" ФАЙЛ_С_ОПИСАНИЕМ
 set -eu
 cd "$(dirname "$0")/.."
@@ -54,7 +54,24 @@ pr=$(api GET "/repos/$repo/pulls?state=open&limit=50" |
 [ -n "$pr" ] || die "PR от бота не найден"
 log "PR: ${pr#* }"
 
-ci=$(wait_run pull_request pull_request "${pr%% *}")
-log "проверки PR: $ci"
-[ "${ci%% *}" = success ] || die "проверки PR не прошли"
-log "от задачи до зелёного PR: $(($(date +%s) - start)) с"
+# Статусы PR: обязательные (из защиты main) держат слияние, остальные - совет человеку.
+sha=$(api GET "/repos/$repo/pulls/${pr%% *}" | jq -r .head.sha)
+required=$(api GET "/repos/$repo/branch_protections/main" | jq -c '.status_check_contexts // []')
+i=0
+while :; do
+	st=$(api GET "/repos/$repo/commits/$sha/status")
+	# Ещё ждём: статусы в работе и обязательные, которых пока нет.
+	left=$(printf '%s' "$st" | jq --argjson r "$required" '[.statuses[].context] as $have
+		| ([.statuses[] | select(.status == "pending")] | length)
+		+ ([$r[] | select(. as $c | $have | index($c) | not)] | length)')
+	[ "$left" -eq 0 ] && break
+	i=$((i + 1))
+	[ "$i" -le 600 ] || die "проверки PR не закончились за 40 мин"
+	sleep 4
+done
+printf '%s' "$st" | jq -r --argjson r "$required" \
+	'.statuses[] | .context as $c | "  \($c): \(.status)" + (if ($r | index($c)) then "" else " (совет, слияние не держит)" end)' >&2
+failed=$(printf '%s' "$st" | jq --argjson r "$required" \
+	'[.statuses[] | select((.context as $c | $r | index($c)) and .status != "success")] | length')
+[ "$failed" -eq 0 ] || die "обязательные проверки PR не прошли"
+log "от задачи до PR с зелёными обязательными проверками: $(($(date +%s) - start)) с"

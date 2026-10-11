@@ -73,10 +73,12 @@ fi
 api PUT "/repos/$repo/collaborators/$FORGEJO_BOT_USER" --data '{"permission":"write"}' >/dev/null
 log "бот $FORGEJO_BOT_USER: право записи в ветки"
 
-# main пишет и сливает только человек (администратор стенда), и только при зелёных проверках.
+# main пишет и сливает только человек (администратор стенда), и только при зелёных
+# детерминированных проверках; ревью ИИ - совет, слияние не держит.
 jq -n --arg u "$owner" '{enable_push: true, enable_push_whitelist: true, push_whitelist_usernames: [$u],
 	enable_merge_whitelist: true, merge_whitelist_usernames: [$u],
-	enable_status_check: true, status_check_contexts: ["ci / test (pull_request)"],
+	enable_status_check: true,
+	status_check_contexts: (["test", "secrets", "deps", "sast"] | map("ci / \(.) (pull_request)")),
 	required_approvals: 0, block_on_rejected_reviews: true, dismiss_stale_approvals: true}' >"$tmp/protect.json"
 if api GET "/repos/$repo/branch_protections/main" >/dev/null 2>&1; then
 	api PATCH "/repos/$repo/branch_protections/main" --data @"$tmp/protect.json" >/dev/null
@@ -84,7 +86,7 @@ else
 	jq '. + {rule_name: "main"}' "$tmp/protect.json" >"$tmp/protect-new.json"
 	api POST "/repos/$repo/branch_protections" --data @"$tmp/protect-new.json" >/dev/null
 fi
-log "main защищена: пишет и сливает только $owner, нужна зелёная проверка ci / test"
+log "main защищена: пишет и сливает только $owner, нужны зелёные test, secrets, deps, sast"
 
 if ! api GET "/repos/$repo/labels" | jq -e '.[] | select(.name == "agent")' >/dev/null; then
 	api POST "/repos/$repo/labels" \
