@@ -2,7 +2,8 @@
 # Готовит целевой репозиторий в Forgejo стенда: создаёт его из examples/ИМЯ,
 # даёт боту право записи в ветки, защищает main, заводит метку agent, секреты
 # и переменные исполнителя.
-# Использование: scripts/setup-repo.sh ИМЯ [исполнитель] [модель]
+# Использование: scripts/setup-repo.sh ИМЯ [opencode|claude|codex] [модель]
+# Модель по умолчанию: default (OpenCode - псевдоним шлюза, Codex - своя модель), sonnet (Claude Code).
 # Повторный запуск безопасен: обновляет процессные файлы фабрики (.forgejo/),
 # защиту, секреты и переменные; код проекта не трогает.
 set -eu
@@ -13,9 +14,17 @@ need curl jq git mktemp
 load_env
 name=${1:?использование: scripts/setup-repo.sh ИМЯ [исполнитель] [модель]}
 executor=${2:-opencode}
-model=${3:-default}
+case $executor in
+opencode | codex) model=${3:-default} ;;
+claude) model=${3:-sonnet} ;;
+*) die "исполнитель - opencode, claude или codex" ;;
+esac
 [ -d "examples/$name" ] || die "нет шаблона examples/$name"
 [ -s .state/admin.token ] || die "сначала scripts/stand-up.sh"
+case $executor in
+claude) [ -s .state/claude-oauth.token ] || die "нет .state/claude-oauth.token: см. README, раздел о подписках" ;;
+codex) [ -s .state/codex/auth.json ] || die "нет входа Codex в .state/codex: см. README, раздел о подписках" ;;
+esac
 owner=$FORGEJO_ADMIN_USER
 repo="$owner/$name"
 
@@ -83,11 +92,19 @@ if ! api GET "/repos/$repo/labels" | jq -e '.[] | select(.name == "agent")' >/de
 	log "метка agent заведена"
 fi
 
-secret_body .state/gw-agent-api.key
-api PUT "/repos/$repo/actions/secrets/AGENT_GATEWAY_KEY" --data @"$tmp/body.json" >/dev/null
-secret_body .state/bot.token
-api PUT "/repos/$repo/actions/secrets/BOT_TOKEN" --data @"$tmp/body.json" >/dev/null
-log "секреты AGENT_GATEWAY_KEY и BOT_TOKEN заданы"
+# put_secret ИМЯ ФАЙЛ - секрет репозитория из файла.
+put_secret() {
+	secret_body "$2"
+	api PUT "/repos/$repo/actions/secrets/$1" --data @"$tmp/body.json" >/dev/null
+	secrets="${secrets:+$secrets, }$1"
+}
+put_secret AGENT_GATEWAY_KEY .state/gw-agent-api.key
+put_secret AGENT_SUB_GATEWAY_KEY .state/gw-agent-sub.key
+put_secret BOT_TOKEN .state/bot.token
+# Входы подписок владельца - если есть; задание отдаёт их только своему исполнителю.
+[ ! -s .state/claude-oauth.token ] || put_secret CLAUDE_CODE_OAUTH_TOKEN .state/claude-oauth.token
+[ ! -s .state/codex/auth.json ] || put_secret CODEX_AUTH_JSON .state/codex/auth.json
+log "секреты: $secrets"
 
 for pair in "FACTORY_EXECUTOR=$executor" "FACTORY_MODEL=$model"; do
 	var=${pair%%=*}

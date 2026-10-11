@@ -22,10 +22,14 @@ jobs:
       - name: Агент
         env:
           GATEWAY_URL: http://gateway:4000
-          GATEWAY_KEY: ${{ secrets.AGENT_GATEWAY_KEY }}
+          # Ключ шлюза своей роли: открытые модели - OpenCode, подписки - Claude Code и Codex.
+          GATEWAY_KEY: ${{ (vars.FACTORY_EXECUTOR || 'opencode') == 'opencode' && secrets.AGENT_GATEWAY_KEY || secrets.AGENT_SUB_GATEWAY_KEY }}
           TASK_ID: issue-${{ github.event.issue.number }}-run-${{ github.run_number }}
-          FACTORY_EXECUTOR: ${{ vars.FACTORY_EXECUTOR }}
-          FACTORY_MODEL: ${{ vars.FACTORY_MODEL }}
+          FACTORY_EXECUTOR: ${{ vars.FACTORY_EXECUTOR || 'opencode' }}
+          FACTORY_MODEL: ${{ vars.FACTORY_MODEL || 'default' }}
+          # Вход подписки владельца получает только выбранный исполнитель.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ vars.FACTORY_EXECUTOR == 'claude' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          CODEX_AUTH_JSON: ${{ vars.FACTORY_EXECUTOR == 'codex' && secrets.CODEX_AUTH_JSON || '' }}
         run: cd work && factory-agent --task ../task.md --out ../out
       - name: Журнал агента
         if: always()

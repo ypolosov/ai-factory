@@ -3,7 +3,10 @@
 #
 # Вход:  рабочая копия в текущем каталоге; --task ФАЙЛ (текст задачи вне рабочей копии); --out КАТАЛОГ;
 #        FACTORY_EXECUTOR = opencode | claude | codex; FACTORY_MODEL (псевдоним шлюза
-#        для opencode, модель вендора для claude и codex); GATEWAY_URL, GATEWAY_KEY, TASK_ID.
+#        для opencode, модель вендора для claude и codex, default - модель обвязки);
+#        GATEWAY_URL, GATEWAY_KEY (ключ шлюза роли исполнителя), TASK_ID;
+#        вход подписки владельца - только для своего исполнителя: CLAUDE_CODE_OAUTH_TOKEN
+#        (claude setup-token) или CODEX_AUTH_JSON (содержимое auth.json отдельного входа Codex).
 # Выход: КАТАЛОГ/agent.patch (изменения), КАТАЛОГ/run.json (кто, чем, сколько),
 #        КАТАЛОГ/agent.log; код возврата обвязки.
 # Обвязка и всё, что она запускает, работают через factory-untrusted: от пользователя
@@ -56,7 +59,8 @@ opencode)
 	rc=$?
 	;;
 claude)
-	# Подписка владельца: токен CLAUDE_CODE_OAUTH_TOKEN, запросы - прозрачно через шлюз.
+	# Подписка владельца: токен claude setup-token, запросы - прозрачно через шлюз.
+	[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || { echo "нет CLAUDE_CODE_OAUTH_TOKEN" >&2 && exit 2; }
 	# shellcheck disable=SC2086
 	ANTHROPIC_BASE_URL=$GATEWAY_URL \
 		ANTHROPIC_CUSTOM_HEADERS="$(printf 'x-gateway-key: %s\nx-task-id: %s' "$GATEWAY_KEY" "$TASK_ID")" \
@@ -66,13 +70,28 @@ claude)
 	rc=$?
 	;;
 codex)
-	# Подписка владельца: вход ChatGPT в ~/.codex/auth.json пользователя node, запросы - через шлюз.
+	# Подписка владельца: отдельный вход ChatGPT для фабрики - в ~/.codex/auth.json
+	# пользователя node; запросы - через шлюз.
+	[ -n "${CODEX_AUTH_JSON:-}" ] || { echo "нет CODEX_AUTH_JSON" >&2 && exit 2; }
+	auth=/home/node/.codex/auth.json
+	install -d -m 700 -o node -g node /home/node/.codex
+	(umask 077 && printf '%s' "$CODEX_AUTH_JSON" >"$auth")
+	chown node:node "$auth"
+	auth_before=$(sha256sum "$auth")
+	set --
+	[ "$FACTORY_MODEL" = default ] || set -- -m "$FACTORY_MODEL"
+	# Своя песочница Codex (bubblewrap) в контейнере без прав на пространства имён
+	# не запускает ни одной команды; песочница здесь - контейнер задания и пользователь node.
 	# shellcheck disable=SC2086
-	factory-untrusted $gw codex exec --skip-git-repo-check --sandbox workspace-write -m "$FACTORY_MODEL" \
+	factory-untrusted $gw codex exec --skip-git-repo-check --sandbox danger-full-access "$@" \
 		-c model_provider=gw \
 		-c "model_providers.gw={name=\"gateway\",base_url=\"$GATEWAY_URL/v1\",wire_api=\"responses\",requires_openai_auth=true,env_http_headers={\"x-gateway-key\"=\"GATEWAY_KEY\",\"x-task-id\"=\"TASK_ID\"}}" \
 		"$prompt" >"$out/agent.log" 2>&1
 	rc=$?
+	# Обновлённые в задании токены пропадут вместе с контейнером.
+	if [ "$(sha256sum "$auth")" != "$auth_before" ]; then
+		echo "внимание: Codex обновил токены входа в задании - вход фабрики (.state/codex) мог устареть" >&2
+	fi
 	;;
 *)
 	echo "неизвестный исполнитель: $FACTORY_EXECUTOR" >&2
