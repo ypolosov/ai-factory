@@ -25,6 +25,8 @@ load_env() {
 	: "${FORGEJO_BOT_USER:=factory-bot}" "${FORGEJO_BOT_EMAIL:=bot@factory.local}"
 	: "${GATEWAY_PORT:=4000}" "${GATEWAY_AGENT_DAILY_USD:=2}"
 	: "${AGENT_IMAGE:=factory/agent:stand}"
+	: "${FORGEJO_OPS_USER:=factory-ops}" "${FORGEJO_OPS_EMAIL:=ops@factory.local}"
+	: "${DEPLOY_APPS:=factory-admin/hello=8080}" "${GATUS_PORT:=8100}"
 	set +a
 	FORGEJO_URL="http://127.0.0.1:${FORGEJO_HTTP_PORT}"
 }
@@ -149,6 +151,24 @@ ensure_deployer() {
 	chmod 700 .state/deployer
 	if ! cmp -s .state/bot.token .state/deployer/bot.token; then
 		(umask 077 && cp .state/bot.token .state/deployer/bot.token)
+	fi
+}
+
+# ensure_gatus - настройки проверок доступности в .state/gatus/ (монтируется целиком):
+# приложение стенда - первое из DEPLOY_APPS, задачи о сбоях - от учётки эксплуатации.
+ensure_gatus() {
+	mkdir -p .state/gatus
+	chmod 700 .state/gatus
+	_first=${DEPLOY_APPS%% *}
+	_repo=${_first%%=*}
+	(umask 077 && sed -e "s|@ALERT_REPO@|$_repo|" -e "s|@APP@|${_repo##*/}|" -e "s|@PORT@|${_first#*=}|" \
+		-e "s|@OPS_TOKEN@|$(cat .state/ops.token)|" config/gatus/config.yaml.tmpl >.state/gatus/config.yaml.new)
+	if cmp -s .state/gatus/config.yaml.new .state/gatus/config.yaml; then
+		rm -f .state/gatus/config.yaml.new
+	else
+		mv .state/gatus/config.yaml.new .state/gatus/config.yaml
+		# shellcheck disable=SC2034 # читает scripts/stand-up.sh
+		GATUS_CHANGED=1
 	fi
 }
 

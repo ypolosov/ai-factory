@@ -159,6 +159,20 @@ services:
       - deployer-cache:/cache
     networks: [factory]
 
+  # Проверки доступности: упавшая проверка приложения сама заводит задачу в Forgejo.
+  gatus:
+    image: docker.io/twinproduction/gatus:v5.37.0
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      GATUS_CONFIG_PATH: /config/config.yaml
+    volumes:
+      - ./.state/gatus:/config:ro
+    ports:
+      - "127.0.0.1:${GATUS_PORT:-8100}:8080"
+    depends_on: [forgejo, deploy-dind]
+    networks: [factory]
+
   gateway:
     image: cr.agentgateway.dev/agentgateway:v1.6.0
     restart: unless-stopped

@@ -1,0 +1,33 @@
+# Проверки доступности (Gatus). scripts/stand-up.sh подставляет приложение стенда
+# (первое из DEPLOY_APPS) и токен учётки эксплуатации и кладёт результат в
+# .state/gatus/config.yaml. Упавшая проверка приложения сама заводит задачу в его
+# репозитории и закрывает её, когда приложение снова отвечает.
+storage:
+  type: memory
+ui:
+  title: Стенд фабрики
+alerting:
+  gitea:
+    repository-url: "http://forgejo:3000/@ALERT_REPO@"
+    token: "@OPS_TOKEN@"
+endpoints:
+  - name: "@APP@"
+    group: стенд
+    url: "http://deploy-dind:@PORT@/health"
+    interval: 15s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY] == ok"
+      - "[RESPONSE_TIME] < 1000"
+    alerts:
+      - type: gitea
+        failure-threshold: 3
+        success-threshold: 2
+        send-on-resolved: true
+        description: "приложение на стенде не отвечает на /health"
+  - name: forgejo
+    group: фабрика
+    url: "http://forgejo:3000/api/healthz"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"

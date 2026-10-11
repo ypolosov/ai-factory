@@ -19,12 +19,15 @@ ensure_user "$FORGEJO_ADMIN_USER" "$FORGEJO_ADMIN_EMAIL" admin
 ensure_token "$FORGEJO_ADMIN_USER" admin all
 ensure_user "$FORGEJO_BOT_USER" "$FORGEJO_BOT_EMAIL" bot
 ensure_token "$FORGEJO_BOT_USER" bot "write:repository,write:issue"
+ensure_user "$FORGEJO_OPS_USER" "$FORGEJO_OPS_EMAIL" ops
+ensure_token "$FORGEJO_OPS_USER" ops "write:issue,read:repository,read:user"
 
 for name in agent ci deploy; do
 	ensure_runner "$name"
 done
 ensure_gateway
 ensure_deployer
+ensure_gatus
 
 log "runner, шлюз, прокси выхода и служба выкладки: запуск"
 docker compose build -q deployer egress
@@ -33,6 +36,9 @@ if [ -n "${RUNNERS_CHANGED:-}" ]; then
 	# shellcheck disable=SC2086 # список имён через пробел
 	docker compose restart $RUNNERS_CHANGED >/dev/null
 	log "перезапущены с новыми настройками:$RUNNERS_CHANGED"
+fi
+if [ -n "${GATUS_CHANGED:-}" ]; then
+	docker compose restart gatus >/dev/null
 fi
 wait_runners agent ci deploy
 wait_gateway
