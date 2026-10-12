@@ -28,6 +28,8 @@ api() {
 git clone -q --depth 1 "$FORGEJO_URL/$REPO.git" "$work/repo"
 git clone -q --depth 1 "$FORGEJO_URL/$REPO.wiki.git" "$work/wiki" 2>/dev/null || mkdir -p "$work/wiki"
 sha=$(git -C "$work/repo" rev-parse HEAD)
+# Ссылки в задачах - на адрес Forgejo для людей (ROOT_URL), а не на внутренний адрес задания.
+web=$(api GET "/repos/$REPO" | jq -r .html_url)
 rm -rf "$work/repo/.git" "$work/wiki/.git"
 
 set -- --tools Read Grep Glob
@@ -59,8 +61,14 @@ api GET "/repos/$REPO/issues?state=open&type=issues&limit=50" | jq -r '.[].title
 # link ПУТЬ СТРОКА - ссылка на строку файла репозитория (на этом коммите) или страницу вики.
 link() {
 	case $1 in
-	wiki/*) _p=${1#wiki/} && printf '%s/%s/wiki/%s' "$FORGEJO_URL" "$REPO" "$(printf '%s' "${_p%.md}" | jq -sRr @uri)" ;;
-	repo/*) printf '%s/%s/src/commit/%s/%s#L%s' "$FORGEJO_URL" "$REPO" "$sha" "${1#repo/}" "$2" ;;
+	wiki/*)
+		# Файлы вики в git уже названы с процентным кодированием: второй раз не кодировать.
+		_p=${1#wiki/}
+		_p=${_p%.md}
+		case $_p in *%*) ;; *) _p=$(printf '%s' "$_p" | jq -sRr @uri) ;; esac
+		printf '%s/wiki/%s' "$web" "$_p"
+		;;
+	repo/*) printf '%s/src/commit/%s/%s#L%s' "$web" "$sha" "${1#repo/}" "$2" ;;
 	*) printf '%s' "$1" ;;
 	esac
 }
