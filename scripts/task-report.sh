@@ -73,9 +73,10 @@ while IFS= read -r pr; do
 		[ -n "$d" ] || continue
 		sc=$(printf '%s' "$d" | sed -n 's/^оценки \([0-9, ]*[0-9]\).*/\1/p')
 		case $d in
-		*"доработк"*) decision="${sc:-красные проверки} -> доработка" ;;
+		*"решение человека"*) decision="${sc:-${d%% - *}} -> решение человека" ;;
 		*"готово для человека"*) decision="$sc -> человеку" ;;
-		*) decision="${sc:+$sc }-> решение человека" ;;
+		*"доработк"*) decision="${sc:-красные проверки} -> доработка" ;;
+		*) decision="$d" ;;
 		esac
 	done <"$tmp/commits"
 	[ "$rounds" -eq 0 ] || scores="${scores:+$scores; }${decision:-нет решения}"
