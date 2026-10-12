@@ -240,6 +240,22 @@ services:
       - ./.state/errbridge:/secrets:ro
     networks: [factory]
 
+  # Подписка Claude для приложений с API OpenAI (база знаний): каждый запрос - запуск
+  # официального claude -p без инструментов; запросы Claude Code - через шлюз (учёт).
+  # Вызывает её только шлюз (путь kb-claude-cli) с ключом из .state/claude-cli/token.
+  claude-cli:
+    build: images/claude-cli
+    image: factory/claude-cli:stand
+    restart: unless-stopped
+    environment:
+      GATEWAY_URL: http://gateway:4000
+      CLAUDE_MODEL: ${KB_CLAUDE_CLI_MODEL:-sonnet}
+      MAX_PARALLEL: "2"
+    volumes:
+      - ./.state/claude-cli:/secrets:ro
+    tmpfs: [/tmp]
+    networks: [factory]
+
   gateway:
     image: cr.agentgateway.dev/agentgateway:v1.6.0
     restart: unless-stopped

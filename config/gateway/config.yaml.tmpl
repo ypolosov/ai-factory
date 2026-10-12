@@ -6,8 +6,11 @@
 # - открытые модели по API провайдера (OpenRouter): ключ провайдера знает только шлюз;
 # - подписка Claude: запрос уходит в Anthropic как есть, с токеном самого клиента;
 # - подписка Codex: запрос уходит в бэкенд ChatGPT как есть, с токеном клиента.
-# Каждый клиент предъявляет ключ шлюза в заголовке x-gateway-key, задача
-# помечается заголовком x-task-id - по нему считается цена принятого изменения.
+# - база знаний (Onyx): свои псевдонимы kb-* - ответы через OpenRouter, через API-кредиты
+#   подписки Max (ключ Console) или через обёртку над claude -p; эмбеддинги - OpenRouter.
+# Каждый клиент предъявляет ключ шлюза в заголовке x-gateway-key (или, если клиент так
+# не умеет, как Onyx, - в Authorization: Bearer), задача помечается заголовком x-task-id -
+# по нему считается цена принятого изменения.
 config:
   adminAddr: "off"
   readinessAddr: 0.0.0.0:15021
@@ -28,6 +31,8 @@ config:
                 rates: { input: "0.30", output: "1.20" }
               "qwen/qwen3.8-flash":
                 rates: { input: "0.15", output: "0.47" }
+              "baai/bge-m3":
+                rates: { input: "0.01" }
   # Бюджеты ключей и журнал запросов (токены, цена, время) - в SQLite.
   database:
     url: /db/gateway.sqlite
@@ -58,8 +63,9 @@ llm:
     apiKey:
       mode: strict
       location:
-        header:
-          name: x-gateway-key
+        # x-gateway-key, а без него - Authorization: Bearer (так ключ шлёт Onyx). Подписки
+        # приходят с обоими заголовками: Authorization у них - токен самого клиента.
+        expression: '"x-gateway-key" in request.headers ? request.headers["x-gateway-key"] : request.headers["authorization"].split(" ")[1]'
       keys:
         # Агент на открытых моделях: платит по токенам, поэтому дневной бюджет в долларах.
         - keyHash: "sha256:@AGENT_API_HASH@"
@@ -82,6 +88,20 @@ llm:
             name: agent-sub
             role: agent
           allowedModels: ["claude-*", "gpt-*"]
+        # База знаний (Onyx): только псевдонимы kb-*, дневной бюджет на OpenRouter и API-кредиты.
+        - keyHash: "sha256:@KB_HASH@"
+          metadata:
+            name: kb
+            role: kb
+          allowedModels: ["kb-*"]
+          budgets:
+            - name: daily
+              limit:
+                unit: USD
+                amount: @KB_DAILY_USD@
+              window:
+                rolling: 24h
+              onBudgetExceeded: Block
         # Владелец: все модели, для ручных проверок.
         - keyHash: "sha256:@OWNER_HASH@"
           metadata:
@@ -128,3 +148,40 @@ llm:
       params:
         baseUrl: https://chatgpt.com/backend-api/codex
       passthrough: detect
+    # База знаний: три сменных пути к модели ответов (scripts/kb-model.sh) и эмбеддинги.
+    # 1. OpenRouter.
+    - name: kb-openrouter
+      provider: openrouter
+      params:
+        model: deepseek/deepseek-v4.1-flash
+        apiKey:
+          file: /state/openrouter.key
+    # 2. API-кредиты подписки Max: ключ организации Console, связанной с подпиской.
+    - name: kb-claude-api
+      provider: anthropic
+      params:
+        model: claude-sonnet-5-5
+        apiKey:
+          file: /state/anthropic-kb.key
+    # 3. Обёртка над официальным claude -p по подписке (images/claude-cli).
+    - name: kb-claude-cli
+      provider:
+        custom:
+          formats:
+            - type: completions
+      params:
+        baseUrl: http://claude-cli:8000/v1
+        apiKey:
+          file: /state/claude-cli.key
+    # Эмбеддинги: многоязычная bge-m3 (1024 измерения) через OpenRouter.
+    - name: kb-embed
+      provider:
+        custom:
+          providerOverride: openrouter
+          formats:
+            - type: embeddings
+      params:
+        model: baai/bge-m3
+        baseUrl: https://openrouter.ai/api/v1
+        apiKey:
+          file: /state/openrouter.key

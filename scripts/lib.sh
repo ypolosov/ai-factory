@@ -27,7 +27,7 @@ load_env() {
 	: "${AGENT_IMAGE:=factory/agent:stand}"
 	: "${FORGEJO_OPS_USER:=factory-ops}" "${FORGEJO_OPS_EMAIL:=ops@factory.local}"
 	: "${DEPLOY_APPS:=factory-admin/hello=8080 factory-admin/todo=8081}" "${GATUS_PORT:=8100}"
-	: "${GLITCHTIP_PORT:=8200}"
+	: "${GLITCHTIP_PORT:=8200}" "${KB_DAILY_USD:=2}"
 	set +a
 	FORGEJO_URL="http://127.0.0.1:${FORGEJO_HTTP_PORT}"
 }
@@ -128,7 +128,7 @@ ensure_gateway() {
 	# Переезд со старой раскладки.
 	[ -s .state/openrouter.key ] && mv .state/openrouter.key .state/gateway/openrouter.key
 	rm -f .state/openrouter.key .state/gateway.yaml
-	for _r in agent-api agent-sub owner; do
+	for _r in agent-api agent-sub owner kb; do
 		if [ ! -s ".state/gw-$_r.key" ]; then
 			printf 'gw-%s-%s' "$_r" "$(random_hex 24)" >".state/gw-$_r.key"
 			chmod 600 ".state/gw-$_r.key"
@@ -141,9 +141,16 @@ ensure_gateway() {
 		chmod 600 .state/gateway/openrouter.key
 		log "внимание: .state/gateway/openrouter.key пуст - открытые модели не ответят, пока владелец не положит ключ"
 	fi
+	# Ключ Console для API-кредитов подписки Max (путь kb-claude-api базы знаний).
+	if [ ! -f .state/gateway/anthropic-kb.key ]; then
+		: >.state/gateway/anthropic-kb.key
+		chmod 600 .state/gateway/anthropic-kb.key
+	fi
 	sed -e "s/@AGENT_API_HASH@/$(sha256sum .state/gw-agent-api.key | cut -d' ' -f1)/" \
 		-e "s/@AGENT_SUB_HASH@/$(sha256sum .state/gw-agent-sub.key | cut -d' ' -f1)/" \
 		-e "s/@OWNER_HASH@/$(sha256sum .state/gw-owner.key | cut -d' ' -f1)/" \
+		-e "s/@KB_HASH@/$(sha256sum .state/gw-kb.key | cut -d' ' -f1)/" \
+		-e "s/@KB_DAILY_USD@/$KB_DAILY_USD/" \
 		-e "s/@AGENT_DAILY_USD@/$GATEWAY_AGENT_DAILY_USD/" \
 		config/gateway/config.yaml.tmpl >.state/gateway/gateway.yaml.new
 	# Шлюз читает настройки при старте: изменившиеся отмечаем для перезапуска.
@@ -210,6 +217,29 @@ ensure_glitchtip_env() {
 	if ! cmp -s .state/ops.token .state/errbridge/forgejo.token; then
 		(umask 077 && cp .state/ops.token .state/errbridge/forgejo.token)
 	fi
+}
+
+# ensure_claude_cli - секреты обёртки над claude -p (.state/claude-cli/): ключ, который
+# предъявляет ей шлюз (его копия - .state/gateway/claude-cli.key), вход подписки Claude и
+# ключ шлюза для подписок. Нет входа подписки - обёртка не нужна.
+ensure_claude_cli() {
+	mkdir -p .state/claude-cli
+	chmod 700 .state/claude-cli
+	[ -s .state/claude-cli/token ] || (umask 077 && random_hex 24 >.state/claude-cli/token)
+	_changed=""
+	for _pair in "token:gateway/claude-cli.key" "claude-oauth.token:claude-cli/claude-oauth.token" \
+		"gw-agent-sub.key:claude-cli/gateway.key"; do
+		_src=${_pair%%:*}
+		_dst=.state/${_pair#*:}
+		[ "$_src" != token ] || _src=claude-cli/token
+		[ -s ".state/$_src" ] || continue
+		if ! cmp -s ".state/$_src" "$_dst"; then
+			(umask 077 && cp ".state/$_src" "$_dst")
+			_changed=1
+		fi
+	done
+	# shellcheck disable=SC2034 # читает scripts/stand-up.sh
+	[ -z "$_changed" ] || CLAUDE_CLI_CHANGED=1
 }
 
 # put_if_changed ФАЙЛ - стандартный ввод в ФАЙЛ (права 600), если содержимое другое.
