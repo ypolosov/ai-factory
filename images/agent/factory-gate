@@ -1,8 +1,9 @@
 #!/bin/sh
 # Ворота ИИ для PR агента-разработчика (ветка agent/issue-N, заголовок "agent: ...").
-# После детерминированных проверок PR оценивают судьи - модели шлюза из семейств,
-# отличных от модели разработки (PR-Agent, режим простого диффа: без описания PR и
-# настроек из ветки). Решение по .factory/config.yml основной ветки (раздел gate):
+# После детерминированных проверок PR оценивают судьи - модели по подпискам из семейств,
+# отличных от модели разработки (roles.review.judges: "исполнитель/модель"; factory-judge:
+# обвязка без инструментов, задача из трекера и дифф PR - в промпте, ответ - JSON по схеме).
+# Решение по .factory/config.yml основной ветки (раздел gate):
 #   - красные проверки или оценка ниже rework_below, или changes_required - доработка
 #     агентом (повторная метка задачи), не больше max_iterations кругов;
 #   - замечания по безопасности, большой разброс оценок, середина шкалы, нет оценки,
@@ -11,7 +12,8 @@
 # Агенту в замечаниях уходят находки и красные проверки, но не оценка: она - в статусе
 # коммита "factory / ai-gate" для человека.
 #
-# Окружение: FORGEJO_URL, REPO, PR, SHA, BRANCH, BOT_TOKEN, GATEWAY_URL, GATEWAY_KEY,
+# Окружение: FORGEJO_URL, REPO, PR, SHA, BRANCH, BOT_TOKEN, GATEWAY_URL, GATEWAY_KEY (ключ
+#   подписок), CLAUDE_CODE_OAUTH_TOKEN и CODEX_AUTH_JSON (входы подписок судей),
 #   CHECKS ("имя=результат ..." детерминированных проверок), CONFIG (.factory/config.yml).
 # Код выхода: 0 - готово или решение человека, 1 - доработка или красные проверки.
 set -eu
@@ -105,11 +107,11 @@ if [ -n "$failed" ]; then
 	rework "красные проверки:$failed"
 fi
 
-# 2. Судьи: модели ревью из семейств, отличных от модели разработки.
-dev_model=$(cfg '.roles.dev.model // "default"')
-dev_family=$(cfg ".families[\"$dev_model\"] // \"?\"")
-judges=$(cfg '.roles.review.models // [] | .[]' | while read -r m; do
-	[ "$(cfg ".families[\"$m\"] // \"?\"")" != "$dev_family" ] && echo "$m"
+# 2. Судьи: модели по подпискам из семейств, отличных от модели разработки.
+family() { cfg ".families[\"$1\"] // \"?\""; }
+dev_family=$(family "$(cfg '.roles.dev.model // "default"')")
+judges=$(cfg '.roles.review.judges // [] | .[]' | while read -r j; do
+	if [ "$(family "${j#*/}")" != "$dev_family" ]; then echo "$j"; fi
 done)
 [ -n "$judges" ] || {
 	label ai:needs-human
@@ -120,58 +122,48 @@ done)
 curl -fsS -H @"$tmp/auth" "$FORGEJO_URL/api/v1/repos/$REPO/pulls/$PR.diff" -o "$tmp/pr.diff"
 # Задача - как контекст для судьи (не из ветки PR, а из трекера).
 api GET "/repos/$REPO/issues/$issue" | jq -r '"# " + .title + "\n\n" + .body' >"$tmp/task.md"
+# Решения человека в PR дополняют задачу: судья не должен считать их работой вне задачи.
+api GET "/repos/$REPO/issues/$PR/comments?limit=50" | jq -r '[.[] | select(.user.login != "factory-bot")]
+	| if length == 0 then empty else "\n\n## Решения человека в PR (часть задачи)\n\n"
+	+ (map(.body) | join("\n\n---\n\n")) end' >>"$tmp/task.md"
+i=0
 for j in $judges; do
-	(
-		cd "$tmp"
-		instr="Задача, которую решает PR: $(head -c 4000 task.md)"
-		hdrs=$(jq -nc --arg k "$GATEWAY_KEY" --arg t "gate-pr-$PR-$j" '{"x-gateway-key": $k, "x-task-id": $t}')
-		# Чистое окружение: переменные заданий Actions (GITHUB_*) переключили бы PR-Agent
-		# в режим GitHub Action вместо разбора диффа.
-		env -i PATH="$PATH" PYTHONPATH=/app HOME=/tmp LANG=C.UTF-8 \
-			CONFIG__MODEL="openai/$j" CONFIG__FALLBACK_MODELS="[]" CONFIG__CUSTOM_MODEL_MAX_TOKENS=128000 \
-			CONFIG__RESPONSE_LANGUAGE=ru-RU CONFIG__PROPAGATE_TOOL_ERRORS=true CONFIG__TEMPERATURE=0 \
-			PR_REVIEWER__REQUIRE_SCORE_REVIEW=true PR_REVIEWER__REQUIRE_MERGE_RECOMMENDATION=true \
-			PR_REVIEWER__REQUIRE_RISK_ASSESSMENT=true PR_REVIEWER__NUM_MAX_FINDINGS=5 \
-			PR_REVIEWER__EXTRA_INSTRUCTIONS="$instr" LITELLM__EXTRA_HEADERS="$hdrs" \
-			OPENAI__API_BASE="$GATEWAY_URL/v1" OPENAI__KEY=unused NO_PROXY="${NO_PROXY:-}" no_proxy="${no_proxy:-}" \
-			HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" \
-			python /app/pr_agent/cli.py --diff-file pr.diff --json-output "review-$j.json" review >"review-$j.log" 2>&1 ||
-			echo "судья $j: сбой" >&2
-		if [ ! -s "review-$j.json" ]; then
-			echo "судья $j: нет оценки, хвост журнала:" >&2
-			tail -n 15 "review-$j.log" | cut -c1-300 >&2
-		fi
-	)
+	i=$((i + 1))
+	TASK_ID="gate-pr-$PR-${j%%/*}-${j#*/}" factory-judge "${j%%/*}" "${j#*/}" "$tmp/task.md" "$tmp/pr.diff" \
+		"$tmp/review-$i.json" 2>"$tmp/review-$i.log" || {
+		echo "судья $j: нет оценки, хвост журнала:" >&2
+		tail -n 15 "$tmp/review-$i.log" | cut -c1-300 >&2
+		rm -f "$tmp/review-$i.json"
+	}
+	tail -n 1 "$tmp/review-$i.log" | cut -c1-300 >&2
 done
 
 # 3. Решение.
-jq -s '[.[] | .review | {score: (.score | tonumber? // null),
-	sec: (.security_concerns // "" | tostring | gsub("^\\s+|\\s+$"; "")),
-	merge: (.merge_recommendation // "" | tostring | gsub("^\\s+|\\s+$"; "")),
+# Нет уязвимости - пустая строка (или "нет", "no", "none", "-": так её иногда пишут модели).
+jq -s '[.[] | {score: (.score | tonumber? // null | if . == null then null elif . < 0 then 0 elif . > 100 then 100 else . end),
+	sec: (.security_concerns // "" | tostring | gsub("^\\s+|\\s+$"; "")
+		| if (ascii_downcase | IN("", "no", "нет", "none", "-", "n/a")) then "" else . end),
+	merge: (.merge_recommendation // "" | tostring),
 	risk: (.risk_level // "" | tostring),
-	issues: (.key_issues_to_review // [])}]' "$tmp"/review-*.json >"$tmp/all.json" 2>/dev/null || echo '[]' >"$tmp/all.json"
+	issues: (.key_issues // [])}]' "$tmp"/review-*.json >"$tmp/all.json" 2>/dev/null || echo '[]' >"$tmp/all.json"
 n=$(jq length "$tmp/all.json")
 scores=$(jq -r '[.[].score | select(. != null)] | map(tostring) | join(", ")' "$tmp/all.json")
 min=$(jq '[.[].score | select(. != null)] | min // -1' "$tmp/all.json")
 max=$(jq '[.[].score | select(. != null)] | max // -1' "$tmp/all.json")
 nscored=$(jq '[.[].score | select(. != null)] | length' "$tmp/all.json")
 nj=$(printf '%s\n' "$judges" | grep -c .)
-sec=$(jq -r '[.[] | select(.sec != "" and .sec != "No")] | length' "$tmp/all.json")
+sec=$(jq -r '[.[] | select(.sec != "")] | length' "$tmp/all.json")
 changes=$(jq -r '[.[] | select(.merge == "changes_required")] | length' "$tmp/all.json")
 echo "судьи: $(printf '%s' "$judges" | tr '\n' ' '); оценки: ${scores:-нет}; круг: $iter из $max_iter"
 
 # Находки судей - агенту и человеку, без оценок.
-jq -r '"## Ворота: находки ревью\n\n" + ([.[].issues[]? | "- **" + (.issue_header // "замечание") + "** (`"
-	+ (.relevant_file // "?") + "`): " + (.issue_content // "")] | unique | join("\n"))
-	+ ([.[] | select(.sec != "" and .sec != "No") | "\n\nБезопасность: " + .sec] | join(""))' "$tmp/all.json" >"$tmp/fb.md"
+jq -r '"## Ворота: находки ревью\n\n" + ([.[].issues[]? | "- **" + (.header // "замечание") + "** (`"
+	+ (.file // "?") + "`): " + (.content // "")] | unique | join("\n"))
+	+ ([.[] | select(.sec != "") | "\n\nБезопасность: " + .sec] | join(""))' "$tmp/all.json" >"$tmp/fb.md"
 
 if [ "$n" -lt "$nj" ] || [ "$nscored" -lt "$nj" ]; then
 	label ai:needs-human
-	if grep -qs 'Budget exceeded' "$tmp"/review-*.log; then
-		status success "бюджет шлюза на сутки исчерпан, судьи не ответили - перезапустить проверки после сброса"
-	else
-		status success "нет оценки от части судей (${scores:-нет}) - решение человека"
-	fi
+	status success "нет оценки от части судей (${scores:-нет}) - решение человека"
 	exit 0
 fi
 if [ "$sec" -gt 0 ]; then

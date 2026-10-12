@@ -1,6 +1,6 @@
 # Проверки PR. Детерминированные ворота перед решением человека: тесты, секреты,
 # уязвимые зависимости, статический анализ; без их зелёных статусов main не слить
-# (защиту ставит scripts/setup-repo.sh). Ревью ИИ - совет человеку, слияние не держит.
+# (защиту ставит scripts/setup-repo.sh).
 # Сканеры берут настройки фабрики (/etc/factory/checks) и не слушают файлы
 # исключений и пометки-подавления из проверяемого кода: PR не может ослабить проверку.
 name: ci
@@ -47,12 +47,8 @@ jobs:
           git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
           git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
       - name: Уязвимые зависимости (OSV-Scanner)
-        run: |
-          rc=0
-          osv-scanner scan source -r --config /etc/factory/checks/osv-scanner.toml work || rc=$?
-          # 128 - в репозитории нет файлов зависимостей: проверять нечего.
-          if [ "$rc" -eq 128 ]; then echo "файлов зависимостей нет"; rc=0; fi
-          exit "$rc"
+        # API OSV недоступен - проверка по скачанной базе OSV (factory-deps).
+        run: factory-deps work
 
   sast:
     runs-on: ci
@@ -69,25 +65,3 @@ jobs:
           find . -name .git -prune -o \( -name .semgrepignore -o -name .opengrepignore \) -type f -exec rm -f {} +
           : > .semgrepignore
           opengrep scan --config /etc/factory/checks/opengrep.yml --disable-nosem --error --quiet .
-
-  review:
-    runs-on: ci
-    container:
-      image: docker.io/pragent/pr-agent:0.46.0
-    steps:
-      - name: Ревью ИИ (PR-Agent через шлюз) - совет человеку
-        env:
-          CONFIG__GIT_PROVIDER: gitea
-          CONFIG__MODEL: openai/hard
-          # Совет человеку: при сбое или медленном ответе основной модели - запасная.
-          CONFIG__FALLBACK_MODELS: '["openai/alt"]'
-          CONFIG__AI_TIMEOUT: "90"
-          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
-          CONFIG__RESPONSE_LANGUAGE: ru-RU
-          CONFIG__PUBLISH_OUTPUT_PROGRESS: "false"
-          GITEA__URL: ${{ github.server_url }}
-          GITEA__PERSONAL_ACCESS_TOKEN: ${{ secrets.BOT_TOKEN }}
-          OPENAI__KEY: unused
-          OPENAI__API_BASE: http://gateway:4000/v1
-          LITELLM__EXTRA_HEADERS: '{"x-gateway-key": "${{ secrets.AGENT_GATEWAY_KEY }}", "x-task-id": "pr-${{ github.event.pull_request.number }}-review"}'
-        run: python /app/pr_agent/cli.py --pr_url "${{ github.event.pull_request.html_url }}" review

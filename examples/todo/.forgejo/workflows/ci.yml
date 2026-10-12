@@ -1,6 +1,6 @@
 # Проверки PR. Детерминированные ворота перед решением человека: модульные тесты, типы,
 # приёмочные сценарии, секреты, уязвимые зависимости, статический анализ; без их зелёных
-# статусов main не слить (защиту ставит scripts/setup-repo.sh). Ревью ИИ - совет человеку.
+# статусов main не слить (защиту ставит scripts/setup-repo.sh). После них - ворота ИИ.
 # Код из PR и его зависимости - недоверенные: npm ci, тесты и сценарии идут через
 # factory-untrusted. Сканеры берут настройки фабрики (/etc/factory/checks) и не слушают
 # файлы исключений и пометки-подавления из проверяемого кода.
@@ -131,12 +131,8 @@ jobs:
           git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
           git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
       - name: Уязвимые зависимости (OSV-Scanner)
-        run: |
-          rc=0
-          osv-scanner scan source -r --config /etc/factory/checks/osv-scanner.toml work || rc=$?
-          # 128 - в репозитории нет файлов зависимостей: проверять нечего.
-          if [ "$rc" -eq 128 ]; then echo "файлов зависимостей нет"; rc=0; fi
-          exit "$rc"
+        # API OSV недоступен - проверка по скачанной базе OSV (factory-deps).
+        run: factory-deps work
 
   sast:
     runs-on: ci
@@ -154,15 +150,14 @@ jobs:
           : > .semgrepignore
           opengrep scan --config /etc/factory/checks/opengrep.yml --disable-nosem --error --quiet .
 
-  # Ворота ИИ: после детерминированных проверок PR агента-разработчика оценивают судьи
-  # других семейств моделей; низкая оценка или красные проверки - доработка агентом,
-  # высокая - человеку (factory-gate, пороги - .factory/config.yml).
+  # Ворота ИИ: после детерминированных проверок PR агента-разработчика оценивают судьи -
+  # модели по подпискам (Claude Code, Codex) из семейств, отличных от модели разработки;
+  # низкая оценка или красные проверки - доработка агентом, высокая - человеку
+  # (factory-gate, судьи и пороги - .factory/config.yml основной ветки).
   gate:
     needs: [test, types, acceptance, mutation, secrets, deps, sast]
     if: always()
     runs-on: ci
-    container:
-      image: factory/reviewer:stand
     steps:
       - name: Настройки фабрики - из основной ветки
         run: git clone -q --depth 1 "${{ github.server_url }}/${{ github.repository }}.git" base
@@ -175,32 +170,13 @@ jobs:
           BRANCH: ${{ github.event.pull_request.head.ref }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GATEWAY_URL: http://gateway:4000
-          GATEWAY_KEY: ${{ secrets.AGENT_GATEWAY_KEY }}
+          # Судьи - по подпискам владельца: ключ шлюза подписок и входы Claude Code и Codex.
+          GATEWAY_KEY: ${{ secrets.AGENT_SUB_GATEWAY_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
           CONFIG: base/.factory/config.yml
           CHECKS: >-
             test=${{ needs.test.result }} types=${{ needs.types.result }}
             acceptance=${{ needs.acceptance.result }} mutation=${{ needs.mutation.result }}
             secrets=${{ needs.secrets.result }} deps=${{ needs.deps.result }} sast=${{ needs.sast.result }}
         run: factory-gate
-
-  review:
-    runs-on: ci
-    container:
-      image: docker.io/pragent/pr-agent:0.46.0
-    steps:
-      - name: Ревью ИИ (PR-Agent через шлюз) - совет человеку
-        env:
-          CONFIG__GIT_PROVIDER: gitea
-          CONFIG__MODEL: openai/hard
-          # Совет человеку: при сбое или медленном ответе основной модели - запасная.
-          CONFIG__FALLBACK_MODELS: '["openai/alt"]'
-          CONFIG__AI_TIMEOUT: "90"
-          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
-          CONFIG__RESPONSE_LANGUAGE: ru-RU
-          CONFIG__PUBLISH_OUTPUT_PROGRESS: "false"
-          GITEA__URL: ${{ github.server_url }}
-          GITEA__PERSONAL_ACCESS_TOKEN: ${{ secrets.BOT_TOKEN }}
-          OPENAI__KEY: unused
-          OPENAI__API_BASE: http://gateway:4000/v1
-          LITELLM__EXTRA_HEADERS: '{"x-gateway-key": "${{ secrets.AGENT_GATEWAY_KEY }}", "x-task-id": "pr-${{ github.event.pull_request.number }}-review"}'
-        run: python /app/pr_agent/cli.py --pr_url "${{ github.event.pull_request.html_url }}" review

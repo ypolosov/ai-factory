@@ -6,5 +6,7 @@ registry.npmjs.org
 # Проверка зависимостей OSV-Scanner
 api.osv.dev
 api.deps.dev
+# Скачанная база OSV - когда API OSV недоступен (factory-deps)
+osv-vulnerabilities.storage.googleapis.com
 # Обновление входа Codex по подписке
 auth.openai.com

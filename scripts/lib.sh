@@ -299,7 +299,6 @@ build_job_image() {
 # build_agent_image - образ исполнителя (агенты и проверки) и образ ревьюера (ворота ИИ).
 build_agent_image() {
 	build_job_image images/agent "$AGENT_IMAGE" agent ci
-	build_job_image images/reviewer factory/reviewer:stand ci
 }
 
 # preload_job_images - готовые образы заданий (container: image: в workflow шаблонов)

@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["score", "security_concerns", "merge_recommendation", "risk_level", "key_issues"],
+  "properties": {
+    "score": { "type": "integer" },
+    "security_concerns": { "type": "string" },
+    "merge_recommendation": { "type": "string", "enum": ["approve", "changes_required"] },
+    "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+    "key_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "header", "content"],
+        "properties": {
+          "file": { "type": "string" },
+          "header": { "type": "string" },
+          "content": { "type": "string" }
+        }
+      }
+    }
+  }
+}

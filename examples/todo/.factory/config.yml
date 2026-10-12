@@ -14,15 +14,17 @@ roles:
     model: default
     paths:
       allowed: [features/]
-  # Разработка одной задачи из tasks.md.
+  # Разработка одной задачи из tasks.md. Исполнители: claude, codex (подписки владельца),
+  # opencode (открытые модели через OpenRouter, model - псевдоним шлюза).
   dev:
-    executor: opencode
-    model: default
+    executor: codex
+    model: gpt-6.1-sol
     paths:
       protected: [.forgejo/, .github/, .factory/, openspec/, features/]
-  # Судьи ревью - модели шлюза из семейств, отличных от модели разработки.
+  # Судьи ворот ИИ - "исполнитель/модель" по подпискам (claude, codex); в деле только те,
+  # чьё семейство отличается от семейства модели разработки.
   review:
-    models: [alt, qwen]
+    judges: [claude/opus, claude/sonnet]
 
 # Семейства моделей: судья ревью не должен быть из семейства автора кода.
 families:
@@ -32,6 +34,7 @@ families:
   qwen: qwen
   sonnet: anthropic
   opus: anthropic
+  gpt-6.1-sol: openai
 
 # Ворота ревью: ниже rework_below - на доработку (не больше max_iterations кругов);
 # от human_from и без замечаний по безопасности - человеку; остальное - тоже человеку.

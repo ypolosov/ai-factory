@@ -1,0 +1,23 @@
+#!/bin/sh
+# Уязвимые зависимости (OSV-Scanner) в КАТАЛОГЕ по настройкам фабрики, а не репозитория.
+# Сначала - через API OSV; API недоступен (код 127: сеть, отказ сервера) - та же проверка
+# по скачанной базе OSV (osv-vulnerabilities.storage.googleapis.com).
+# Код выхода: 0 - уязвимостей нет или проверять нечего; 1 - уязвимости; иначе - сбой.
+set -u
+dir=${1:?использование: factory-deps КАТАЛОГ}
+cfg=/etc/factory/checks/osv-scanner.toml
+rc=0
+osv-scanner scan source -r --config "$cfg" "$dir" || rc=$?
+if [ "$rc" -eq 127 ]; then
+	echo "API OSV недоступен - проверка по скачанной базе OSV" >&2
+	OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY=$(mktemp -d)
+	export OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY
+	rc=0
+	osv-scanner scan source -r --offline-vulnerabilities --download-offline-databases --config "$cfg" "$dir" || rc=$?
+fi
+# 128 - в репозитории нет файлов зависимостей: проверять нечего.
+if [ "$rc" -eq 128 ]; then
+	echo "файлов зависимостей нет"
+	rc=0
+fi
+exit "$rc"

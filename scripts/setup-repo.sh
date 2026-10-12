@@ -2,7 +2,7 @@
 # Готовит целевой репозиторий в Forgejo стенда: создаёт его из examples/ИМЯ,
 # даёт боту право записи в ветки, защищает main, заводит метку agent, секреты
 # и переменные исполнителя.
-# Использование: scripts/setup-repo.sh ИМЯ [opencode|claude|codex] [модель]
+# Использование: scripts/setup-repo.sh ИМЯ [codex|claude|opencode] [модель] (по умолчанию codex - подписка)
 # Модель по умолчанию: default (OpenCode - псевдоним шлюза, Codex - своя модель), sonnet (Claude Code).
 # Повторный запуск безопасен: обновляет процессные файлы фабрики (.forgejo/),
 # защиту, секреты и переменные; код проекта не трогает.
@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 need curl jq git mktemp
 load_env
 name=${1:?использование: scripts/setup-repo.sh ИМЯ [исполнитель] [модель]}
-executor=${2:-opencode}
+executor=${2:-codex}
 case $executor in
 opencode | codex) model=${3:-default} ;;
 claude) model=${3:-sonnet} ;;
@@ -83,7 +83,7 @@ api PUT "/repos/$repo/collaborators/$FORGEJO_BOT_USER" --data '{"permission":"wr
 log "бот $FORGEJO_BOT_USER: право записи в ветки"
 
 # main пишет и сливает только человек (администратор стенда), и только при зелёных
-# детерминированных проверках - всех заданиях ci.yml шаблона, кроме ревью ИИ (совет).
+# детерминированных проверках - всех заданиях ci.yml шаблона.
 checks=$(sed -n '/^jobs:/,$p' "examples/$name/.forgejo/workflows/ci.yml" | sed -n 's/^  \([a-z][a-z0-9_-]*\):$/\1/p' |
 	grep -vx review | jq -Rsc 'split("\n") | map(select(. != ""))')
 jq -n --arg u "$owner" --argjson c "$checks" '{enable_push: true, enable_push_whitelist: true,

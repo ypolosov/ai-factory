@@ -1,0 +1,72 @@
+#!/bin/sh
+# Судья ревью: оценка PR моделью по подписке через её обвязку (Claude Code или Codex)
+# без инструментов. Задача и дифф - в промпте, ответ - JSON по схеме
+# /etc/factory/prompts/judge.schema.json (score, security_concerns, merge_recommendation,
+# risk_level, key_issues). Обвязка работает через factory-untrusted: от пользователя node,
+# с ключом шлюза подписок и входом своей подписки, без токенов Forgejo.
+#
+# Использование: factory-judge ИСПОЛНИТЕЛЬ МОДЕЛЬ ЗАДАЧА.md ДИФФ ВЫХОД.json
+# Окружение: GATEWAY_URL, GATEWAY_KEY (ключ подписок), TASK_ID; вход подписки -
+# CLAUDE_CODE_OAUTH_TOKEN (claude) или CODEX_AUTH_JSON (codex).
+set -eu
+[ $# -eq 5 ] || { echo "использование: factory-judge ИСПОЛНИТЕЛЬ МОДЕЛЬ ЗАДАЧА.md ДИФФ ВЫХОД.json" >&2 && exit 2; }
+executor=$1
+model=$2
+task=$3
+diff=$4
+out=$5
+: "${GATEWAY_URL:?}" "${GATEWAY_KEY:?}" "${TASK_ID:?}"
+schema=/etc/factory/prompts/judge.schema.json
+
+# Каталог судьи принадлежит node: обвязка пишет туда ответ и не видит чужих файлов.
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+{
+	cat /etc/factory/prompts/judge.md
+	printf '\n--- задача ---\n'
+	head -c 8000 "$task"
+	printf '\n--- дифф PR ---\n'
+	head -c 200000 "$diff"
+} >"$work/prompt.md"
+chown -R node:node "$work"
+chmod 700 "$work"
+gw="-e GATEWAY_URL -e GATEWAY_KEY -e TASK_ID"
+
+case $executor in
+claude)
+	[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || { echo "нет CLAUDE_CODE_OAUTH_TOKEN" >&2 && exit 2; }
+	# shellcheck disable=SC2086 # список флагов через пробел
+	(cd "$work" && ANTHROPIC_BASE_URL=$GATEWAY_URL \
+		ANTHROPIC_CUSTOM_HEADERS="$(printf 'x-gateway-key: %s\nx-task-id: %s' "$GATEWAY_KEY" "$TASK_ID")" \
+		factory-untrusted $gw -e ANTHROPIC_BASE_URL -e ANTHROPIC_CUSTOM_HEADERS -e CLAUDE_CODE_OAUTH_TOKEN \
+		claude -p --model "$model" --tools "" --no-session-persistence --output-format json \
+		--json-schema "$(cat "$schema")" <"$work/prompt.md" >"$work/claude.json")
+	jq -e '.structured_output // (.result | fromjson?) | select(type == "object")' "$work/claude.json" >"$out"
+	;;
+codex)
+	[ -n "${CODEX_AUTH_JSON:-}" ] || { echo "нет CODEX_AUTH_JSON" >&2 && exit 2; }
+	auth=/home/node/.codex/auth.json
+	install -d -m 700 -o node -g node /home/node/.codex
+	(umask 077 && printf '%s' "$CODEX_AUTH_JSON" >"$auth")
+	chown node:node "$auth"
+	cp "$schema" "$work/schema.json"
+	chown node:node "$work/schema.json"
+	set --
+	[ "$model" = default ] || set -- -m "$model"
+	# Песочница только на чтение: команды судье не нужны (в контейнере она их и не запускает).
+	# shellcheck disable=SC2086
+	(cd "$work" && factory-untrusted $gw codex exec --skip-git-repo-check --ephemeral --sandbox read-only "$@" \
+		-c model_provider=gw \
+		-c "model_providers.gw={name=\"gateway\",base_url=\"$GATEWAY_URL/v1\",wire_api=\"responses\",requires_openai_auth=true,env_http_headers={\"x-gateway-key\"=\"GATEWAY_KEY\",\"x-task-id\"=\"TASK_ID\"}}" \
+		--output-schema "$work/schema.json" -o "$work/last.json" <"$work/prompt.md" >"$work/codex.log" 2>&1) || {
+		tail -n 20 "$work/codex.log" >&2
+		exit 1
+	}
+	jq -e 'select(type == "object")' "$work/last.json" >"$out"
+	;;
+*)
+	echo "судья: исполнитель $executor не поддерживается (claude, codex)" >&2
+	exit 2
+	;;
+esac
+jq -c '{score, security_concerns, merge_recommendation, risk_level, n_issues: (.key_issues | length)}' "$out" >&2
