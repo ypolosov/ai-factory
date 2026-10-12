@@ -105,6 +105,7 @@ for spec in "agent|#bf4520|разработка: задачу берёт аге�
 	"agent:tests|#0e7a5f|приёмочные тесты по спецификации пишет агент-тестировщик" \
 	"ai:rework|#d97706|ворота ИИ: PR на доработке у агента" \
 	"ai:needs-human|#b91c1c|ворота ИИ: нужно решение человека" \
+	"kb:расхождение|#a16207|сверщик базы знаний: вики или решение противоречит коду" \
 	"ai:ready-for-human|#15803d|ворота ИИ: готово для слияния человеком"; do
 	lname=${spec%%|*}
 	rest=${spec#*|}
@@ -128,6 +129,8 @@ put_secret BOT_TOKEN .state/bot.token
 # Входы подписок владельца - если есть; задание отдаёт их только своему исполнителю.
 [ ! -s .state/claude-oauth.token ] || put_secret CLAUDE_CODE_OAUTH_TOKEN .state/claude-oauth.token
 [ ! -s .state/codex/auth.json ] || put_secret CODEX_AUTH_JSON .state/codex/auth.json
+# Поиск базы знаний для сверщика (MCP Onyx) - если база настроена (scripts/kb-setup.sh).
+[ ! -s .state/kb/mcp.token ] || put_secret KB_MCP_TOKEN .state/kb/mcp.token
 log "секреты: $secrets"
 
 for pair in "FACTORY_EXECUTOR=$executor" "FACTORY_MODEL=$model"; do

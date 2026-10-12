@@ -1,0 +1,91 @@
+#!/bin/sh
+# Сверщик базы знаний: ищет утверждения вики и записей решений (ADR), которые противоречат
+# коду или действующей спецификации, и заводит по каждому задачу хозяину сведений -
+# с дословными цитатами и ссылками на строки обеих сторон. Решает человек (HOTL).
+# Модель - Claude Code по подписке, только чтение (Read, Grep, Glob) и поиск базы знаний
+# через MCP Onyx, если есть токен; без токенов Forgejo (factory-untrusted).
+#
+# Окружение: FORGEJO_URL, REPO, BOT_TOKEN, GATEWAY_URL, GATEWAY_KEY (ключ подписок),
+#   CLAUDE_CODE_OAUTH_TOKEN; KB_MCP_URL и KB_MCP_TOKEN - поиск базы знаний (необязательно);
+#   RECONCILE_MODEL (по умолчанию sonnet).
+set -eu
+: "${FORGEJO_URL:?}" "${REPO:?}" "${BOT_TOKEN:?}" "${GATEWAY_URL:?}" "${GATEWAY_KEY:?}" "${CLAUDE_CODE_OAUTH_TOKEN:?}"
+model=${RECONCILE_MODEL:-sonnet}
+label=kb:расхождение
+
+tmp=$(mktemp -d)
+work=$(mktemp -d)
+trap 'rm -rf "$tmp" "$work"' EXIT
+printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$tmp/auth"
+chmod 600 "$tmp/auth"
+api() {
+	_m=$1
+	_p=$2
+	shift 2
+	curl -fsS -X "$_m" -H @"$tmp/auth" -H 'Content-Type: application/json' "$FORGEJO_URL/api/v1$_p" "$@"
+}
+
+git clone -q --depth 1 "$FORGEJO_URL/$REPO.git" "$work/repo"
+git clone -q --depth 1 "$FORGEJO_URL/$REPO.wiki.git" "$work/wiki" 2>/dev/null || mkdir -p "$work/wiki"
+sha=$(git -C "$work/repo" rev-parse HEAD)
+rm -rf "$work/repo/.git" "$work/wiki/.git"
+
+set -- --tools Read Grep Glob
+if [ -n "${KB_MCP_URL:-}" ] && [ -n "${KB_MCP_TOKEN:-}" ]; then
+	jq -n --arg u "$KB_MCP_URL" --arg t "$KB_MCP_TOKEN" \
+		'{mcpServers: {kb: {type: "http", url: $u, headers: {Authorization: ("Bearer " + $t)}}}}' >"$work/mcp.json"
+	set -- --mcp-config "$work/mcp.json" --strict-mcp-config --allowedTools "mcp__kb__search_indexed_documents" "$@"
+fi
+chown -R node:node "$work"
+chmod 700 "$work"
+# shellcheck disable=SC2086 # флаги - через set --
+(cd "$work" && ANTHROPIC_BASE_URL=$GATEWAY_URL \
+	ANTHROPIC_CUSTOM_HEADERS="$(printf 'x-gateway-key: %s\nx-task-id: %s-reconcile-%s' "$GATEWAY_KEY" "${REPO#*/}" "$(date +%s)")" \
+	factory-untrusted -e GATEWAY_URL -e ANTHROPIC_BASE_URL -e ANTHROPIC_CUSTOM_HEADERS -e CLAUDE_CODE_OAUTH_TOKEN \
+	claude -p --model "$model" --no-session-persistence --output-format json \
+	--json-schema "$(cat /etc/factory/prompts/reconcile.schema.json)" "$@" \
+	</etc/factory/prompts/reconcile.md >"$tmp/out.json") || {
+	echo "сверщик: Claude Code завершился с ошибкой" >&2
+	head -c 2000 "$tmp/out.json" >&2 || true
+	exit 1
+}
+jq -e '.structured_output.findings // (.result | fromjson? | .findings)' "$tmp/out.json" >"$tmp/findings.json" ||
+	{ echo "сверщик: нет ответа по схеме" >&2 && exit 1; }
+echo "расхождений: $(jq length "$tmp/findings.json")"
+
+# Метка и открытые задачи сверщика - для отбора повторов по заголовку.
+lid=$(api GET "/repos/$REPO/labels?limit=50" | jq -r --arg l "$label" '.[] | select(.name == $l) | .id')
+api GET "/repos/$REPO/issues?state=open&type=issues&limit=50" | jq -r '.[].title' >"$tmp/open.txt"
+# link ПУТЬ СТРОКА - ссылка на строку файла репозитория (на этом коммите) или страницу вики.
+link() {
+	case $1 in
+	wiki/*) _p=${1#wiki/} && printf '%s/%s/wiki/%s' "$FORGEJO_URL" "$REPO" "$(printf '%s' "${_p%.md}" | jq -sRr @uri)" ;;
+	repo/*) printf '%s/%s/src/commit/%s/%s#L%s' "$FORGEJO_URL" "$REPO" "$sha" "${1#repo/}" "$2" ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
+n=0
+while IFS= read -r f; do
+	title="Расхождение знаний: $(printf '%s' "$f" | jq -r '.title' | cut -c1-120)"
+	if grep -qxF "$title" "$tmp/open.txt"; then
+		echo "уже есть: $title"
+		continue
+	fi
+	cl=$(link "$(printf '%s' "$f" | jq -r .claim.path)" "$(printf '%s' "$f" | jq -r .claim.line)")
+	el=$(link "$(printf '%s' "$f" | jq -r .evidence.path)" "$(printf '%s' "$f" | jq -r .evidence.line)")
+	printf '%s' "$f" | jq --arg t "$title" --arg cl "$cl" --arg el "$el" --argjson lid "${lid:-null}" '{
+		title: $t,
+		labels: (if $lid == null then [] else [$lid] end),
+		body: ("Сверщик базы знаний нашёл расхождение (`" + .kind + "`). Решает хозяин сведений.\n\n"
+			+ "**Утверждение** - [" + .claim.path + ", строка " + (.claim.line | tostring) + "](" + $cl + "):\n\n> "
+			+ (.claim.quote | gsub("\n"; "\n> ")) + "\n\n"
+			+ "**Противоречит** - [" + .evidence.path + ", строка " + (.evidence.line | tostring) + "](" + $el + "):\n\n> "
+			+ (.evidence.quote | gsub("\n"; "\n> ")) + "\n\n"
+			+ .explanation + "\n\n**Что сделать:** " + .action)
+	}' >"$tmp/issue.json"
+	echo "заведена #$(api POST "/repos/$REPO/issues" --data @"$tmp/issue.json" | jq -r .number): $title"
+	n=$((n + 1))
+done <<EOF2
+$(jq -c '.[]' "$tmp/findings.json")
+EOF2
+echo "новых задач: $n"

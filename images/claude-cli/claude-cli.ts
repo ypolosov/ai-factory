@@ -8,11 +8,12 @@
 //
 // Окружение: CLAUDE_BIN (по умолчанию claude), CLAUDE_MODEL (sonnet), GATEWAY_URL (запросы
 // Claude Code идут через шлюз - учёт по x-task-id), MAX_PARALLEL (2), TIMEOUT_MS (180000),
-// PORT (8000). Секреты - файлы в SECRETS_DIR (/secrets): token (ключ, который предъявляет
+// FORCE_FIRST_TOOL (инструмент, обязательный на первом шаге, например internal_search),
+// DUMP_FILE (отладка: последний запрос клиента), PORT (8000). Секреты - файлы в SECRETS_DIR (/secrets): token (ключ, который предъявляет
 // шлюз), claude-oauth.token (вход подписки), gateway.key (ключ шлюза для подписок).
 import http from 'node:http';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 
 type Json = Record<string, unknown>;
@@ -29,6 +30,8 @@ export interface Plan {
   tools: ToolDef[];
   // none - отвечать текстом; auto - текст или вызовы; required - только вызовы; иначе - имя инструмента.
   toolChoice: string;
+  // В разговоре уже есть результаты инструментов.
+  hasToolResults: boolean;
 }
 
 export interface Reply {
@@ -46,6 +49,9 @@ export interface Config {
   gatewayKey: string;
   maxParallel: number;
   timeoutMs: number;
+  // Инструмент, который модель обязана вызвать первым, пока в разговоре нет результатов
+  // инструментов (поиск базы знаний): сама модель по подписке часто отвечает без поиска.
+  forceFirstTool: string;
 }
 
 const BODY_LIMIT = 4 * 1024 * 1024;
@@ -94,7 +100,14 @@ export function planRequest(body: Json): Plan {
   if (tools.length === 0 || tc === 'none') toolChoice = 'none';
   else if (tc === 'required') toolChoice = 'required';
   else if (tc && typeof tc === 'object') toolChoice = String(((tc as Json)['function'] as Json | undefined)?.['name'] ?? 'auto');
-  return { system: system.join('\n\n'), prompt: turns.join('\n\n'), tools, toolChoice };
+  const hasToolResults = messages.some((m) => m['role'] === 'tool');
+  return { system: system.join('\n\n'), prompt: turns.join('\n\n'), tools, toolChoice, hasToolResults };
+}
+
+// Первый шаг разговора с инструментами - обязательный вызов forceFirstTool, если он предложен.
+export function forceFirst(plan: Plan, tool: string): Plan {
+  if (!tool || plan.toolChoice !== 'auto' || plan.hasToolResults || !plan.tools.some((t) => t.name === tool)) return plan;
+  return { ...plan, toolChoice: tool };
 }
 
 // Схема ответа, когда клиент дал инструменты.
@@ -128,7 +141,10 @@ export function toolInstructions(plan: Plan): string {
     .join('\n');
   const must =
     plan.toolChoice === 'auto'
-      ? 'Если для ответа нужен инструмент - верни вызовы в tool_calls и оставь content пустым; иначе ответь в content и оставь tool_calls пустым.'
+      ? 'Инструменты дают данные, которых у тебя нет: документы, код, задачи и решения конкретного проекта или компании. ' +
+        'Если вопрос может касаться таких данных - сначала вызови подходящий инструмент поиска, общих знаний для ответа недостаточно; ' +
+        'когда результаты инструментов уже есть в разговоре - отвечай по ним со ссылками на них. ' +
+        'Вызов - в tool_calls с пустым content; ответ - в content с пустым tool_calls.'
       : plan.toolChoice === 'required'
         ? 'Обязательно вызови хотя бы один инструмент: tool_calls не пуст, content пуст.'
         : `Обязательно вызови инструмент ${plan.toolChoice}: tool_calls не пуст, content пуст.`;
@@ -323,7 +339,9 @@ export function createServer(
       } catch {
         return sendJson(res, 400, { error: { message: 'bad json' } });
       }
-      const plan = planRequest(body);
+      // Отладка: последний запрос клиента - в файл (DUMP_FILE), чтобы видеть, что шлёт приложение.
+      if (process.env['DUMP_FILE']) writeFileSync(process.env['DUMP_FILE'], JSON.stringify(body, null, 1));
+      const plan = forceFirst(planRequest(body), cfg.forceFirstTool);
       const model = String(body['model'] ?? cfg.model);
       const taskId = String(req.headers['x-task-id'] ?? 'kb-claude-cli');
       const started = Date.now();
@@ -363,6 +381,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     gatewayKey: env['GATEWAY_URL'] ? secret('gateway.key') : '',
     maxParallel: Number(env['MAX_PARALLEL'] ?? 2),
     timeoutMs: Number(env['TIMEOUT_MS'] ?? 180000),
+    forceFirstTool: env['FORCE_FIRST_TOOL'] ?? '',
   };
 }
 

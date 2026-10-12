@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "kind", "claim", "evidence", "explanation", "action"],
+        "properties": {
+          "title": { "type": "string" },
+          "kind": { "type": "string", "enum": ["wiki-vs-code", "adr-vs-code", "doc-vs-spec", "other"] },
+          "claim": { "$ref": "#/$defs/quote" },
+          "evidence": { "$ref": "#/$defs/quote" },
+          "explanation": { "type": "string" },
+          "action": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "line", "quote"],
+      "properties": {
+        "path": { "type": "string" },
+        "line": { "type": "integer" },
+        "quote": { "type": "string" }
+      }
+    }
+  }
+}

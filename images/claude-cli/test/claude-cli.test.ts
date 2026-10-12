@@ -10,6 +10,7 @@ import {
   completion,
   createServer,
   limiter,
+  forceFirst,
   parseClaude,
   planRequest,
   replySchema,
@@ -64,7 +65,22 @@ test('схема ответа ограничивает имена инструм
   assert.deepEqual(schema.properties.tool_calls.items.properties.name.enum, ['internal_search']);
 });
 
-const withTools: Plan = { system: '', prompt: 'q', tools: [{ name: 'internal_search', description: '', parameters: {} }], toolChoice: 'auto' };
+const withTools: Plan = {
+  system: '',
+  prompt: 'q',
+  tools: [{ name: 'internal_search', description: '', parameters: {} }],
+  toolChoice: 'auto',
+  hasToolResults: false,
+};
+
+test('первый шаг с поиском - обязательный вызов, после результатов - на выбор модели', () => {
+  assert.equal(forceFirst(withTools, 'internal_search').toolChoice, 'internal_search');
+  assert.equal(forceFirst({ ...withTools, hasToolResults: true }, 'internal_search').toolChoice, 'auto');
+  assert.equal(forceFirst(withTools, '').toolChoice, 'auto');
+  assert.equal(forceFirst(withTools, 'web_search').toolChoice, 'auto');
+  assert.equal(forceFirst({ ...withTools, toolChoice: 'none' }, 'internal_search').toolChoice, 'none');
+  assert.equal(planRequest({ messages: [{ role: 'tool', content: 'x' }], tools }).hasToolResults, true);
+});
 
 test('ответ Claude Code: вызов инструмента', () => {
   const reply = parseClaude(
@@ -140,6 +156,7 @@ const cfg: Config = {
   gatewayKey: 'gw-key',
   maxParallel: 2,
   timeoutMs: 5000,
+  forceFirstTool: '',
 };
 
 test('запуск claude -p: флаги, подсказка из stdin, вход и шлюз - в окружении', async () => {
@@ -158,7 +175,7 @@ process.stdin.on('end', () => {
 `,
   );
   chmodSync(bin, 0o755);
-  const plan: Plan = { system: 'Система.', prompt: '[Пользователь]\nвопрос', tools: [], toolChoice: 'none' };
+  const plan: Plan = { system: 'Система.', prompt: '[Пользователь]\nвопрос', tools: [], toolChoice: 'none', hasToolResults: false };
   const reply = await runClaude({ ...cfg, claudeBin: bin }, plan, 'kb-task-1');
   const seen = JSON.parse(reply.content) as { args: string[]; oauth: string; base: string; headers: string; input: string };
   assert.deepEqual(seen.args.slice(0, 6), ['-p', '--model', 'sonnet', '--no-session-persistence', '--output-format', 'json']);

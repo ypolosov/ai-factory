@@ -20,7 +20,9 @@ curl -fsS -H @.state/kb/admin.header -H 'content-type: application/json' --data 
 	"http://127.0.0.1:$KB_PORT/api/chat/send-chat-message" >"$tmp.out"
 jq -r --arg s "$(($(date +%s) - start))" '
 	if .error_msg then "ошибка: " + .error_msg else
-	.answer + "\n\nИсточники:\n" + ([.citation_info[]? as $c | .top_documents[]?
-		| select(.document_id == $c.document_id)
-		| "[\($c.citation_number)] \(.semantic_identifier) - \(.link)"] | unique | join("\n"))
+	.top_documents as $docs
+	| .answer + "\n\nИсточники:\n" + ([.citation_info[]? as $c
+		| ([$docs[]? | select(.document_id == $c.document_id)][0]) as $d
+		| select($d != null)
+		| "[\($c.citation_number)] \($d.semantic_identifier) - \($d.link)"] | unique | join("\n"))
 	+ "\n\n(" + $s + " с)" end' "$tmp.out"

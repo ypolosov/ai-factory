@@ -250,7 +250,9 @@ services:
     environment:
       GATEWAY_URL: http://gateway:4000
       CLAUDE_MODEL: ${KB_CLAUDE_CLI_MODEL:-sonnet}
-      MAX_PARALLEL: "2"
+      MAX_PARALLEL: "3"
+      # Onyx: первым шагом - поиск базы знаний (модель по подписке иначе часто отвечает без него).
+      FORCE_FIRST_TOOL: internal_search
     volumes:
       - ./.state/claude-cli:/secrets:ro
     tmpfs: [/tmp]

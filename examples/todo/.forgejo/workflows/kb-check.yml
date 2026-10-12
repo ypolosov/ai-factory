@@ -1,0 +1,26 @@
+# Сверка базы знаний: раз в сутки и по запросу сверщик ищет утверждения вики и записей
+# решений, которые противоречат коду и действующей спецификации, и заводит задачи
+# хозяину сведений с цитатами обеих сторон (factory-reconcile). Решает человек.
+name: kb-check
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    runs-on: agent
+    timeout-minutes: 30
+    steps:
+      - name: Сверка вики и решений с кодом
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GATEWAY_URL: http://gateway:4000
+          GATEWAY_KEY: ${{ secrets.AGENT_SUB_GATEWAY_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Поиск базы знаний (MCP Onyx) - если база поднята (scripts/kb-up.sh).
+          KB_MCP_URL: http://kb/mcp
+          KB_MCP_TOKEN: ${{ secrets.KB_MCP_TOKEN }}
+        run: factory-reconcile
