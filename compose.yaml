@@ -256,6 +256,23 @@ services:
     tmpfs: [/tmp]
     networks: [factory]
 
+  # Загрузка Forgejo -> база знаний (Onyx, scripts/kb-up.sh): основная ветка, задачи и PR
+  # репозиториев приложений; профиль kb - только вместе с базой.
+  kbsync:
+    build: images/kbsync
+    image: factory/kbsync:stand
+    profiles: [kb]
+    restart: unless-stopped
+    read_only: true
+    environment:
+      FORGEJO_URL: http://forgejo:3000
+      FORGEJO_PUBLIC_URL: http://127.0.0.1:${FORGEJO_HTTP_PORT:-3000}
+      KB_URL: http://kb
+      KB_REPOS: ${KB_REPOS:-factory-admin/todo factory-admin/hello}
+    volumes:
+      - ./.state/kbsync:/secrets:ro
+    networks: [factory]
+
   gateway:
     image: cr.agentgateway.dev/agentgateway:v1.6.0
     restart: unless-stopped
