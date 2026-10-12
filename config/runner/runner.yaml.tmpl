@@ -6,7 +6,8 @@ log:
   job_level: info
 runner:
   file: .runner
-  capacity: 1
+  # Параллельных заданий: у runner проверок - 2, чтобы долгое ревью ИИ не держало остальные.
+  capacity: @CAPACITY@
   timeout: 1h
   shutdown_timeout: 5m
   insecure: false

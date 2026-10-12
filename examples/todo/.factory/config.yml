@@ -40,3 +40,5 @@ gate:
   human_from: 80
   max_spread: 15
   max_iterations: 3
+  # Мутационное тестирование изменённого кода: доля убитых мутантов не ниже, %.
+  mutation_break: 60

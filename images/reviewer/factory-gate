@@ -1,0 +1,186 @@
+#!/bin/sh
+# Ворота ИИ для PR агента-разработчика (ветка agent/issue-N, заголовок "agent: ...").
+# После детерминированных проверок PR оценивают судьи - модели шлюза из семейств,
+# отличных от модели разработки (PR-Agent, режим простого диффа: без описания PR и
+# настроек из ветки). Решение по .factory/config.yml основной ветки (раздел gate):
+#   - красные проверки или оценка ниже rework_below, или changes_required - доработка
+#     агентом (повторная метка задачи), не больше max_iterations кругов;
+#   - замечания по безопасности, большой разброс оценок, середина шкалы, нет оценки,
+#     круги исчерпаны - решение человека;
+#   - оценка от human_from - готово для человека.
+# Агенту в замечаниях уходят находки и красные проверки, но не оценка: она - в статусе
+# коммита "factory / ai-gate" для человека.
+#
+# Окружение: FORGEJO_URL, REPO, PR, SHA, BRANCH, BOT_TOKEN, GATEWAY_URL, GATEWAY_KEY,
+#   CHECKS ("имя=результат ..." детерминированных проверок), CONFIG (.factory/config.yml).
+# Код выхода: 0 - готово или решение человека, 1 - доработка или красные проверки.
+set -eu
+: "${FORGEJO_URL:?}" "${REPO:?}" "${PR:?}" "${SHA:?}" "${BRANCH:?}" "${BOT_TOKEN:?}"
+: "${GATEWAY_URL:?}" "${GATEWAY_KEY:?}" "${CHECKS:?}" "${CONFIG:?}"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$tmp/auth"
+chmod 600 "$tmp/auth"
+api() {
+	_m=$1
+	_p=$2
+	shift 2
+	curl -fsS -X "$_m" -H @"$tmp/auth" -H 'Content-Type: application/json' "$FORGEJO_URL/api/v1$_p" "$@"
+}
+cfg() { yq "$1" "$CONFIG"; }
+
+case $BRANCH in
+agent/issue-*) issue=${BRANCH#agent/issue-} ;;
+*)
+	echo "не PR агента - ворота ИИ не применяются"
+	exit 0
+	;;
+esac
+case $(api GET "/repos/$REPO/pulls/$PR" | jq -r .title) in
+agent:*) ;;
+*)
+	echo "PR не разработки (spec, tests) - ворота ИИ не применяются"
+	exit 0
+	;;
+esac
+
+rework_below=$(cfg '.gate.rework_below // 60')
+human_from=$(cfg '.gate.human_from // 80')
+max_spread=$(cfg '.gate.max_spread // 15')
+max_iter=$(cfg '.gate.max_iterations // 3')
+# Круги: коммиты агента в ветке (без слияний с main).
+iter=$(api GET "/repos/$REPO/pulls/$PR/commits" | jq '[.[] | select(.author.login == "factory-bot"
+	or .commit.author.name == "factory-bot") | select(.parents | length < 2)] | length')
+
+# status СОСТОЯНИЕ ОПИСАНИЕ - статус "factory / ai-gate" на коммите для человека.
+status() {
+	jq -n --arg s "$1" --arg d "$2" '{state: $s, context: "factory / ai-gate", description: $d}' >"$tmp/st.json"
+	api POST "/repos/$REPO/statuses/$SHA" --data @"$tmp/st.json" >/dev/null
+}
+# label ИМЯ - метка решения ворот на PR (прежние метки ai:* снимаются).
+label() {
+	for _old in $(api GET "/repos/$REPO/issues/$PR/labels" | jq -r '.[] | select(.name | startswith("ai:")) | .id'); do
+		api DELETE "/repos/$REPO/issues/$PR/labels/$_old" >/dev/null
+	done
+	_id=$(api GET "/repos/$REPO/labels" | jq -r --arg n "$1" '.[] | select(.name == $n) | .id')
+	[ -z "$_id" ] || api POST "/repos/$REPO/issues/$PR/labels" --data "{\"labels\":[$_id]}" >/dev/null
+}
+comment() {
+	jq -n --rawfile b "$1" '{body: $b}' >"$tmp/c.json"
+	api POST "/repos/$REPO/issues/$PR/comments" --data @"$tmp/c.json" >/dev/null
+}
+# rework ПРИЧИНА - замечания уже в комментарии; повторная метка задачи запускает агента.
+rework() {
+	if [ "$iter" -ge "$max_iter" ]; then
+		label ai:needs-human
+		status failure "кругов доработки $iter из $max_iter - нужно решение человека: $1"
+		echo "доработка не запущена: круги исчерпаны ($iter из $max_iter)"
+		exit 1
+	fi
+	_l=$(api GET "/repos/$REPO/issues/$issue/labels" | jq -r '[.[] | select(.name == "agent")][0].id // empty')
+	[ -n "$_l" ] || {
+		label ai:needs-human
+		status failure "на задаче #$issue нет метки agent - нужно решение человека"
+		exit 1
+	}
+	api DELETE "/repos/$REPO/issues/$issue/labels/$_l" >/dev/null
+	api POST "/repos/$REPO/issues/$issue/labels" --data "{\"labels\":[$_l]}" >/dev/null
+	label ai:rework
+	status failure "на доработке агентом, круг $((iter + 1)) из $max_iter: $1"
+	echo "доработка запущена: круг $((iter + 1)) из $max_iter"
+	exit 1
+}
+
+# 1. Детерминированные проверки.
+failed=""
+for c in $CHECKS; do
+	[ "${c#*=}" = success ] || failed="$failed ${c%%=*}"
+done
+if [ -n "$failed" ]; then
+	# shellcheck disable=SC2016 # обратные кавычки - разметка markdown
+	printf '## Ворота: не прошли обязательные проверки\n\n%s\n\nПочини их; подробности - в журналах проверок PR.\n' \
+		"$(for f in $failed; do printf -- '- `%s`\n' "$f"; done)" >"$tmp/fb.md"
+	comment "$tmp/fb.md"
+	rework "красные проверки:$failed"
+fi
+
+# 2. Судьи: модели ревью из семейств, отличных от модели разработки.
+dev_model=$(cfg '.roles.dev.model // "default"')
+dev_family=$(cfg ".families[\"$dev_model\"] // \"?\"")
+judges=$(cfg '.roles.review.models // [] | .[]' | while read -r m; do
+	[ "$(cfg ".families[\"$m\"] // \"?\"")" != "$dev_family" ] && echo "$m"
+done)
+[ -n "$judges" ] || {
+	label ai:needs-human
+	status success "нет судей другого семейства, чем у модели разработки ($dev_family) - решение человека"
+	exit 0
+}
+
+curl -fsS -H @"$tmp/auth" "$FORGEJO_URL/api/v1/repos/$REPO/pulls/$PR.diff" -o "$tmp/pr.diff"
+# Задача - как контекст для судьи (не из ветки PR, а из трекера).
+api GET "/repos/$REPO/issues/$issue" | jq -r '"# " + .title + "\n\n" + .body' >"$tmp/task.md"
+for j in $judges; do
+	(
+		cd "$tmp"
+		instr="Задача, которую решает PR: $(head -c 4000 task.md)"
+		hdrs=$(jq -nc --arg k "$GATEWAY_KEY" --arg t "gate-pr-$PR-$j" '{"x-gateway-key": $k, "x-task-id": $t}')
+		export CONFIG__MODEL="openai/$j" CONFIG__FALLBACK_MODELS="[]" CONFIG__CUSTOM_MODEL_MAX_TOKENS=128000 \
+			CONFIG__RESPONSE_LANGUAGE=ru-RU CONFIG__PROPAGATE_TOOL_ERRORS=true CONFIG__TEMPERATURE=0 \
+			PR_REVIEWER__REQUIRE_SCORE_REVIEW=true PR_REVIEWER__REQUIRE_MERGE_RECOMMENDATION=true \
+			PR_REVIEWER__REQUIRE_RISK_ASSESSMENT=true PR_REVIEWER__NUM_MAX_FINDINGS=5 \
+			PR_REVIEWER__EXTRA_INSTRUCTIONS="$instr" LITELLM__EXTRA_HEADERS="$hdrs" \
+			OPENAI__API_BASE="$GATEWAY_URL/v1" OPENAI__KEY=unused
+		python /app/pr_agent/cli.py --diff-file pr.diff --json-output "review-$j.json" review >"review-$j.log" 2>&1 ||
+			echo "судья $j: сбой, см. журнал" >&2
+	)
+done
+
+# 3. Решение.
+jq -s '[.[] | .review | {score: (.score | tonumber? // null), sec: (.security_concerns // "" | tostring),
+	merge: (.merge_recommendation // "" | tostring), risk: (.risk_level // "" | tostring),
+	issues: (.key_issues_to_review // [])}]' "$tmp"/review-*.json >"$tmp/all.json" 2>/dev/null || echo '[]' >"$tmp/all.json"
+n=$(jq length "$tmp/all.json")
+scores=$(jq -r '[.[].score | select(. != null)] | map(tostring) | join(", ")' "$tmp/all.json")
+min=$(jq '[.[].score | select(. != null)] | min // -1' "$tmp/all.json")
+max=$(jq '[.[].score | select(. != null)] | max // -1' "$tmp/all.json")
+nscored=$(jq '[.[].score | select(. != null)] | length' "$tmp/all.json")
+nj=$(printf '%s\n' "$judges" | grep -c .)
+sec=$(jq -r '[.[] | select(.sec != "" and .sec != "No")] | length' "$tmp/all.json")
+changes=$(jq -r '[.[] | select(.merge == "changes_required")] | length' "$tmp/all.json")
+echo "судьи: $(printf '%s' "$judges" | tr '\n' ' '); оценки: ${scores:-нет}; круг: $iter из $max_iter"
+
+# Находки судей - агенту и человеку, без оценок.
+jq -r '"## Ворота: находки ревью\n\n" + ([.[].issues[]? | "- **" + (.issue_header // "замечание") + "** (`"
+	+ (.relevant_file // "?") + "`): " + (.issue_content // "")] | unique | join("\n"))
+	+ ([.[] | select(.sec != "" and .sec != "No") | "\n\nБезопасность: " + .sec] | join(""))' "$tmp/all.json" >"$tmp/fb.md"
+
+if [ "$n" -lt "$nj" ] || [ "$nscored" -lt "$nj" ]; then
+	label ai:needs-human
+	status success "нет оценки от части судей (${scores:-нет}) - решение человека"
+	exit 0
+fi
+if [ "$sec" -gt 0 ]; then
+	comment "$tmp/fb.md"
+	label ai:needs-human
+	status success "оценки $scores; есть замечания по безопасности - решение человека"
+	exit 0
+fi
+if [ "$min" -lt "$rework_below" ] || [ "$changes" -gt 0 ]; then
+	comment "$tmp/fb.md"
+	rework "оценки ниже порога или нужны изменения"
+fi
+if [ $((max - min)) -gt "$max_spread" ]; then
+	comment "$tmp/fb.md"
+	label ai:needs-human
+	status success "оценки $scores расходятся больше чем на $max_spread - решение человека"
+	exit 0
+fi
+if [ "$min" -ge "$human_from" ]; then
+	label ai:ready-for-human
+	status success "оценки $scores - готово для человека"
+	exit 0
+fi
+comment "$tmp/fb.md"
+label ai:needs-human
+status success "оценки $scores - решение человека"

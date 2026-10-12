@@ -1,0 +1,29 @@
+#!/bin/sh
+# Мутационное тестирование изменённого кода PR (StrykerJS, настройки фабрики, а не
+# репозитория): Stryker портит код изменённых файлов и проверяет, что модульные тесты
+# это ловят. Доля убитых мутантов ниже порога - проверка красная. Мутанты запускают
+# код проекта, поэтому Stryker идёт через factory-untrusted.
+#
+# Использование (из каталога проекта после npm ci): factory-mutation ПОРОГ ФАЙЛ...
+set -eu
+threshold=${1:?порог}
+shift
+[ $# -gt 0 ] || {
+	echo "нет изменённых файлов кода - мутационное тестирование не нужно"
+	exit 0
+}
+cfg=$(mktemp /tmp/stryker.XXXXXX)
+mv "$cfg" "$cfg.json"
+cfg=$cfg.json
+jq -n --argjson b "$threshold" '{
+	testRunner: "command",
+	commandRunner: {command: "node --test \"test/**/*.test.ts\""},
+	mutate: $ARGS.positional,
+	thresholds: {high: 80, low: $b, break: $b},
+	reporters: ["clear-text", "progress"],
+	coverageAnalysis: "off",
+	concurrency: 2
+}' --args "$@" >"$cfg"
+chmod 644 "$cfg"
+echo "мутируются: $*; порог: $threshold%"
+factory-untrusted stryker run "$cfg"

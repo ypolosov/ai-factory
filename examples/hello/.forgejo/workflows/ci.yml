@@ -79,7 +79,9 @@ jobs:
         env:
           CONFIG__GIT_PROVIDER: gitea
           CONFIG__MODEL: openai/hard
-          CONFIG__FALLBACK_MODELS: "[]"
+          # Совет человеку: при сбое или медленном ответе основной модели - запасная.
+          CONFIG__FALLBACK_MODELS: '["openai/alt"]'
+          CONFIG__AI_TIMEOUT: "90"
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
           CONFIG__RESPONSE_LANGUAGE: ru-RU
           CONFIG__PUBLISH_OUTPUT_PROGRESS: "false"

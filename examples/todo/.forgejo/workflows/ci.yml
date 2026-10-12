@@ -53,6 +53,23 @@ jobs:
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: cd work && factory-acceptance "${{ github.server_url }}" "${{ github.repository }}" "$BRANCH"
 
+  mutation:
+    runs-on: ci
+    steps:
+      - name: Рабочая копия PR и изменённый код
+        run: |
+          git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
+          git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
+          git -C work diff --name-only origin/main...HEAD -- 'src/*.ts' | grep -v '\.d\.ts$' > changed.txt || true
+          chown -R node:node work
+      - name: Зависимости разработки (без скриптов установки)
+        run: cd work && factory-untrusted npm ci --ignore-scripts --no-audit --no-fund
+      - name: Мутационное тестирование изменённого кода (StrykerJS)
+        run: |
+          threshold=$(yq '.gate.mutation_break // 60' work/.factory/config.yml)
+          # shellcheck disable=SC2046
+          cd work && factory-mutation "$threshold" $(cat ../changed.txt)
+
   secrets:
     runs-on: ci
     steps:
@@ -101,6 +118,35 @@ jobs:
           : > .semgrepignore
           opengrep scan --config /etc/factory/checks/opengrep.yml --disable-nosem --error --quiet .
 
+  # Ворота ИИ: после детерминированных проверок PR агента-разработчика оценивают судьи
+  # других семейств моделей; низкая оценка или красные проверки - доработка агентом,
+  # высокая - человеку (factory-gate, пороги - .factory/config.yml).
+  gate:
+    needs: [test, types, acceptance, mutation, secrets, deps, sast]
+    if: always()
+    runs-on: ci
+    container:
+      image: factory/reviewer:stand
+    steps:
+      - name: Настройки фабрики - из основной ветки
+        run: git clone -q --depth 1 "${{ github.server_url }}/${{ github.repository }}.git" base
+      - name: Оценка судьями и решение
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GATEWAY_URL: http://gateway:4000
+          GATEWAY_KEY: ${{ secrets.AGENT_GATEWAY_KEY }}
+          CONFIG: base/.factory/config.yml
+          CHECKS: >-
+            test=${{ needs.test.result }} types=${{ needs.types.result }}
+            acceptance=${{ needs.acceptance.result }} mutation=${{ needs.mutation.result }}
+            secrets=${{ needs.secrets.result }} deps=${{ needs.deps.result }} sast=${{ needs.sast.result }}
+        run: factory-gate
+
   review:
     runs-on: ci
     container:
@@ -110,7 +156,9 @@ jobs:
         env:
           CONFIG__GIT_PROVIDER: gitea
           CONFIG__MODEL: openai/hard
-          CONFIG__FALLBACK_MODELS: "[]"
+          # Совет человеку: при сбое или медленном ответе основной модели - запасная.
+          CONFIG__FALLBACK_MODELS: '["openai/alt"]'
+          CONFIG__AI_TIMEOUT: "90"
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
           CONFIG__RESPONSE_LANGUAGE: ru-RU
           CONFIG__PUBLISH_OUTPUT_PROGRESS: "false"

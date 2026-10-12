@@ -1,0 +1,23 @@
+# Задачи из спецификации: после слияния изменения OpenSpec в main бот заводит задачу
+# Forgejo на каждый пункт tasks.md (без дублей) с зависимостями между ними.
+# Метку роли на задачу ставит человек.
+name: tasks
+on:
+  push:
+    branches: [main]
+    paths: ["openspec/changes/*/tasks.md"]
+
+jobs:
+  issues:
+    runs-on: ci
+    steps:
+      - name: Основная ветка
+        run: git clone -q --depth 1 "${{ github.server_url }}/${{ github.repository }}.git" repo
+      - name: Задачи Forgejo из tasks.md
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: |
+          for t in repo/openspec/changes/*/tasks.md; do
+            [ -f "$t" ] || continue
+            factory-tasks "${{ github.server_url }}" "${{ github.repository }}" "$(dirname "$t")"
+          done

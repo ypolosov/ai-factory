@@ -38,15 +38,17 @@ RUN cd /tmp \
 # Версии закреплены. Claude Code - проприетарный CLI, в фабрике он сменный
 # исполнитель для подписки владельца; остальные - открытые (MIT, Apache-2.0).
 # OpenSpec (MIT) - спецификации в репозитории: его навыки вызывают CLI openspec.
+# StrykerJS (Apache-2.0) - мутационное тестирование в проверках PR с настройками фабрики.
 RUN npm install -g \
 	opencode-ai@1.19.0 \
 	@openai/codex@0.162.1 \
 	@anthropic-ai/claude-code@2.1.296 \
 	@fission-ai/openspec@1.13.2 \
+	@stryker-mutator/core@10.0.0 \
 	&& npm cache clean --force
 
 COPY opencode.json /etc/factory/opencode.json
-COPY factory-agent factory-publish factory-untrusted factory-role factory-feedback factory-tasks factory-acceptance /usr/local/bin/
+COPY factory-agent factory-publish factory-untrusted factory-role factory-feedback factory-tasks factory-acceptance factory-mutation /usr/local/bin/
 COPY prompts /etc/factory/prompts
 COPY checks /etc/factory/checks
 

@@ -96,7 +96,10 @@ log "main защищена: пишет и сливает только $owner, н
 api GET "/repos/$repo/labels" >"$tmp/labels.json"
 for spec in "agent|#bf4520|разработка: задачу берёт агент-разработчик" \
 	"agent:spec|#6f42c1|спецификация: изменение OpenSpec пишет агент-аналитик" \
-	"agent:tests|#0e7a5f|приёмочные тесты по спецификации пишет агент-тестировщик"; do
+	"agent:tests|#0e7a5f|приёмочные тесты по спецификации пишет агент-тестировщик" \
+	"ai:rework|#d97706|ворота ИИ: PR на доработке у агента" \
+	"ai:needs-human|#b91c1c|ворота ИИ: нужно решение человека" \
+	"ai:ready-for-human|#15803d|ворота ИИ: готово для слияния человеком"; do
 	lname=${spec%%|*}
 	rest=${spec#*|}
 	if ! jq -e --arg n "$lname" '.[] | select(.name == $n)' "$tmp/labels.json" >/dev/null; then

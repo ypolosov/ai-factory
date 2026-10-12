@@ -106,7 +106,9 @@ ensure_runner() {
 	agent | ci) _image=$AGENT_IMAGE ;;
 	*) _image=docker.io/library/alpine:3.24 ;;
 	esac
-	sed -e "s/@LABEL@/$1/" -e "s|@IMAGE@|$_image|" -e "s/@UUID@/$_uuid/" \
+	_cap=1
+	[ "$1" != ci ] || _cap=2
+	sed -e "s/@LABEL@/$1/" -e "s|@IMAGE@|$_image|" -e "s/@UUID@/$_uuid/" -e "s/@CAPACITY@/$_cap/" \
 		config/runner/runner.yaml.tmpl >"$_dir/runner.yaml.new"
 	# Runner читает настройки только при старте: изменившиеся отмечаем для перезапуска.
 	if cmp -s "$_dir/runner.yaml.new" "$_dir/runner.yaml"; then
@@ -199,21 +201,31 @@ dind() {
 	docker compose exec -T "$_n-dind" docker -H unix:///var/run/dind/docker.sock "$@"
 }
 
-# build_agent_image - собирает образ исполнителя на хосте и загружает в Docker заданий
-# агента и проверок, если содержимое images/agent изменилось с прошлой сборки.
+# build_job_image КАТАЛОГ ОБРАЗ DIND... - собирает образ заданий на хосте и загружает
+# в Docker заданий, если содержимое каталога изменилось с прошлой сборки.
 # Docker заданий в интернет не ходит, поэтому собирать в нём нельзя.
-build_agent_image() {
-	_sum=$(find images/agent -type f -exec sha256sum {} + | sort | sha256sum | cut -c1-16)
-	if [ "$(cat .state/agent-image.sum 2>/dev/null)" = "$_sum" ]; then
+build_job_image() {
+	_dir=$1
+	_img=$2
+	shift 2
+	_sumf=.state/$(basename "$_dir")-image.sum
+	_sum=$(find "$_dir" -type f -exec sha256sum {} + | sort | sha256sum | cut -c1-16)
+	if [ "$(cat "$_sumf" 2>/dev/null)" = "$_sum" ]; then
 		return 0
 	fi
-	log "образ исполнителя: сборка (несколько минут при первом запуске)"
-	docker build -q -t "$AGENT_IMAGE" images/agent >/dev/null
-	for _d in agent ci; do
-		docker save "$AGENT_IMAGE" | dind "$_d" load -q >/dev/null
+	log "образ $_img: сборка (несколько минут при первом запуске)"
+	docker build -q -t "$_img" "$_dir" >/dev/null
+	for _d in "$@"; do
+		docker save "$_img" | dind "$_d" load -q >/dev/null
 	done
-	printf '%s' "$_sum" >.state/agent-image.sum
-	log "образ исполнителя: $AGENT_IMAGE готов"
+	printf '%s' "$_sum" >"$_sumf"
+	log "образ $_img готов"
+}
+
+# build_agent_image - образ исполнителя (агенты и проверки) и образ ревьюера (ворота ИИ).
+build_agent_image() {
+	build_job_image images/agent "$AGENT_IMAGE" agent ci
+	build_job_image images/reviewer factory/reviewer:stand ci
 }
 
 # preload_job_images - готовые образы заданий (container: image: в workflow шаблонов)
