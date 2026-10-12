@@ -3,7 +3,7 @@
 SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
 	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
 	images/agent/factory-publish images/agent/factory-untrusted images/agent/factory-role images/agent/factory-feedback images/agent/factory-tasks images/agent/factory-acceptance images/agent/factory-mutation images/agent/factory-npm-ci images/agent/factory-pr-comment images/reviewer/factory-gate images/deployer/deployer \
-	scripts/deploy.sh scripts/rollback.sh scripts/rework.sh
+	scripts/deploy.sh scripts/rollback.sh scripts/rework.sh scripts/task-report.sh
 
 check:
 	shellcheck -x -P . $(SCRIPTS)
