@@ -3,7 +3,10 @@
 # Работает в отдельном задании без ключа модели; токен записи - только здесь.
 #
 # Вход: --result КАТАЛОГ (agent.patch, run.json от factory-agent); FORGEJO_URL
-#       (внутренний адрес), REPO (владелец/имя), ISSUE (номер), ISSUE_TITLE, BOT_TOKEN.
+#       (внутренний адрес), REPO (владелец/имя), ISSUE (номер), ISSUE_TITLE, BOT_TOKEN;
+#       правила путей роли (из .factory/config.yml основной ветки): FACTORY_PROTECTED_PATHS -
+#       префиксы, которые менять нельзя (по умолчанию .forgejo/ .github/ .factory/),
+#       FACTORY_ALLOWED_PATHS - если задан, менять можно только под этими префиксами.
 # Выход: ветка agent/issue-НОМЕР и PR "Closes #НОМЕР".
 set -eu
 
@@ -21,11 +24,27 @@ result=$(cd "$result" && pwd)
 patch=$result/agent.patch
 [ -s "$patch" ] || { echo "агент не внёс изменений - PR не нужен" >&2 && exit 1; }
 
-# Детерминированные ворота до любой записи. Пути смотрим во всех заголовках
-# патча, включая переименования и копирование.
-if grep -E '^(diff --git |rename (from|to) |copy (from|to) |\+\+\+ |--- )' "$patch" |
-	grep -Eq '(^|[ /])\.(forgejo|github)/'; then
-	echo "патч меняет CI (.forgejo/ или .github/) - отклонён" >&2
+# Детерминированные ворота до любой записи. Пути - из всех заголовков патча,
+# включая переименования и копирование.
+protected=${FACTORY_PROTECTED_PATHS:-.forgejo/ .github/ .factory/}
+allowed=${FACTORY_ALLOWED_PATHS:-}
+violations=$(awk '/^diff --git a\// { s = $0; sub(/^diff --git a\//, "", s); i = index(s, " b/")
+		print substr(s, 1, i - 1); print substr(s, i + 3) }
+	/^(rename|copy) (from|to) / { sub(/^(rename|copy) (from|to) /, ""); print }' "$patch" | sort -u |
+	while IFS= read -r f; do
+		for pre in $protected; do
+			case $f in "$pre"*) echo "  защищённый путь: $f" ;; esac
+		done
+		if [ -n "$allowed" ]; then
+			ok=""
+			for pre in $allowed; do
+				case $f in "$pre"*) ok=1 ;; esac
+			done
+			[ -n "$ok" ] || echo "  вне разрешённых путей роли: $f"
+		fi
+	done)
+if [ -n "$violations" ]; then
+	printf 'патч отклонён:\n%s\n' "$violations" >&2
 	exit 1
 fi
 lines=$(git apply --numstat "$patch" | awk '{ s += $1 + $2 } END { print s + 0 }')
@@ -49,14 +68,18 @@ git apply --check "$patch"
 branch=agent/issue-$ISSUE
 git switch -q -c "$branch"
 git apply --index "$patch"
-git -c user.name=factory-bot -c user.email=bot@factory.local commit -q -m "agent: #$ISSUE $ISSUE_TITLE"
+run=$(cat "$result/run.json")
+# Заголовок по роли: agent (разработка), spec (спецификация), tests (приёмочные тесты).
+role=$(printf '%s' "$run" | jq -r '.role // "dev"')
+prefix=$([ "$role" = dev ] && echo agent || echo "$role")
+git -c user.name=factory-bot -c user.email=bot@factory.local commit -q -m "$prefix: #$ISSUE $ISSUE_TITLE"
 git push -q -f origin "$branch"
 
-run=$(cat "$result/run.json")
 body=$(jq -n --arg issue "$ISSUE" --argjson run "$run" \
-	'"Closes #" + $issue + "\n\nИсполнитель: " + $run.executor + ", модель: " + $run.model
-	+ ", задача шлюза: " + $run.task_id + ", время: " + ($run.seconds | tostring) + " с."')
-data=$(jq -n --arg head "$branch" --arg title "agent: $ISSUE_TITLE" --argjson body "$body" \
+	'"Closes #" + $issue + "\n\nРоль: " + ($run.role // "dev") + ", исполнитель: " + $run.executor
+	+ ", модель: " + $run.model + ", задача шлюза: " + $run.task_id
+	+ ", время: " + ($run.seconds | tostring) + " с."')
+data=$(jq -n --arg head "$branch" --arg title "$prefix: $ISSUE_TITLE" --argjson body "$body" \
 	'{head: $head, base: "main", title: $title, body: $body}')
 code=$(curl -s -o "$work/pr.json" -w '%{http_code}' -X POST \
 	-H @"$work/auth.header" -H 'Content-Type: application/json' \

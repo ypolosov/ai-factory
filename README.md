@@ -14,6 +14,8 @@
 ./scripts/gateway-check.sh  # ключи шлюза, ограничения по моделям, открытая модель, учёт по задаче
 ./scripts/setup-repo.sh hello   # репозиторий из examples/hello: бот, защита main, метка agent, секреты
 ./scripts/new-task.sh hello "Приветствие hello world" examples/tasks/hello-world.md  # задача -> PR -> проверки
+./scripts/setup-repo.sh todo    # репозиторий из examples/todo: OpenSpec, роли агентов, метки ролей
+./scripts/new-task.sh todo "Спецификация: todo list" examples/tasks/todo-spec.md agent:spec  # спецификация -> PR
 ```
 
 Forgejo: http://127.0.0.1:3000, вход `factory-admin`, пароль - в `.state/admin.password`.
@@ -67,6 +69,12 @@ codex exec --skip-git-repo-check -s read-only -c model_provider=gw \
   -c "model_providers.gw={name=\"gateway\",base_url=\"http://127.0.0.1:4000/v1\",wire_api=\"responses\",requires_openai_auth=true,http_headers={\"x-gateway-key\"=\"$(cat .state/gw-agent-sub.key)\",\"x-task-id\"=\"manual-2\"}}" \
   "Ответь одним словом: ok"
 ```
+
+## Роли агентов и спецификации
+
+Метка на задаче выбирает роль агента: `agent` - разработка, `agent:spec` - спецификация, `agent:tests` - приёмочные тесты. Исполнитель, модель и разрешённые пути роли берутся из `.factory/config.yml` основной ветки репозитория (шаблон - `examples/todo`); без файла - из переменных репозитория `FACTORY_EXECUTOR` и `FACTORY_MODEL`. Ворота публикации отклоняют патч, который меняет пути вне правил роли: спецификация меняет только `openspec/`, тестировщик - только `tests/acceptance/`, разработчик - всё, кроме `.forgejo/`, `.github/`, `.factory/`, `openspec/` и `tests/acceptance/`. Сам файл настроек не может поменять ни одна роль.
+
+Спецификации - OpenSpec 1.13.2 (MIT): живые требования в `openspec/specs/`, изменения - в `openspec/changes/<имя>/` по схеме фабрики `openspec/schemas/factory`: замысел, требования со сценариями, архитектурные решения (ADR), задачи, план проверки. Навыки OpenSpec лежат в `.agents/skills` (Codex, OpenCode) и `.claude/skills` (Claude Code); правила для агентов - один файл `AGENTS.md`. Почему OpenSpec, а не Spec Kit, BMAD или Superpowers: формат не зависит от обвязки, спецификация живёт вместе с кодом, CLI отдаёт задачи в JSON.
 
 ## Задача -> PR
 

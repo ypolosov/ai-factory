@@ -1,0 +1,42 @@
+# Настройки фабрики для репозитория: роли агентов, правила путей и ворота ревью.
+# Файл защищён: менять его может только человек (ворота публикации и защита ветки).
+# Метка задачи выбирает роль: agent - dev, agent:spec - spec, agent:tests - tests.
+roles:
+  # Замысел, требования, архитектура, задачи и план проверки (OpenSpec).
+  spec:
+    executor: claude
+    model: opus
+    paths:
+      allowed: [openspec/]
+  # Приёмочные тесты по сценариям спецификации - до разработки.
+  tests:
+    executor: codex
+    model: default
+    paths:
+      allowed: [tests/acceptance/]
+  # Разработка одной задачи из tasks.md.
+  dev:
+    executor: opencode
+    model: default
+    paths:
+      protected: [.forgejo/, .github/, .factory/, openspec/, tests/acceptance/]
+  # Судьи ревью - модели шлюза из семейств, отличных от модели разработки.
+  review:
+    models: [alt, qwen]
+
+# Семейства моделей: судья ревью не должен быть из семейства автора кода.
+families:
+  default: zhipu
+  hard: zhipu
+  alt: deepseek
+  qwen: qwen
+  sonnet: anthropic
+  opus: anthropic
+
+# Ворота ревью: ниже rework_below - на доработку (не больше max_iterations кругов);
+# от human_from и без замечаний по безопасности - человеку; остальное - тоже человеку.
+gate:
+  rework_below: 60
+  human_from: 80
+  max_spread: 15
+  max_iterations: 3

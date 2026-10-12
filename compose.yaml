@@ -149,7 +149,7 @@ services:
     environment:
       DOCKER_HOST: unix:///var/run/dind/docker.sock
       FORGEJO_URL: http://forgejo:3000
-      DEPLOY_APPS: ${DEPLOY_APPS:-factory-admin/hello=8080}
+      DEPLOY_APPS: ${DEPLOY_APPS:-factory-admin/hello=8080 factory-admin/todo=8081}
       STAND_HOST: deploy-dind
       STAND_PUBLIC_HOST: 127.0.0.1
     volumes:

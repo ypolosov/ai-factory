@@ -1,0 +1,34 @@
+#!/bin/sh
+# Настройки роли агента из .factory/config.yml репозитория - строками КЛЮЧ=ЗНАЧЕНИЕ
+# для $GITHUB_ENV. Нет файла или роли в нём - значения по умолчанию из окружения.
+#
+# Использование: factory-role РОЛЬ ФАЙЛ_НАСТРОЕК
+# Выход: FACTORY_ROLE, FACTORY_EXECUTOR, FACTORY_MODEL, FACTORY_ALLOWED_PATHS, FACTORY_PROTECTED_PATHS.
+set -eu
+role=${1:?нужна роль}
+cfg=${2:?нужен файл настроек}
+case $role in
+*[!a-z]*) echo "плохая роль: $role" >&2 && exit 2 ;;
+esac
+
+executor=${FACTORY_EXECUTOR:-opencode}
+model=${FACTORY_MODEL:-default}
+allowed=""
+protected=".forgejo/ .github/ .factory/"
+if [ -f "$cfg" ]; then
+	[ "$(yq ".roles.$role // \"\"" "$cfg")" != "" ] || {
+		echo "в $cfg нет роли $role" >&2
+		exit 2
+	}
+	executor=$(yq ".roles.$role.executor // \"$executor\"" "$cfg")
+	model=$(yq ".roles.$role.model // \"$model\"" "$cfg")
+	allowed=$(yq ".roles.$role.paths.allowed // [] | join(\" \")" "$cfg")
+	protected=$(yq ".roles.$role.paths.protected // [] | join(\" \")" "$cfg")
+	[ -n "$protected" ] || protected=".forgejo/ .github/ .factory/"
+fi
+case $executor in
+opencode | claude | codex) ;;
+*) echo "неизвестный исполнитель: $executor" >&2 && exit 2 ;;
+esac
+printf 'FACTORY_ROLE=%s\nFACTORY_EXECUTOR=%s\nFACTORY_MODEL=%s\nFACTORY_ALLOWED_PATHS=%s\nFACTORY_PROTECTED_PATHS=%s\n' \
+	"$role" "$executor" "$model" "$allowed" "$protected"

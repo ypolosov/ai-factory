@@ -1,4 +1,7 @@
-# Задача с меткой agent -> агент в песочнице -> PR от бота.
+# Задача с меткой -> агент нужной роли в песочнице -> PR от бота.
+# Метка выбирает роль: agent - разработка, agent:spec - спецификация, agent:tests -
+# приёмочные тесты. Исполнитель, модель и разрешённые пути роли - из .factory/config.yml
+# основной ветки (нет файла - переменные репозитория FACTORY_EXECUTOR и FACTORY_MODEL).
 # Два задания: агент работает без права записи в git, а PR открывает задание
 # без ключа модели. Патч передаётся между ними артефактом.
 name: agent
@@ -8,12 +11,21 @@ on:
 
 jobs:
   implement:
-    if: github.event.label.name == 'agent'
+    if: github.event.label.name == 'agent' || startsWith(github.event.label.name, 'agent:')
     runs-on: agent
     timeout-minutes: 40
     steps:
       - name: Рабочая копия (только чтение)
         run: git clone -q --depth 1 "${{ github.server_url }}/${{ github.repository }}.git" work
+      - name: Роль, исполнитель и правила путей
+        env:
+          LABEL: ${{ github.event.label.name }}
+          FACTORY_EXECUTOR: ${{ vars.FACTORY_EXECUTOR }}
+          FACTORY_MODEL: ${{ vars.FACTORY_MODEL }}
+        run: |
+          role=${LABEL#agent}
+          role=${role#:}
+          factory-role "${role:-dev}" work/.factory/config.yml | tee -a "$GITHUB_ENV"
       - name: Текст задачи - в файл, как недоверенный ввод
         env:
           TITLE: ${{ github.event.issue.title }}
@@ -22,14 +34,13 @@ jobs:
       - name: Агент
         env:
           GATEWAY_URL: http://gateway:4000
-          # Ключ шлюза своей роли: открытые модели - OpenCode, подписки - Claude Code и Codex.
-          GATEWAY_KEY: ${{ (vars.FACTORY_EXECUTOR || 'opencode') == 'opencode' && secrets.AGENT_GATEWAY_KEY || secrets.AGENT_SUB_GATEWAY_KEY }}
+          # Ключи шлюза обоих путей: factory-agent отдаёт обвязке только ключ её исполнителя.
+          GATEWAY_KEY_API: ${{ secrets.AGENT_GATEWAY_KEY }}
+          GATEWAY_KEY_SUB: ${{ secrets.AGENT_SUB_GATEWAY_KEY }}
           TASK_ID: issue-${{ github.event.issue.number }}-run-${{ github.run_number }}
-          FACTORY_EXECUTOR: ${{ vars.FACTORY_EXECUTOR || 'opencode' }}
-          FACTORY_MODEL: ${{ vars.FACTORY_MODEL || 'default' }}
-          # Вход подписки владельца получает только выбранный исполнитель.
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ vars.FACTORY_EXECUTOR == 'claude' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
-          CODEX_AUTH_JSON: ${{ vars.FACTORY_EXECUTOR == 'codex' && secrets.CODEX_AUTH_JSON || '' }}
+          # Входы подписок владельца: factory-agent отдаёт только вход выбранного исполнителя.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
         run: cd work && factory-agent --task ../task.md --out ../out
       - name: Журнал агента
         if: always()
@@ -49,6 +60,16 @@ jobs:
         with:
           name: agent-result
           path: out
+      - name: Правила путей роли - из основной ветки, а не из результата агента
+        env:
+          LABEL: ${{ github.event.label.name }}
+          FACTORY_EXECUTOR: ${{ vars.FACTORY_EXECUTOR }}
+          FACTORY_MODEL: ${{ vars.FACTORY_MODEL }}
+        run: |
+          git clone -q --depth 1 "${{ github.server_url }}/${{ github.repository }}.git" base
+          role=${LABEL#agent}
+          role=${role#:}
+          factory-role "${role:-dev}" base/.factory/config.yml | tee -a "$GITHUB_ENV"
       - name: Проверка патча и PR от бота
         env:
           FORGEJO_URL: ${{ github.server_url }}

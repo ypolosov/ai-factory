@@ -40,6 +40,9 @@ fi
 if [ -n "${GATUS_CHANGED:-}" ]; then
 	docker compose restart gatus >/dev/null
 fi
+if [ -n "${GATEWAY_CHANGED:-}" ]; then
+	docker compose restart gateway >/dev/null
+fi
 wait_runners agent ci deploy
 wait_gateway
 build_agent_image

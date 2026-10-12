@@ -1,6 +1,7 @@
 #!/bin/sh
-# Заводит задачу с меткой agent и ждёт: прогон агента, PR от бота, статусы проверок PR.
-# Использование: scripts/new-task.sh РЕПОЗИТОРИЙ "Заголовок" ФАЙЛ_С_ОПИСАНИЕМ
+# Заводит задачу с меткой роли и ждёт: прогон агента, PR от бота, статусы проверок PR.
+# Использование: scripts/new-task.sh РЕПОЗИТОРИЙ "Заголовок" ФАЙЛ_С_ОПИСАНИЕМ [МЕТКА]
+# Метка: agent (разработка, по умолчанию), agent:spec (спецификация), agent:tests (приёмочные тесты).
 set -eu
 cd "$(dirname "$0")/.."
 . ./scripts/lib.sh
@@ -10,11 +11,12 @@ load_env
 name=${1:?использование: scripts/new-task.sh РЕПОЗИТОРИЙ ЗАГОЛОВОК ФАЙЛ}
 title=${2:?нужен заголовок}
 body_file=${3:?нужен файл с описанием}
+label_name=${4:-agent}
 [ -f "$body_file" ] || die "нет файла $body_file"
 repo="$FORGEJO_ADMIN_USER/$name"
 
-label=$(api GET "/repos/$repo/labels" | jq -r '.[] | select(.name == "agent") | .id')
-[ -n "$label" ] || die "нет метки agent: сначала scripts/setup-repo.sh $name"
+label=$(api GET "/repos/$repo/labels" | jq -r --arg n "$label_name" '.[] | select(.name == $n) | .id')
+[ -n "$label" ] || die "нет метки $label_name: сначала scripts/setup-repo.sh $name"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

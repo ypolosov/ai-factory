@@ -2,7 +2,7 @@
 
 SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
 	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
-	images/agent/factory-publish images/agent/factory-untrusted images/deployer/deployer \
+	images/agent/factory-publish images/agent/factory-untrusted images/agent/factory-role images/deployer/deployer \
 	scripts/deploy.sh scripts/rollback.sh
 
 check:

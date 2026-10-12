@@ -1,0 +1,91 @@
+# Проверки PR. Детерминированные ворота перед решением человека: тесты, секреты,
+# уязвимые зависимости, статический анализ; без их зелёных статусов main не слить
+# (защиту ставит scripts/setup-repo.sh). Ревью ИИ - совет человеку, слияние не держит.
+# Сканеры берут настройки фабрики (/etc/factory/checks) и не слушают файлы
+# исключений и пометки-подавления из проверяемого кода: PR не может ослабить проверку.
+name: ci
+on: [pull_request]
+
+env:
+  PR_REF: pull/${{ github.event.pull_request.number }}/head
+
+jobs:
+  test:
+    runs-on: ci
+    steps:
+      - name: Рабочая копия PR
+        run: |
+          git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
+          git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
+          chown -R node:node work
+      - name: Тесты (код из PR - недоверенный, без токенов задания)
+        # Команда задана здесь, а не сценарием package.json: PR не может её подменить.
+        run: cd work && factory-untrusted node --test "test/**/*.test.js"
+
+  secrets:
+    runs-on: ci
+    steps:
+      - name: Рабочая копия PR
+        run: |
+          git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
+          git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
+      - name: Секреты в коммитах PR (Gitleaks)
+        run: |
+          # .gitleaksignore Gitleaks читает и из корня проверяемого репозитория, даже
+          # при явном --gitleaks-ignore-path: файлы из PR убираем из рабочей копии.
+          find work -name .git -prune -o -name .gitleaksignore -type f -exec rm -f {} +
+          base=$(git -C work merge-base origin/main HEAD)
+          gitleaks git work --no-banner --redact --log-opts="$base..HEAD" \
+            --config /etc/factory/checks/gitleaks.toml --gitleaks-ignore-path /etc/factory/checks \
+            --ignore-gitleaks-allow
+
+  deps:
+    runs-on: ci
+    steps:
+      - name: Рабочая копия PR
+        run: |
+          git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
+          git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
+      - name: Уязвимые зависимости (OSV-Scanner)
+        run: |
+          rc=0
+          osv-scanner scan source -r --config /etc/factory/checks/osv-scanner.toml work || rc=$?
+          # 128 - в репозитории нет файлов зависимостей: проверять нечего.
+          if [ "$rc" -eq 128 ]; then echo "файлов зависимостей нет"; rc=0; fi
+          exit "$rc"
+
+  sast:
+    runs-on: ci
+    steps:
+      - name: Рабочая копия PR
+        run: |
+          git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
+          git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
+      - name: Статический анализ (Opengrep, правила фабрики)
+        run: |
+          cd work
+          # Файлы исключений из PR не действуют; пустой корневой файл отменяет и
+          # исключения по умолчанию (иначе каталоги test/ не проверяются).
+          find . -name .git -prune -o \( -name .semgrepignore -o -name .opengrepignore \) -type f -exec rm -f {} +
+          : > .semgrepignore
+          opengrep scan --config /etc/factory/checks/opengrep.yml --disable-nosem --error --quiet .
+
+  review:
+    runs-on: ci
+    container:
+      image: docker.io/pragent/pr-agent:0.46.0
+    steps:
+      - name: Ревью ИИ (PR-Agent через шлюз) - совет человеку
+        env:
+          CONFIG__GIT_PROVIDER: gitea
+          CONFIG__MODEL: openai/hard
+          CONFIG__FALLBACK_MODELS: "[]"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
+          CONFIG__RESPONSE_LANGUAGE: ru-RU
+          CONFIG__PUBLISH_OUTPUT_PROGRESS: "false"
+          GITEA__URL: ${{ github.server_url }}
+          GITEA__PERSONAL_ACCESS_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OPENAI__KEY: unused
+          OPENAI__API_BASE: http://gateway:4000/v1
+          LITELLM__EXTRA_HEADERS: '{"x-gateway-key": "${{ secrets.AGENT_GATEWAY_KEY }}", "x-task-id": "pr-${{ github.event.pull_request.number }}-review"}'
+        run: python /app/pr_agent/cli.py --pr_url "${{ github.event.pull_request.html_url }}" review

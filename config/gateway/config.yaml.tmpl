@@ -26,6 +26,8 @@ config:
                 rates: { input: "1.40", output: "4.80" }
               "deepseek/deepseek-v4.1-flash":
                 rates: { input: "0.30", output: "1.20" }
+              "qwen/qwen3.8-flash":
+                rates: { input: "0.15", output: "0.47" }
   # Бюджеты ключей и журнал запросов (токены, цена, время) - в SQLite.
   database:
     url: /db/gateway.sqlite
@@ -60,7 +62,7 @@ llm:
           metadata:
             name: agent-api
             role: agent
-          allowedModels: ["default", "hard", "alt"]
+          allowedModels: ["default", "hard", "alt", "qwen"]
           budgets:
             - name: daily
               limit:
@@ -99,6 +101,13 @@ llm:
       provider: openrouter
       params:
         model: deepseek/deepseek-v4.1-flash
+        apiKey:
+          file: /state/openrouter.key
+    # Другое семейство для судей ревью: судья не должен быть из семейства автора кода.
+    - name: qwen
+      provider: openrouter
+      params:
+        model: qwen/qwen3.8-flash
         apiKey:
           file: /state/openrouter.key
     # Подписка Claude: шлюз не подставляет ключ, токен клиента и anthropic-beta

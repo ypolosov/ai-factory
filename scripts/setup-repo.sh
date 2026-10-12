@@ -88,11 +88,20 @@ else
 fi
 log "main защищена: пишет и сливает только $owner, нужны зелёные test, secrets, deps, sast"
 
-if ! api GET "/repos/$repo/labels" | jq -e '.[] | select(.name == "agent")' >/dev/null; then
-	api POST "/repos/$repo/labels" \
-		--data '{"name":"agent","color":"#bf4520","description":"задачу берёт агент фабрики"}' >/dev/null
-	log "метка agent заведена"
-fi
+# Метки ролей агентов: метка на задаче запускает агента этой роли.
+api GET "/repos/$repo/labels" >"$tmp/labels.json"
+for spec in "agent|#bf4520|разработка: задачу берёт агент-разработчик" \
+	"agent:spec|#6f42c1|спецификация: изменение OpenSpec пишет агент-аналитик" \
+	"agent:tests|#0e7a5f|приёмочные тесты по спецификации пишет агент-тестировщик"; do
+	lname=${spec%%|*}
+	rest=${spec#*|}
+	if ! jq -e --arg n "$lname" '.[] | select(.name == $n)' "$tmp/labels.json" >/dev/null; then
+		jq -n --arg n "$lname" --arg c "${rest%%|*}" --arg d "${rest#*|}" \
+			'{name: $n, color: $c, description: $d}' >"$tmp/label.json"
+		api POST "/repos/$repo/labels" --data @"$tmp/label.json" >/dev/null
+		log "метка $lname заведена"
+	fi
+done
 
 # put_secret ИМЯ ФАЙЛ - секрет репозитория из файла.
 put_secret() {

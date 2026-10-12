@@ -26,7 +26,7 @@ load_env() {
 	: "${GATEWAY_PORT:=4000}" "${GATEWAY_AGENT_DAILY_USD:=2}"
 	: "${AGENT_IMAGE:=factory/agent:stand}"
 	: "${FORGEJO_OPS_USER:=factory-ops}" "${FORGEJO_OPS_EMAIL:=ops@factory.local}"
-	: "${DEPLOY_APPS:=factory-admin/hello=8080}" "${GATUS_PORT:=8100}"
+	: "${DEPLOY_APPS:=factory-admin/hello=8080 factory-admin/todo=8081}" "${GATUS_PORT:=8100}"
 	set +a
 	FORGEJO_URL="http://127.0.0.1:${FORGEJO_HTTP_PORT}"
 }
@@ -142,7 +142,15 @@ ensure_gateway() {
 		-e "s/@AGENT_SUB_HASH@/$(sha256sum .state/gw-agent-sub.key | cut -d' ' -f1)/" \
 		-e "s/@OWNER_HASH@/$(sha256sum .state/gw-owner.key | cut -d' ' -f1)/" \
 		-e "s/@AGENT_DAILY_USD@/$GATEWAY_AGENT_DAILY_USD/" \
-		config/gateway/config.yaml.tmpl >.state/gateway/gateway.yaml
+		config/gateway/config.yaml.tmpl >.state/gateway/gateway.yaml.new
+	# Шлюз читает настройки при старте: изменившиеся отмечаем для перезапуска.
+	if cmp -s .state/gateway/gateway.yaml.new .state/gateway/gateway.yaml; then
+		rm -f .state/gateway/gateway.yaml.new
+	else
+		mv .state/gateway/gateway.yaml.new .state/gateway/gateway.yaml
+		# shellcheck disable=SC2034 # читает scripts/stand-up.sh
+		GATEWAY_CHANGED=1
+	fi
 }
 
 # ensure_deployer - токен бота для статусов выкладки в .state/deployer/ (монтируется целиком).
