@@ -1,6 +1,6 @@
 // Загрузка Forgejo -> база знаний (Onyx). Коннектора Forgejo у Onyx нет: служба сама
 // забирает из репозиториев основную ветку (текстовые файлы, разбитые по заголовкам и
-// кускам с номерами строк), задачи и PR с комментариями и кладёт их в Onyx через его API
+// кускам с номерами строк), вики, задачи и PR с комментариями и кладёт их в Onyx через его API
 // загрузки. Ссылка каждого куска ведёт на файл в Forgejo на этом коммите с номером строки:
 // по ней ответ базы цитирует источник. Удалённое из репозитория удаляется и из базы.
 //
@@ -117,6 +117,32 @@ export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promi
       metadata: { repo, kind: 'file', path: f.path, commit: sha },
       ...(branch.commit.timestamp ? { doc_updated_at: branch.commit.timestamp } : {}),
     });
+  }
+  // Вики репозитория: нет вики - 404, пропускаем.
+  const pagesRes = await fetchFn(`${cfg.forgejoUrl}/api/v1/repos/${repo}/wiki/pages?limit=50`, {
+    headers: { authorization: `token ${cfg.forgejoToken}` },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (pagesRes.ok) {
+    for (const pg of (await pagesRes.json()) as { title: string; sub_url: string }[]) {
+      const page = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/wiki/page/${pg.sub_url}`)).json()) as {
+        content_base64: string;
+        html_url: string;
+        last_commit?: { created?: string };
+      };
+      const text = Buffer.from(page.content_base64 ?? '', 'base64').toString('utf-8');
+      const sections = splitFile(text, `${pg.title}.md`, page.html_url.replace(cfg.forgejoUrl, cfg.publicUrl));
+      if (sections.length === 0) continue;
+      docs.push({
+        id: `forgejo:${repo}:wiki:${pg.sub_url}`,
+        semantic_identifier: `${name} вики: ${pg.title}`,
+        title: `${name} вики: ${pg.title}`,
+        source: 'ingestion_api',
+        sections,
+        metadata: { repo, kind: 'wiki', page: pg.title },
+        ...(page.last_commit?.created ? { doc_updated_at: page.last_commit.created } : {}),
+      });
+    }
   }
   // Задачи и PR - с обсуждением: там решения человека и причины изменений.
   for (const type of ['issues', 'pulls'] as const) {

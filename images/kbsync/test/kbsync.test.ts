@@ -44,7 +44,7 @@ test('код режется кусками по 60 строк', () => {
 });
 
 // Поддельные Forgejo и Onyx.
-function fake(files: Record<string, string>, ingested: string[] = []): { fetch: Fetch; calls: { method: string; url: string; body: unknown }[] } {
+function fake(files: Record<string, string>, ingested: string[] = [], wiki = false): { fetch: Fetch; calls: { method: string; url: string; body: unknown }[] } {
   const calls: { method: string; url: string; body: unknown }[] = [];
   const fn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -63,6 +63,10 @@ function fake(files: Record<string, string>, ingested: string[] = []): { fetch: 
         return Response.json([{ number: 25, title: 'Спецификация', body: 'текст задачи', html_url: 'http://127.0.0.1:3000/factory-admin/todo/issues/25', updated_at: '2026-10-12T11:00:00Z', state: 'closed' }]);
       }
       if (p.endsWith('/issues')) return Response.json([]);
+      if (p.endsWith('/wiki/pages')) return wiki ? Response.json([{ title: 'Эксплуатация', sub_url: 'Эксплуатация' }]) : new Response('нет', { status: 404 });
+      if (p.includes('/wiki/page/')) {
+        return Response.json({ content_base64: Buffer.from('# Эксплуатация\nПорт 3000').toString('base64'), html_url: 'http://127.0.0.1:3000/factory-admin/todo/wiki/%D0%AD' });
+      }
       if (p.endsWith('/comments')) return Response.json([{ body: 'Решение человека: Origin', html_url: 'http://127.0.0.1:3000/factory-admin/todo/issues/25#issuecomment-1', user: { login: 'factory-admin' } }]);
       return new Response('нет', { status: 404 });
     }
@@ -90,6 +94,15 @@ test('документы репозитория: файлы с кусками и
   const issue = docs[2]!;
   assert.equal(issue.semantic_identifier, 'todo задача #25: Спецификация');
   assert.equal(issue.sections[1]!.text, 'factory-admin: Решение человека: Origin');
+});
+
+test('вики репозитория - отдельные документы со ссылкой на страницу', async () => {
+  const { fetch } = fake({ 'README.md': '# todo' }, [], true);
+  const { docs } = await repoDocs(cfg, fetch, 'factory-admin/todo');
+  const wiki = docs.find((d) => d.id === 'forgejo:factory-admin/todo:wiki:Эксплуатация')!;
+  assert.equal(wiki.semantic_identifier, 'todo вики: Эксплуатация');
+  assert.equal(wiki.sections[0]!.link, 'http://127.0.0.1:3000/factory-admin/todo/wiki/%D0%AD#L1');
+  assert.match(wiki.sections[0]!.text, /Порт 3000/);
 });
 
 test('проход: загрузка всего и удаление пропавшего из этого репозитория', async () => {
