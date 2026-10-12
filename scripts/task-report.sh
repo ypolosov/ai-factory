@@ -5,8 +5,8 @@
 #   - круги - коммиты бота в PR (без слияний); с первой попытки - слит за один круг;
 #   - время: агент - работа модели по журналу шлюза (сумма прогонов); задача -> PR - от
 #     первой метки agent до PR; PR -> слияние - проверки, ворота, доработки и решение человека;
-#   - цена: агент - запросы задачи issue-N-run-*; ворота и ревью - судьи gate-pr-P-* и
-#     совет pr-P-review. У подписок цена теневая (шлюз считает её по каталогу).
+#   - цена: агент - запросы задачи; ворота - судьи (и прежний совет pr-P-review).
+#     У подписок цена теневая (шлюз считает её по каталогу).
 # Использование: scripts/task-report.sh РЕПОЗИТОРИЙ - таблица Markdown в стандартный вывод.
 set -eu
 cd "$(dirname "$0")/.."
@@ -23,6 +23,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 # sql ЗАПРОС - журнал шлюза только на чтение (шлюз пишет в него в это же время).
+# Метка задачи в журнале: РЕПОЗИТОРИЙ-issue-N-run-M и РЕПОЗИТОРИЙ-gate-pr-N-* (раньше - без
+# репозитория: такие отделяются только окном времени задачи).
+tid="json_extract(attributes_json, '\$.task_id')"
 sql() { sqlite3 -readonly -separator ' ' "file:$db?mode=ro" "$1"; }
 mins() { jq -rn --arg a "$1" --arg b "$2" 'if $a == "" or $b == "" then "-"
 	else ((($b | fromdateiso8601) - ($a | fromdateiso8601)) / 60 | round | tostring) end'; }
@@ -49,7 +52,7 @@ while IFS= read -r pr; do
 	win="started_at >= '$from' and started_at <= '${to%Z}~'"
 	# Модель - как её назвал провайдер в журнале шлюза (псевдоним шлюза ничего не говорит).
 	model=$(sql "select group_concat(m, ' + ') from (select distinct gen_ai_request_model m from request_logs
-		where $win and json_extract(attributes_json, '\$.task_id') like 'issue-$issue-run-%' and gen_ai_request_model is not null)")
+		where $win and ($tid like '$name-issue-$issue-run-%' or $tid like 'issue-$issue-run-%') and gen_ai_request_model is not null)")
 	who="$who, ${model:-?}"
 
 	# Круги и оценки ворот. Круг начинается коммитом бота; решение круга - последний статус
@@ -83,13 +86,12 @@ while IFS= read -r pr; do
 	# shellcheck disable=SC2046 # два числа через пробел
 	set -- $(sql "select coalesce(round(sum(c), 4), 0), coalesce(cast(round(sum(s) / 60) as integer), 0) from (
 		select sum(cost) c, (julianday(max(completed_at)) - julianday(min(started_at))) * 86400 s
-		from request_logs where $win and json_extract(attributes_json, '\$.task_id') like 'issue-$issue-run-%'
-		group by json_extract(attributes_json, '\$.task_id'))")
+		from request_logs where $win and ($tid like '$name-issue-$issue-run-%' or $tid like 'issue-$issue-run-%')
+		group by $tid)")
 	agent_usd=$1
 	agent_min=$2
 	gate_usd=$(sql "select coalesce(round(sum(cost), 4), 0) from request_logs where $win
-		and (json_extract(attributes_json, '\$.task_id') like 'gate-pr-$n-%'
-		or json_extract(attributes_json, '\$.task_id') = 'pr-$n-review')")
+		and ($tid like '$name-gate-pr-$n-%' or $tid like 'gate-pr-$n-%' or $tid = 'pr-$n-review')")
 	total=$(jq -rn --argjson a "$agent_usd" --argjson g "$gate_usd" '$a + $g | . * 10000 | round / 10000')
 	echo "| #$issue $title | #$n | $who | $rounds | $scores | $first | $agent_min | $(mins "$labeled" "$created") | $(mins "$created" "$merged") | $agent_usd | $gate_usd | $total |"
 done <"$tmp/prs"

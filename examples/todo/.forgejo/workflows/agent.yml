@@ -59,7 +59,9 @@ jobs:
           # Ключи шлюза обоих путей: factory-agent отдаёт обвязке только ключ её исполнителя.
           GATEWAY_KEY_API: ${{ secrets.AGENT_GATEWAY_KEY }}
           GATEWAY_KEY_SUB: ${{ secrets.AGENT_SUB_GATEWAY_KEY }}
-          TASK_ID: issue-${{ github.event.issue.number }}-run-${{ github.run_number }}
+          # Метка задачи в журнале шлюза: репозиторий, задача, прогон (номера задач в разных
+          # репозиториях совпадают).
+          TASK_ID: ${{ github.event.repository.name }}-issue-${{ github.event.issue.number }}-run-${{ github.run_number }}
           # Входы подписок владельца: factory-agent отдаёт только вход выбранного исполнителя.
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
