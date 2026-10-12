@@ -165,14 +165,21 @@ ensure_deployer() {
 }
 
 # ensure_gatus - настройки проверок доступности в .state/gatus/ (монтируется целиком):
-# приложение стенда - первое из DEPLOY_APPS, задачи о сбоях - от учётки эксплуатации.
+# по проверке на каждое приложение из DEPLOY_APPS, задачи о сбоях - от учётки эксплуатации
+# в репозитории приложения.
 ensure_gatus() {
 	mkdir -p .state/gatus
 	chmod 700 .state/gatus
 	_first=${DEPLOY_APPS%% *}
-	_repo=${_first%%=*}
-	(umask 077 && sed -e "s|@ALERT_REPO@|$_repo|" -e "s|@APP@|${_repo##*/}|" -e "s|@PORT@|${_first#*=}|" \
-		-e "s|@OPS_TOKEN@|$(cat .state/ops.token)|" config/gatus/config.yaml.tmpl >.state/gatus/config.yaml.new)
+	(
+		umask 077
+		sed -e "s|@ALERT_REPO@|${_first%%=*}|" -e "s|@OPS_TOKEN@|$(cat .state/ops.token)|" \
+			config/gatus/config.yaml.tmpl
+		for _e in $DEPLOY_APPS; do
+			_r=${_e%%=*}
+			sed -e "s|@APP@|${_r##*/}|" -e "s|@PORT@|${_e#*=}|" -e "s|@REPO@|$_r|" config/gatus/app-endpoint.yaml.tmpl
+		done
+	) >.state/gatus/config.yaml.new
 	if cmp -s .state/gatus/config.yaml.new .state/gatus/config.yaml; then
 		rm -f .state/gatus/config.yaml.new
 	else

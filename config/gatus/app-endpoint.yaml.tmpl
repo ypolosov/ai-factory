@@ -1,0 +1,16 @@
+  - name: "@APP@"
+    group: стенд
+    url: "http://deploy-dind:@PORT@/health"
+    interval: 15s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY] == ok"
+      - "[RESPONSE_TIME] < 1000"
+    alerts:
+      - type: gitea
+        failure-threshold: 3
+        success-threshold: 2
+        send-on-resolved: true
+        description: "приложение на стенде не отвечает на /health"
+        provider-override:
+          repository-url: "http://forgejo:3000/@REPO@"
