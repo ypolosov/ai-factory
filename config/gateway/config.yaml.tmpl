@@ -33,6 +33,12 @@ config:
                 rates: { input: "0.15", output: "0.47" }
               "baai/bge-m3":
                 rates: { input: "0.01" }
+          # Теневая цена подписки Codex: прайс API OpenAI на 12.10.2026 (короткий контекст до
+          # 272 тыс. токенов), чтобы задачи на Codex считались в учёте наравне с остальными.
+          openai:
+            models:
+              "gpt-6.1-sol":
+                rates: { input: "2.00", output: "10.00", cacheRead: "0.10" }
   # Бюджеты ключей и журнал запросов (токены, цена, время) - в SQLite.
   database:
     url: /db/gateway.sqlite
@@ -143,6 +149,8 @@ llm:
     - name: "gpt-*"
       provider:
         custom:
+          # Цена - по каталогу OpenAI (теневая: подписка с фиксированной ценой).
+          providerOverride: openai
           formats:
             - type: responses
       params:
