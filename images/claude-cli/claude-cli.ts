@@ -329,7 +329,10 @@ export function createServer(
       const started = Date.now();
       queue(() => run(plan, taskId)).then(
         (reply) => {
-          log(`ответ за ${Date.now() - started} мс: инструменты ${reply.toolCalls.length}, токены ${reply.usage.completion_tokens}`);
+          log(
+            `ответ за ${Date.now() - started} мс: инструментов предложено ${plan.tools.length} (${plan.toolChoice}), ` +
+              `вызвано ${reply.toolCalls.length}, токены ${reply.usage.completion_tokens}`,
+          );
           if (body['stream'] === true) {
             res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
             const includeUsage = ((body['stream_options'] ?? {}) as Json)['include_usage'] === true;

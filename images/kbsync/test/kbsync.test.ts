@@ -9,6 +9,7 @@ const cfg: Config = {
   forgejoToken: 'ft',
   onyxToken: 'ot',
   repos: ['factory-admin/todo'],
+  ccPairId: null,
 };
 
 test('какие файлы попадают в базу', () => {
@@ -66,7 +67,9 @@ function fake(files: Record<string, string>, ingested: string[] = []): { fetch: 
       return new Response('нет', { status: 404 });
     }
     assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer ot');
-    if (method === 'GET' && u.pathname === '/api/onyx-api/ingestion') return Response.json(ingested.map((document_id) => ({ document_id })));
+    if (method === 'GET' && (u.pathname === '/api/onyx-api/ingestion' || u.pathname.startsWith('/api/onyx-api/connector-docs/'))) {
+      return Response.json(ingested.map((document_id) => ({ document_id })));
+    }
     return Response.json({ document_id: 'x', already_existed: false });
   }) as Fetch;
   return { fetch: fn, calls };
@@ -102,6 +105,14 @@ test('проход: загрузка всего и удаление пропав
   assert.equal((posts[0]!.body as { document: { id: string } }).document.id, 'forgejo:factory-admin/todo:file:README.md');
   const del = calls.filter((c) => c.method === 'DELETE');
   assert.deepEqual(del.map((c) => c.url), ['http://kb/api/onyx-api/ingestion/forgejo%3Afactory-admin%2Ftodo%3Afile%3Aold.md']);
+});
+
+test('своя связка Onyx: номер в теле загрузки, список - по связке', async () => {
+  const { fetch, calls } = fake({ 'README.md': '# todo' });
+  await syncRepo({ ...cfg, ccPairId: 2 }, fetch, 'factory-admin/todo');
+  const post = calls.find((c) => c.method === 'POST')!;
+  assert.equal((post.body as { cc_pair_id: number }).cc_pair_id, 2);
+  assert.ok(calls.some((c) => c.method === 'GET' && c.url === 'http://kb/api/onyx-api/connector-docs/2'));
 });
 
 test('цикл: без изменений main второй раз не загружает; сбой Onyx - в журнал', async () => {

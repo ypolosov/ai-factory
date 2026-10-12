@@ -7,7 +7,8 @@
 // Окружение: FORGEJO_URL (внутренний адрес), FORGEJO_PUBLIC_URL (адрес для ссылок),
 // KB_URL (Onyx), KB_REPOS ("владелец/имя ..."), KB_SYNC_INTERVAL (с, по умолчанию 120).
 // Секреты - файлы в SECRETS_DIR (/secrets): forgejo.token (чтение репозиториев и задач),
-// onyx.token (личный токен администратора Onyx).
+// onyx.token (личный токен администратора Onyx), cc_pair - номер связки "forgejo" в Onyx
+// (её заводит scripts/kb-setup.sh: без своего коннектора Onyx не даёт модели поиск).
 import { readFileSync } from 'node:fs';
 
 export type Fetch = typeof fetch;
@@ -19,6 +20,7 @@ export interface Config {
   forgejoToken: string;
   onyxToken: string;
   repos: string[];
+  ccPairId: number | null;
 }
 
 export interface Section {
@@ -156,8 +158,10 @@ export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promi
 // Один проход: загрузить документы репозитория, удалить из базы пропавшие.
 export async function syncRepo(cfg: Config, fetchFn: Fetch, repo: string): Promise<{ upserted: number; deleted: number }> {
   const { docs } = await repoDocs(cfg, fetchFn, repo);
-  for (const doc of docs) await onyx(cfg, fetchFn, 'POST', '/onyx-api/ingestion', { document: doc });
-  const have = ((await onyx(cfg, fetchFn, 'GET', '/onyx-api/ingestion')) ?? []) as { document_id: string }[];
+  const pair = cfg.ccPairId === null ? {} : { cc_pair_id: cfg.ccPairId };
+  for (const doc of docs) await onyx(cfg, fetchFn, 'POST', '/onyx-api/ingestion', { document: doc, ...pair });
+  const listPath = cfg.ccPairId === null ? '/onyx-api/ingestion' : `/onyx-api/connector-docs/${cfg.ccPairId}`;
+  const have = ((await onyx(cfg, fetchFn, 'GET', listPath)) ?? []) as { document_id: string }[];
   const keep = new Set(docs.map((d) => d.id));
   const stale = have.map((d) => d.document_id).filter((id) => id.startsWith(`forgejo:${repo}:`) && !keep.has(id));
   for (const id of stale) await onyx(cfg, fetchFn, 'DELETE', `/onyx-api/ingestion/${encodeURIComponent(id)}`);
@@ -188,7 +192,14 @@ export async function loop(cfg: Config, fetchFn: Fetch, intervalMs: number, log:
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
   const dir = env['SECRETS_DIR'] ?? '/secrets';
   const secret = (name: string): string => readFileSync(`${dir}/${name}`, 'utf-8').trim();
+  let ccPairId: number | null = null;
+  try {
+    ccPairId = Number(secret('cc_pair')) || null;
+  } catch {
+    ccPairId = null;
+  }
   return {
+    ccPairId,
     forgejoUrl: env['FORGEJO_URL'] ?? 'http://forgejo:3000',
     publicUrl: env['FORGEJO_PUBLIC_URL'] ?? 'http://127.0.0.1:3000',
     kbUrl: env['KB_URL'] ?? 'http://kb',

@@ -77,6 +77,24 @@ if ! onyx GET /search-settings/get-current-search-settings | jq -e '.model_name 
 	log "Onyx: эмбеддинги kb-embed (bge-m3, 1024) - переиндексация по новой модели"
 fi
 
-# 4. Загрузка из Forgejo: токен учётки эксплуатации (чтение репозиториев и задач).
+# 4. Свой коннектор загрузки "forgejo": документы только через API загрузки (коннектор 0 по
+#    умолчанию Onyx не считает) не дают модели инструмент поиска.
+cc_pair() {
+	jq -n '{}' >"$tmp/empty.json"
+	onyx POST /manage/admin/connector/indexing-status "$tmp/empty.json" |
+		jq -r '[.. | objects | select(has("cc_pair_id") and .name == "forgejo") | .cc_pair_id][0] // empty'
+}
+pair=$(cc_pair)
+if [ -z "$pair" ]; then
+	jq -n '{name: "forgejo", source: "ingestion_api", input_type: "load_state", connector_specific_config: {},
+		refresh_freq: null, prune_freq: null, access_type: "public", groups: []}' >"$tmp/conn.json"
+	onyx POST /manage/admin/connector-with-mock-credential "$tmp/conn.json" >/dev/null
+	pair=$(cc_pair)
+	[ -n "$pair" ] || die "Onyx: коннектор forgejo не заведён"
+	log "Onyx: коннектор загрузки forgejo (связка $pair)"
+fi
+printf '%s\n' "$pair" >.state/kbsync/cc_pair
+
+# 5. Загрузка из Forgejo: токен учётки эксплуатации (чтение репозиториев и задач).
 cmp -s .state/ops.token .state/kbsync/forgejo.token || cp .state/ops.token .state/kbsync/forgejo.token
 log "база знаний настроена: http://127.0.0.1:$KB_PORT, вход $KB_ADMIN_EMAIL, пароль в $st/admin.password"
