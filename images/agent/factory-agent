@@ -108,17 +108,55 @@ run_harness() {
 	esac
 }
 
+# Дневной бюджет ключа открытых моделей: исчерпан - шлюз отвечает 429 "Budget exceeded",
+# а обвязки повторяют такой ответ без конца и молча ждут тайм-аута задания. Перед стартом
+# и при каждой остановке журнала на минуту - пробный запрос в одно слово; бюджета нет -
+# обвязка останавливается. Ключ - из файла заголовка, не аргументом команды.
+hdr=$(mktemp)
+(umask 077 && printf 'x-gateway-key: %s\nx-task-id: budget-probe\n' "$GATEWAY_KEY" >"$hdr")
+budget_exceeded() {
+	_code=$(curl -s -m 30 -o "$hdr.out" -w '%{http_code}' -H @"$hdr" -H 'content-type: application/json' \
+		--data '{"model":"default","max_tokens":1,"messages":[{"role":"user","content":"ok"}]}' \
+		"$GATEWAY_URL/v1/chat/completions" || true)
+	[ "$_code" = 429 ] && grep -q 'Budget exceeded' "$hdr.out"
+}
+budget_msg="бюджет ключа шлюза на сутки исчерпан - обвязка остановлена"
+
 start=$(date +%s)
 : >"$out/agent.log"
+if [ "$FACTORY_EXECUTOR" = opencode ]; then
+	if budget_exceeded; then
+		echo "$budget_msg" | tee -a "$out/agent.log" >&2
+		exit 75
+	fi
+	(
+		_size=-1
+		while sleep 60; do
+			_now=$(wc -c <"$out/agent.log")
+			if [ "$_now" = "$_size" ] && budget_exceeded; then
+				echo "$budget_msg" | tee -a "$out/agent.log" >&2
+				pkill -TERM -u node || true
+				sleep 5
+				pkill -KILL -u node || true
+				exit 0
+			fi
+			_size=$_now
+		done
+	) &
+	watch=$!
+fi
 set +e
 run_harness
 # Сбой модели у провайдера (тайм-аут, 502-504) - ещё одна попытка поверх сделанного.
-if [ "$rc" -ne 0 ] && grep -Eqi 'gateway timeout|upstream call timeout|50[234]|overloaded' "$out/agent.log"; then
+if [ "$rc" -ne 0 ] && ! grep -q "$budget_msg" "$out/agent.log" &&
+	grep -Eqi 'gateway timeout|upstream call timeout|50[234]|overloaded' "$out/agent.log"; then
 	echo "сбой модели у провайдера - повтор обвязки" >&2
 	printf '\n--- повтор после сбоя модели ---\n' >>"$out/agent.log"
 	run_harness
 fi
 set -e
+[ -z "${watch:-}" ] || kill "$watch" 2>/dev/null || true
+rm -f "$hdr" "$hdr.out"
 end=$(date +%s)
 
 factory-untrusted git add -A

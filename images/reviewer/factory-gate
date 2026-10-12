@@ -167,7 +167,11 @@ jq -r '"## Ворота: находки ревью\n\n" + ([.[].issues[]? | "- *
 
 if [ "$n" -lt "$nj" ] || [ "$nscored" -lt "$nj" ]; then
 	label ai:needs-human
-	status success "нет оценки от части судей (${scores:-нет}) - решение человека"
+	if grep -qs 'Budget exceeded' "$tmp"/review-*.log; then
+		status success "бюджет шлюза на сутки исчерпан, судьи не ответили - перезапустить проверки после сброса"
+	else
+		status success "нет оценки от части судей (${scores:-нет}) - решение человека"
+	fi
 	exit 0
 fi
 if [ "$sec" -gt 0 ]; then
