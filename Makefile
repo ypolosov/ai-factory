@@ -1,4 +1,4 @@
-.PHONY: check up smoke gateway-check down
+.PHONY: check test up smoke gateway-check down
 
 SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
 	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
@@ -9,6 +9,11 @@ check:
 	shellcheck -x -P . $(SCRIPTS)
 	shfmt -d $(SCRIPTS)
 	docker compose config -q
+
+# Код фабрики на TypeScript: проверка типов и модульные тесты в Node 24 стенда.
+test:
+	docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$$PWD":/w -w /w \
+		docker.io/library/node:24.21.0-alpine3.24 sh -c 'npm ci --no-audit --no-fund --silent && npx tsc --noEmit && npm test'
 
 up:
 	./scripts/stand-up.sh

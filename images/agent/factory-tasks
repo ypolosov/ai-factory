@@ -48,7 +48,7 @@ while IFS="$(printf '\037')" read -r id title deps line; do
 		jq -n --arg t "$head $title" --arg c "$change" --arg id "$id" --arg line "$line" --arg deps "$deps" '{
 			title: $t,
 			body: ("Пункт " + $id + " изменения OpenSpec `" + $c + "` (`openspec/changes/" + $c + "/`).\n\n"
-				+ $line + "\n\nПриёмочные тесты пункта - `tests/acceptance/" + $id + ".test.js`; они должны пройти."
+				+ $line + "\n\nПриёмочные сценарии пункта - с тегом `@task-" + $id + "` в `features/`; они должны пройти."
 				+ (if $deps == "" then "" else "\nБрать после пунктов: " + $deps + "." end))
 		}' >"$tmp/issue.json"
 		num=$(api POST "/repos/$repo/issues" --data @"$tmp/issue.json" | jq -r .number)

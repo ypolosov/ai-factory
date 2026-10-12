@@ -5,6 +5,12 @@ services:
     restart: unless-stopped
     ports:
       - "${STAND_PORT}:8080"
+    # Сбор ошибок: GlitchTip - через проброс в Docker стенда (compose.yaml, deploy-glitchtip).
+    extra_hosts: ["glitchtip:host-gateway"]
+    environment:
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      SENTRY_ENVIRONMENT: stand
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]

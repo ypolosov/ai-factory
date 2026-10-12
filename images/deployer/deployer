@@ -10,12 +10,15 @@
 # Окружение: DOCKER_HOST - Docker стенда; FORGEJO_URL - внутренний адрес Forgejo;
 # DEPLOY_APPS - "владелец/репозиторий=порт ..."; STAND_HOST - имя стенда в сети фабрики;
 # STAND_PUBLIC_HOST - адрес стенда для людей; DEPLOY_INTERVAL - пауза опроса, с.
-# Токен бота для статусов коммитов - /secrets/bot.token; состояние - /state; кэш Trivy - /cache.
+# Токен бота для статусов коммитов - /secrets/bot.token; адрес сбора ошибок приложения
+# (DSN GlitchTip) - /secrets/dsn/ПРИЛОЖЕНИЕ; состояние - /state; кэш Trivy - /cache.
 set -eu
 
 : "${FORGEJO_URL:?}" "${DEPLOY_APPS:?}" "${STAND_HOST:?}" "${STAND_PUBLIC_HOST:=127.0.0.1}"
 : "${DEPLOY_INTERVAL:=15}"
 recipes=/etc/deployer/recipes
+# Код фабрики, который рецепт добавляет в образ приложения (сбор ошибок).
+runtime=/etc/deployer/runtime
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
@@ -56,9 +59,11 @@ healthy() {
 	done
 }
 
-# run_image ПРИЛОЖЕНИЕ ТЕГ ПОРТ - поднять образ проектом compose на стенде.
+# run_image ПРИЛОЖЕНИЕ ТЕГ ПОРТ - поднять образ проектом compose на стенде. Ошибки
+# приложения уходят в GlitchTip с версией - коммитом из тега.
 run_image() {
-	IMAGE=$2 STAND_PORT=$3 docker compose -p "$1" -f "$recipes/app.compose.yml" up -d --remove-orphans >/dev/null 2>&1
+	IMAGE=$2 STAND_PORT=$3 SENTRY_DSN=$(cat "/secrets/dsn/$1" 2>/dev/null || true) SENTRY_RELEASE=${2##*:} \
+		docker compose -p "$1" -f "$recipes/app.compose.yml" up -d --remove-orphans >/dev/null 2>&1
 }
 
 # switch ПРИЛОЖЕНИЕ ТЕГ ПОРТ - выложить тег; не поднялся - вернуть текущий.
@@ -99,7 +104,7 @@ deploy() {
 	fi
 	commit_status "$repo" "$sha" pending "сборка и проверка образа" "$port"
 	log "$app@$sha: сборка $tag"
-	if ! docker build -q -f "$recipes/node.Dockerfile" -t "$tag" "$work/src" >/dev/null; then
+	if ! docker build -q -f "$recipes/node.Dockerfile" --build-context "runtime=$runtime" -t "$tag" "$work/src" >/dev/null; then
 		commit_status "$repo" "$sha" failure "сборка не прошла" "$port"
 		rm -rf "$work"
 		return 1

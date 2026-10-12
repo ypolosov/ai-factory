@@ -1,6 +1,6 @@
 #!/bin/sh
-# Поднимает стенд фабрики: Forgejo, администратора, бота, три runner, шлюз моделей
-# и службу выкладки.
+# Поднимает стенд фабрики: Forgejo, администратора, бота, три runner, шлюз моделей,
+# службу выкладки, проверки доступности и сбор ошибок (GlitchTip и мост в задачи).
 # Повторный запуск безопасен: готовые учётки, токены и регистрации не трогает.
 set -eu
 cd "$(dirname "$0")/.."
@@ -28,9 +28,10 @@ done
 ensure_gateway
 ensure_deployer
 ensure_gatus
+ensure_glitchtip_env
 
-log "runner, шлюз, прокси выхода и служба выкладки: запуск"
-docker compose build -q deployer egress
+log "runner, шлюз, прокси выхода, служба выкладки и сбор ошибок: запуск"
+docker compose build -q deployer egress errbridge
 docker compose up -d >/dev/null
 if [ -n "${RUNNERS_CHANGED:-}" ]; then
 	# shellcheck disable=SC2086 # список имён через пробел
@@ -42,6 +43,10 @@ if [ -n "${GATUS_CHANGED:-}" ]; then
 fi
 if [ -n "${GATEWAY_CHANGED:-}" ]; then
 	docker compose restart gateway >/dev/null
+fi
+ensure_glitchtip
+if [ -n "${ERRBRIDGE_CHANGED:-}" ]; then
+	docker compose restart errbridge >/dev/null
 fi
 wait_runners agent ci deploy
 wait_gateway

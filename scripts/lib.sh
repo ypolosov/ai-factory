@@ -27,6 +27,7 @@ load_env() {
 	: "${AGENT_IMAGE:=factory/agent:stand}"
 	: "${FORGEJO_OPS_USER:=factory-ops}" "${FORGEJO_OPS_EMAIL:=ops@factory.local}"
 	: "${DEPLOY_APPS:=factory-admin/hello=8080 factory-admin/todo=8081}" "${GATUS_PORT:=8100}"
+	: "${GLITCHTIP_PORT:=8200}"
 	set +a
 	FORGEJO_URL="http://127.0.0.1:${FORGEJO_HTTP_PORT}"
 }
@@ -173,8 +174,9 @@ ensure_gatus() {
 	_first=${DEPLOY_APPS%% *}
 	(
 		umask 077
-		sed -e "s|@ALERT_REPO@|${_first%%=*}|" -e "s|@OPS_TOKEN@|$(cat .state/ops.token)|" \
-			config/gatus/config.yaml.tmpl
+		# Токен - из файла внутри awk, не аргументом команды.
+		sed -e "s|@ALERT_REPO@|${_first%%=*}|" config/gatus/config.yaml.tmpl |
+			awk 'BEGIN { getline tok <".state/ops.token" } { gsub(/@OPS_TOKEN@/, tok); print }'
 		for _e in $DEPLOY_APPS; do
 			_r=${_e%%=*}
 			sed -e "s|@APP@|${_r##*/}|" -e "s|@PORT@|${_e#*=}|" -e "s|@REPO@|$_r|" config/gatus/app-endpoint.yaml.tmpl
@@ -187,6 +189,71 @@ ensure_gatus() {
 		# shellcheck disable=SC2034 # читает scripts/stand-up.sh
 		GATUS_CHANGED=1
 	fi
+}
+
+# ensure_glitchtip_env - до запуска служб: секреты GlitchTip (.state/glitchtip/env - ключ
+# Django и пароль базы; пароль администратора) и errbridge (.state/errbridge/ - токен
+# учётки эксплуатации и токен вебхука).
+ensure_glitchtip_env() {
+	mkdir -p .state/glitchtip .state/errbridge
+	chmod 700 .state/glitchtip .state/errbridge
+	if [ ! -s .state/glitchtip/env ]; then
+		_pw=$(random_hex 16)
+		(
+			umask 077
+			printf 'SECRET_KEY=%s\nPOSTGRES_USER=glitchtip\nPOSTGRES_DB=glitchtip\nPOSTGRES_PASSWORD=%s\n' "$(random_hex 32)" "$_pw"
+			printf 'DATABASE_URL=postgres://glitchtip:%s@glitchtip-db:5432/glitchtip\n' "$_pw"
+		) >.state/glitchtip/env
+	fi
+	[ -s .state/glitchtip/admin.password ] || (umask 077 && random_hex 12 >.state/glitchtip/admin.password)
+	[ -s .state/errbridge/hook.token ] || (umask 077 && random_hex 20 >.state/errbridge/hook.token)
+	if ! cmp -s .state/ops.token .state/errbridge/forgejo.token; then
+		(umask 077 && cp .state/ops.token .state/errbridge/forgejo.token)
+	fi
+}
+
+# put_if_changed ФАЙЛ - стандартный ввод в ФАЙЛ (права 600), если содержимое другое.
+# Код выхода 0 - файл изменился.
+put_if_changed() {
+	(umask 077 && cat >"$1.new")
+	if cmp -s "$1.new" "$1"; then
+		rm -f "$1.new"
+		return 1
+	fi
+	mv "$1.new" "$1"
+}
+
+# ensure_glitchtip - после запуска GlitchTip: администратор, проекты приложений с
+# оповещением в errbridge (config/glitchtip/setup.py). DSN приложений - службе выкладки
+# (.state/deployer/dsn/ПРИЛОЖЕНИЕ), токен чтения событий - errbridge.
+ensure_glitchtip() {
+	_i=0
+	until docker compose exec -T glitchtip python healthcheck.py >/dev/null 2>&1; do
+		_i=$((_i + 1))
+		[ "$_i" -le 90 ] || die "GlitchTip не ответил за 180 с"
+		sleep 2
+	done
+	mkdir -p .state/deployer/dsn
+	_pw=$(cat .state/glitchtip/admin.password)
+	_hook=$(cat .state/errbridge/hook.token)
+	{
+		printf 'EMAIL = "%s"\nPASSWORD = "%s"\nAPPS = "%s"\nHOOK_TOKEN = "%s"\n' \
+			"$FORGEJO_ADMIN_EMAIL" "$_pw" "$DEPLOY_APPS" "$_hook"
+		cat config/glitchtip/setup.py
+	} | docker compose exec -T glitchtip python manage.py shell >.state/glitchtip/setup.out 2>/dev/null ||
+		die "GlitchTip: настройка не прошла"
+	while read -r _kind _a _b _c; do
+		case $_kind in
+		dsn) printf 'http://%s@glitchtip:8000/%s\n' "$_b" "$_c" | put_if_changed ".state/deployer/dsn/$_a" || true ;;
+		token)
+			# shellcheck disable=SC2034 # читает scripts/stand-up.sh
+			printf '%s\n' "$_a" | put_if_changed .state/errbridge/glitchtip.token && ERRBRIDGE_CHANGED=1
+			;;
+		esac
+	done <.state/glitchtip/setup.out
+	rm -f .state/glitchtip/setup.out
+	grep -q . .state/errbridge/glitchtip.token 2>/dev/null || die "GlitchTip: нет токена для errbridge"
+	log "GlitchTip: http://127.0.0.1:${GLITCHTIP_PORT}, вход $FORGEJO_ADMIN_EMAIL, пароль в .state/glitchtip/admin.password"
 }
 
 # wait_gateway - ждёт, пока шлюз начнёт отвечать на список моделей.

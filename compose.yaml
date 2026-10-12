@@ -131,6 +131,16 @@ services:
     network_mode: service:deploy-dind
     depends_on: [deploy-dind]
 
+  # Приложения стенда шлют ошибки в GlitchTip. Имена сети фабрики в их контейнерах не
+  # разрешаются, поэтому имя glitchtip там указывает на Docker стенда (host-gateway), а здесь
+  # порт 8000 пробрасывается к GlitchTip.
+  deploy-glitchtip:
+    image: docker.io/alpine/socat:1.8.1.1
+    restart: unless-stopped
+    command: ["tcp-listen:8000,fork,reuseaddr", "tcp-connect:glitchtip:8000"]
+    network_mode: service:deploy-dind
+    depends_on: [deploy-dind]
+
   runner-deploy:
     <<: *runner
     depends_on: [forgejo, deploy-dind]
@@ -173,6 +183,63 @@ services:
     depends_on: [forgejo, deploy-dind]
     networks: [factory]
 
+  # Сбор ошибок приложений стенда: GlitchTip (совместим с Sentry) - веб и обработчик в одном
+  # процессе, кэш и очередь в Postgres, без Valkey. Приложения шлют ошибки по DSN, который
+  # служба выкладки передаёт им при запуске. Новая ошибка -> вебхук в errbridge -> задача.
+  glitchtip-db:
+    image: docker.io/library/postgres:17.11-alpine3.24
+    restart: unless-stopped
+    env_file:
+      - path: .state/glitchtip/env
+        required: false
+    volumes:
+      - glitchtip-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip -d glitchtip"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [glitchtip]
+
+  glitchtip:
+    image: docker.io/glitchtip/glitchtip:6.2.6
+    restart: unless-stopped
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+    env_file:
+      - path: .state/glitchtip/env
+        required: false
+    environment:
+      SERVER_ROLE: all_in_one
+      VALKEY_URL: ""
+      GLITCHTIP_DOMAIN: http://127.0.0.1:${GLITCHTIP_PORT:-8200}
+      DEFAULT_FROM_EMAIL: glitchtip@factory.local
+      EMAIL_URL: consolemail://
+      ENABLE_USER_REGISTRATION: "false"
+      # Вебхук оповещений идёт во внутреннюю сеть фабрики (errbridge).
+      GLITCHTIP_ALLOW_PRIVATE_IPS: "true"
+    ports:
+      - "127.0.0.1:${GLITCHTIP_PORT:-8200}:8000"
+    networks: [factory, glitchtip]
+
+  # Мост "ошибка на стенде -> задача": оповещение GlitchTip -> задача в репозитории
+  # приложения от учётки эксплуатации, со стеком последнего события.
+  errbridge:
+    build: images/errbridge
+    image: factory/errbridge:stand
+    restart: unless-stopped
+    read_only: true
+    depends_on: [forgejo]
+    environment:
+      FORGEJO_URL: http://forgejo:3000
+      FORGEJO_OPS_USER: ${FORGEJO_OPS_USER:-factory-ops}
+      GLITCHTIP_URL: http://glitchtip:8000
+      DEPLOY_APPS: ${DEPLOY_APPS:-factory-admin/hello=8080 factory-admin/todo=8081}
+    volumes:
+      - ./.state/errbridge:/secrets:ro
+    networks: [factory]
+
   gateway:
     image: cr.agentgateway.dev/agentgateway:v1.6.0
     restart: unless-stopped
@@ -208,9 +275,13 @@ volumes:
   runner-deploy-data:
   deployer-state:
   deployer-cache:
+  glitchtip-db:
 
 networks:
   factory: {}
+  # База GlitchTip видна только самому GlitchTip.
+  glitchtip:
+    internal: true
   # Внутренняя сеть без выхода в интернет: Docker заданий агента и проверок.
   jobs:
     internal: true

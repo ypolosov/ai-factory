@@ -17,6 +17,7 @@ RUN cd /tmp \
 
 COPY deployer /usr/local/bin/deployer
 COPY recipes /etc/deployer/recipes
+COPY runtime /etc/deployer/runtime
 
 # Свой uid: сокет Docker стенда доступен группе 1000; тома состояния и кэша
 # получают владельца из образа при первом подключении.
