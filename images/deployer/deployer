@@ -92,8 +92,8 @@ deploy() {
 	work=$(mktemp -d)
 	git clone -q "$FORGEJO_URL/$repo.git" "$work/src"
 	git -C "$work/src" checkout -q "$sha"
-	if [ ! -f "$work/src/src/server.js" ]; then
-		log "$app@$sha: нет src/server.js - выкладывать нечего"
+	if [ ! -f "$work/src/src/server.ts" ] && [ ! -f "$work/src/src/server.js" ]; then
+		log "$app@$sha: нет src/server.ts или src/server.js - выкладывать нечего"
 		rm -rf "$work"
 		return 0
 	fi

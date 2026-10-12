@@ -50,15 +50,18 @@ g() {
 		-c user.name="$owner" -c user.email="$FORGEJO_ADMIN_EMAIL" "$@"
 }
 if api GET "/repos/$repo/branches/main" >/dev/null 2>&1; then
-	# Процессные файлы принадлежат фабрике: .forgejo/ приводится к шаблону.
+	# Процессные файлы принадлежат фабрике: .forgejo/ и .factory/ приводятся к шаблону.
 	g clone -q --depth 1 "$FORGEJO_URL/$repo.git" "$tmp/src"
-	rm -rf "$tmp/src/.forgejo"
-	cp -R "examples/$name/.forgejo" "$tmp/src/"
-	g -C "$tmp/src" add -A .forgejo
+	for d in .forgejo .factory; do
+		[ -d "examples/$name/$d" ] || continue
+		rm -rf "${tmp:?}/src/$d"
+		cp -R "examples/$name/$d" "$tmp/src/"
+		g -C "$tmp/src" add -A "$d"
+	done
 	if ! g -C "$tmp/src" diff --cached --quiet; then
 		g -C "$tmp/src" commit -q -m "процессные файлы фабрики из шаблона ai-factory"
 		g -C "$tmp/src" push -q origin main
-		log "процессные файлы (.forgejo/) обновлены из шаблона"
+		log "процессные файлы (.forgejo/, .factory/) обновлены из шаблона"
 	fi
 else
 	mkdir -p "$tmp/src"
@@ -74,11 +77,12 @@ api PUT "/repos/$repo/collaborators/$FORGEJO_BOT_USER" --data '{"permission":"wr
 log "бот $FORGEJO_BOT_USER: право записи в ветки"
 
 # main пишет и сливает только человек (администратор стенда), и только при зелёных
-# детерминированных проверках; ревью ИИ - совет, слияние не держит.
-jq -n --arg u "$owner" '{enable_push: true, enable_push_whitelist: true, push_whitelist_usernames: [$u],
-	enable_merge_whitelist: true, merge_whitelist_usernames: [$u],
-	enable_status_check: true,
-	status_check_contexts: (["test", "secrets", "deps", "sast"] | map("ci / \(.) (pull_request)")),
+# детерминированных проверках - всех заданиях ci.yml шаблона, кроме ревью ИИ (совет).
+checks=$(sed -n '/^jobs:/,$p' "examples/$name/.forgejo/workflows/ci.yml" | sed -n 's/^  \([a-z][a-z0-9_-]*\):$/\1/p' |
+	grep -vx review | jq -Rsc 'split("\n") | map(select(. != ""))')
+jq -n --arg u "$owner" --argjson c "$checks" '{enable_push: true, enable_push_whitelist: true,
+	push_whitelist_usernames: [$u], enable_merge_whitelist: true, merge_whitelist_usernames: [$u],
+	enable_status_check: true, status_check_contexts: ($c | map("ci / \(.) (pull_request)")),
 	required_approvals: 0, block_on_rejected_reviews: true, dismiss_stale_approvals: true}' >"$tmp/protect.json"
 if api GET "/repos/$repo/branch_protections/main" >/dev/null 2>&1; then
 	api PATCH "/repos/$repo/branch_protections/main" --data @"$tmp/protect.json" >/dev/null
@@ -86,7 +90,7 @@ else
 	jq '. + {rule_name: "main"}' "$tmp/protect.json" >"$tmp/protect-new.json"
 	api POST "/repos/$repo/branch_protections" --data @"$tmp/protect-new.json" >/dev/null
 fi
-log "main защищена: пишет и сливает только $owner, нужны зелёные test, secrets, deps, sast"
+log "main защищена: пишет и сливает только $owner, нужны зелёные $(printf '%s' "$checks" | jq -r 'join(", ")')"
 
 # Метки ролей агентов: метка на задаче запускает агента этой роли.
 api GET "/repos/$repo/labels" >"$tmp/labels.json"

@@ -1,8 +1,9 @@
-# Проверки PR. Детерминированные ворота перед решением человека: тесты, секреты,
-# уязвимые зависимости, статический анализ; без их зелёных статусов main не слить
-# (защиту ставит scripts/setup-repo.sh). Ревью ИИ - совет человеку, слияние не держит.
-# Сканеры берут настройки фабрики (/etc/factory/checks) и не слушают файлы
-# исключений и пометки-подавления из проверяемого кода: PR не может ослабить проверку.
+# Проверки PR. Детерминированные ворота перед решением человека: модульные тесты, типы,
+# приёмочные сценарии, секреты, уязвимые зависимости, статический анализ; без их зелёных
+# статусов main не слить (защиту ставит scripts/setup-repo.sh). Ревью ИИ - совет человеку.
+# Код из PR и его зависимости - недоверенные: npm ci, тесты и сценарии идут через
+# factory-untrusted. Сканеры берут настройки фабрики (/etc/factory/checks) и не слушают
+# файлы исключений и пометки-подавления из проверяемого кода.
 name: ci
 on: [pull_request]
 
@@ -18,9 +19,39 @@ jobs:
           git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
           git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
           chown -R node:node work
-      - name: Тесты (код из PR - недоверенный, без токенов задания)
+      - name: Зависимости разработки (без скриптов установки)
+        run: cd work && factory-untrusted npm ci --ignore-scripts --no-audit --no-fund
+      - name: Модульные тесты
         # Команда задана здесь, а не сценарием package.json: PR не может её подменить.
-        run: cd work && factory-untrusted node --test "test/**/*.test.js"
+        run: cd work && factory-untrusted node --test "test/**/*.test.ts"
+
+  types:
+    runs-on: ci
+    steps:
+      - name: Рабочая копия PR
+        run: |
+          git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
+          git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
+          chown -R node:node work
+      - name: Зависимости разработки (без скриптов установки)
+        run: cd work && factory-untrusted npm ci --ignore-scripts --no-audit --no-fund
+      - name: Проверка типов TypeScript
+        run: cd work && factory-untrusted npx --no-install tsc --noEmit
+
+  acceptance:
+    runs-on: ci
+    steps:
+      - name: Рабочая копия PR
+        run: |
+          git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
+          git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
+          chown -R node:node work
+      - name: Зависимости разработки (без скриптов установки)
+        run: cd work && factory-untrusted npm ci --ignore-scripts --no-audit --no-fund
+      - name: Приёмочные сценарии (Gherkin) - сделанных пунктов и пункта PR
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: cd work && factory-acceptance "${{ github.server_url }}" "${{ github.repository }}" "$BRANCH"
 
   secrets:
     runs-on: ci

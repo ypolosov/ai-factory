@@ -2,6 +2,8 @@
 # Метка выбирает роль: agent - разработка, agent:spec - спецификация, agent:tests -
 # приёмочные тесты. Исполнитель, модель и разрешённые пути роли - из .factory/config.yml
 # основной ветки (нет файла - переменные репозитория FACTORY_EXECUTOR и FACTORY_MODEL).
+# Повторная метка на задаче с открытым PR - доработка: агент продолжает в ветке прошлой
+# попытки и получает замечания к ней (комментарии и ревью PR после её последнего коммита).
 # Два задания: агент работает без права записи в git, а PR открывает задание
 # без ключа модели. Патч передаётся между ними артефактом.
 name: agent
@@ -15,9 +17,19 @@ jobs:
     runs-on: agent
     timeout-minutes: 40
     steps:
-      - name: Рабочая копия (только чтение)
-        run: git clone -q --depth 1 "${{ github.server_url }}/${{ github.repository }}.git" work
-      - name: Роль, исполнитель и правила путей
+      - name: Рабочая копия (только чтение) - ветка прошлой попытки или основная
+        env:
+          BRANCH: agent/issue-${{ github.event.issue.number }}
+        run: |
+          url="${{ github.server_url }}/${{ github.repository }}.git"
+          git clone -q --depth 1 "$url" base
+          if git ls-remote --exit-code --heads "$url" "$BRANCH" >/dev/null; then
+            git clone -q --depth 1 -b "$BRANCH" "$url" work
+            echo "FACTORY_REWORK=1" >> "$GITHUB_ENV"
+          else
+            cp -a base work
+          fi
+      - name: Роль, исполнитель и правила путей - из основной ветки
         env:
           LABEL: ${{ github.event.label.name }}
           FACTORY_EXECUTOR: ${{ vars.FACTORY_EXECUTOR }}
@@ -25,12 +37,22 @@ jobs:
         run: |
           role=${LABEL#agent}
           role=${role#:}
-          factory-role "${role:-dev}" work/.factory/config.yml | tee -a "$GITHUB_ENV"
-      - name: Текст задачи - в файл, как недоверенный ввод
+          factory-role "${role:-dev}" base/.factory/config.yml | tee -a "$GITHUB_ENV"
+      - name: Текст задачи и замечания к прошлой попытке - в файл, как недоверенный ввод
         env:
           TITLE: ${{ github.event.issue.title }}
           BODY: ${{ github.event.issue.body }}
-        run: printf '# %s\n\n%s\n' "$TITLE" "$BODY" > task.md
+          BRANCH: agent/issue-${{ github.event.issue.number }}
+        run: |
+          printf '# %s\n\n%s\n' "$TITLE" "$BODY" > task.md
+          if [ -n "${FACTORY_REWORK:-}" ]; then
+            factory-feedback "${{ github.server_url }}" "${{ github.repository }}" "$BRANCH" > feedback.md
+            if [ -s feedback.md ]; then
+              printf '\n## Замечания к прошлой попытке\n\n' >> task.md
+              cat feedback.md >> task.md
+            fi
+            echo "доработка: замечаний $(grep -c '^### ' feedback.md || true)"
+          fi
       - name: Агент
         env:
           GATEWAY_URL: http://gateway:4000

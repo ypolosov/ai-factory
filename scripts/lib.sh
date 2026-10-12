@@ -228,6 +228,58 @@ preload_job_images() {
 		done
 }
 
+# follow_agent_pr РЕПОЗИТОРИЙ ЗАДАЧА С_МОМЕНТА(ISO) НАЧАЛО(эпоха) - ждёт прогон агента
+# по задаче, начатый не раньше С_МОМЕНТА, его PR и статусы проверок PR. Обязательные
+# статусы (из защиты main) держат слияние, остальные - совет человеку.
+follow_agent_pr() {
+	_repo=$1
+	_issue=$2
+	_since=$3
+	_start=$4
+	_i=0
+	while :; do
+		_r=$(api GET "/repos/$_repo/actions/runs?limit=20" |
+			jq -r --argjson n "$_issue" --arg s "$_since" '[.workflow_runs[]
+				| select(.event == "issues" and .created >= $s and (.event_payload | fromjson | .issue.number) == $n)][0]
+				| select(. != null) | "\(.status) \(.html_url)"')
+		case ${_r%% *} in
+		success | failure | cancelled | skipped) break ;;
+		esac
+		_i=$((_i + 1))
+		[ "$_i" -le 600 ] || die "прогон агента по задаче #$_issue не закончился за 40 мин"
+		sleep 4
+	done
+	log "агент: $_r"
+	[ "${_r%% *}" = success ] || die "прогон агента не прошёл"
+
+	_pr=$(api GET "/repos/$_repo/pulls?state=open&limit=50" |
+		jq -r --arg b "agent/issue-$_issue" '[.[] | select(.head.ref == $b)][0] | select(. != null) | "\(.number) \(.html_url)"')
+	[ -n "$_pr" ] || die "PR от бота не найден"
+	log "PR: ${_pr#* }"
+
+	_sha=$(api GET "/repos/$_repo/pulls/${_pr%% *}" | jq -r .head.sha)
+	_req=$(api GET "/repos/$_repo/branch_protections/main" | jq -c '.status_check_contexts // []')
+	_i=0
+	while :; do
+		# Сразу после пуша статусов ещё нет (statuses: null).
+		_st=$(api GET "/repos/$_repo/commits/$_sha/status" | jq -c '.statuses = (.statuses // [])')
+		# Ещё ждём: статусы в работе и обязательные, которых пока нет.
+		_left=$(printf '%s' "$_st" | jq --argjson r "$_req" '[.statuses[].context] as $have
+			| ([.statuses[] | select(.status == "pending")] | length)
+			+ ([$r[] | select(. as $c | $have | index($c) | not)] | length)')
+		[ "$_left" -eq 0 ] && break
+		_i=$((_i + 1))
+		[ "$_i" -le 600 ] || die "проверки PR не закончились за 40 мин"
+		sleep 4
+	done
+	printf '%s' "$_st" | jq -r --argjson r "$_req" '.statuses[] | .context as $c
+		| "  \($c): \(.status)" + (if ($r | index($c)) then "" else " (совет, слияние не держит)" end)' >&2
+	_failed=$(printf '%s' "$_st" | jq --argjson r "$_req" \
+		'[.statuses[] | select((.context as $c | $r | index($c)) and .status != "success")] | length')
+	[ "$_failed" -eq 0 ] || die "обязательные проверки PR не прошли"
+	log "от метки до PR с зелёными обязательными проверками: $(($(date +%s) - _start)) с"
+}
+
 # wait_runners ИМЯ... - ждёт, пока runner выйдут на связь с Forgejo.
 wait_runners() {
 	for _n in "$@"; do

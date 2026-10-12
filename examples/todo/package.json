@@ -2,7 +2,18 @@
   "name": "todo",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\""
+    "start": "node src/server.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "acceptance": "cucumber-js"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "13.2.1",
+    "@types/node": "24.19.0",
+    "typescript": "7.0.2"
   }
 }

@@ -8,18 +8,18 @@ roles:
     model: opus
     paths:
       allowed: [openspec/]
-  # Приёмочные тесты по сценариям спецификации - до разработки.
+  # Приёмочные сценарии на Gherkin и шаги к ним - до разработки.
   tests:
     executor: codex
     model: default
     paths:
-      allowed: [tests/acceptance/]
+      allowed: [features/]
   # Разработка одной задачи из tasks.md.
   dev:
     executor: opencode
     model: default
     paths:
-      protected: [.forgejo/, .github/, .factory/, openspec/, tests/acceptance/]
+      protected: [.forgejo/, .github/, .factory/, openspec/, features/]
   # Судьи ревью - модели шлюза из семейств, отличных от модели разработки.
   review:
     models: [alt, qwen]

@@ -46,7 +46,7 @@ RUN npm install -g \
 	&& npm cache clean --force
 
 COPY opencode.json /etc/factory/opencode.json
-COPY factory-agent factory-publish factory-untrusted factory-role /usr/local/bin/
+COPY factory-agent factory-publish factory-untrusted factory-role factory-feedback factory-tasks factory-acceptance /usr/local/bin/
 COPY prompts /etc/factory/prompts
 COPY checks /etc/factory/checks
 

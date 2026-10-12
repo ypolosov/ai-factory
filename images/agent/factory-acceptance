@@ -1,0 +1,39 @@
+#!/bin/sh
+# Приёмочные сценарии PR (Gherkin, cucumber-js). Обязательны сценарии @always,
+# сценарии пунктов, чьи задачи уже закрыты, и пункта самого PR (ветка agent/issue-N,
+# задача "[<изменение> X.Y] ..."). Все сценарии проходят сухой прогон: разбираются
+# и имеют шаги. Сам cucumber-js и шаги из PR - недоверенный код (factory-untrusted).
+#
+# Использование (из каталога проекта после npm ci): factory-acceptance FORGEJO_URL РЕПОЗИТОРИЙ ВЕТКА_PR
+# Токен для чтения задач (если репозиторий закрыт) - FORGEJO_TOKEN; агенту не передаётся.
+set -eu
+url=${1:?адрес Forgejo}
+repo=${2:?владелец/имя}
+branch=${3:?ветка PR}
+[ -d features ] || {
+	echo "нет features/ - приёмочных сценариев нет"
+	exit 0
+}
+
+hdr=$(mktemp)
+trap 'rm -f "$hdr"' EXIT
+chmod 600 "$hdr"
+[ -z "${FORGEJO_TOKEN:-}" ] || printf 'Authorization: token %s\n' "$FORGEJO_TOKEN" >"$hdr"
+issues=$(curl -fsS -H @"$hdr" "$url/api/v1/repos/$repo/issues?state=all&type=issues&limit=50")
+task_id() { sed -n 's/^\[[^] ]* \([0-9][0-9]*\.[0-9][0-9]*\)\].*/\1/p'; }
+
+current=""
+case $branch in
+agent/issue-*)
+	current=$(printf '%s' "$issues" | jq -r --argjson n "${branch#agent/issue-}" '.[] | select(.number == $n) | .title' | task_id)
+	;;
+esac
+done_ids=$(printf '%s' "$issues" | jq -r '.[] | select(.state == "closed") | .title' | task_id)
+expr="@always"
+for id in $done_ids $current; do
+	expr="$expr or @task-$id"
+done
+echo "пункт PR: ${current:-нет}; обязательные сценарии: $expr"
+
+factory-untrusted npx --no-install cucumber-js --dry-run --format summary
+factory-untrusted npx --no-install cucumber-js --tags "$expr"

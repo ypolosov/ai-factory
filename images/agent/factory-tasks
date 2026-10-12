@@ -1,0 +1,77 @@
+#!/bin/sh
+# Задачи изменения OpenSpec -> задачи Forgejo: по одной на пункт tasks.md, без дублей,
+# с зависимостями из пометки "(после X.Y, ...)". Метку роли на задачу ставит человек.
+#
+# Использование: factory-tasks FORGEJO_URL РЕПОЗИТОРИЙ КАТАЛОГ_ИЗМЕНЕНИЯ
+# Токен бота - BOT_TOKEN (в аргументы команд не попадает).
+# Заголовок задачи: "[<изменение> X.Y] <название пункта>" - по нему повторный запуск
+# узнаёт уже заведённые задачи.
+set -eu
+url=${1:?адрес Forgejo}
+repo=${2:?владелец/имя}
+dir=${3:?каталог изменения}
+: "${BOT_TOKEN:?нужен BOT_TOKEN}"
+change=$(basename "$dir")
+[ -f "$dir/tasks.md" ] || { echo "нет $dir/tasks.md" >&2 && exit 2; }
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$tmp/auth"
+chmod 600 "$tmp/auth"
+api() {
+	_m=$1
+	_p=$2
+	shift 2
+	curl -fsS -X "$_m" -H @"$tmp/auth" -H 'Content-Type: application/json' "$url/api/v1$_p" "$@"
+}
+
+# Пункты: "- [ ] X.Y Название: подробности (после A.B, C.D)" -> ID, название, зависимости, текст.
+awk '/^- \[[ xX]\] [0-9]+\.[0-9]+ / {
+	line = $0; sub(/^- \[[ xX]\] /, "", line)
+	id = line; sub(/ .*/, "", id)
+	title = substr(line, length(id) + 2); sub(/:.*/, "", title)
+	deps = ""
+	if (line ~ /\(после [0-9., ]+\)$/) {
+		deps = line; sub(/.*\(после /, "", deps); sub(/\)$/, "", deps); gsub(/ /, "", deps)
+	}
+	printf "%s\037%s\037%s\037%s\n", id, title, deps, line
+}' "$dir/tasks.md" >"$tmp/tasks.tsv"
+[ -s "$tmp/tasks.tsv" ] || { echo "в $dir/tasks.md нет пунктов вида '- [ ] X.Y ...'" >&2 && exit 2; }
+
+api GET "/repos/$repo/issues?state=all&type=issues&limit=50" >"$tmp/issues.json"
+: >"$tmp/map"
+# Разделитель полей - \037: табуляция в IFS склеила бы пустое поле зависимостей.
+while IFS="$(printf '\037')" read -r id title deps line; do
+	head="[$change $id]"
+	num=$(jq -r --arg h "$head" '[.[] | select(.title | startswith($h))][0].number // empty' "$tmp/issues.json")
+	if [ -z "$num" ]; then
+		jq -n --arg t "$head $title" --arg c "$change" --arg id "$id" --arg line "$line" --arg deps "$deps" '{
+			title: $t,
+			body: ("Пункт " + $id + " изменения OpenSpec `" + $c + "` (`openspec/changes/" + $c + "/`).\n\n"
+				+ $line + "\n\nПриёмочные тесты пункта - `tests/acceptance/" + $id + ".test.js`; они должны пройти."
+				+ (if $deps == "" then "" else "\nБрать после пунктов: " + $deps + "." end))
+		}' >"$tmp/issue.json"
+		num=$(api POST "/repos/$repo/issues" --data @"$tmp/issue.json" | jq -r .number)
+		echo "заведена #$num: $head $title"
+	else
+		echo "уже есть #$num: $head $title"
+	fi
+	printf '%s %s %s\n' "$id" "$num" "$deps" >>"$tmp/map"
+done <"$tmp/tasks.tsv"
+
+# Зависимости: задача пункта ждёт задачи пунктов из "(после ...)".
+owner=${repo%%/*}
+name=${repo#*/}
+cp "$tmp/map" "$tmp/lookup"
+while read -r id num deps; do
+	[ -n "$deps" ] || continue
+	api GET "/repos/$repo/issues/$num/dependencies" >"$tmp/have.json"
+	for dep in $(printf '%s' "$deps" | tr ',' ' '); do
+		dnum=$(awk -v d="$dep" '$1 == d { print $2 }' "$tmp/lookup")
+		[ -n "$dnum" ] || { echo "пункт $id: нет пункта $dep" >&2 && continue; }
+		jq -e --argjson n "$dnum" '.[] | select(.number == $n)' "$tmp/have.json" >/dev/null && continue
+		jq -n --argjson n "$dnum" --arg o "$owner" --arg r "$name" '{index: $n, owner: $o, repo: $r}' >"$tmp/dep.json"
+		api POST "/repos/$repo/issues/$num/dependencies" --data @"$tmp/dep.json" >/dev/null
+		echo "#$num ($id) после #$dnum ($dep)"
+	done
+done <"$tmp/map"

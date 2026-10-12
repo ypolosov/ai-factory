@@ -62,18 +62,32 @@ printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$work/auth.header"
 chmod 600 "$work/auth.header"
 git() { command git -c credential.helper="store --file=$creds" "$@"; }
 
-git clone -q "$FORGEJO_URL/$REPO.git" "$work/repo"
-cd "$work/repo"
-git apply --check "$patch"
 branch=agent/issue-$ISSUE
-git switch -q -c "$branch"
+# Доработка: ветка прошлой попытки уже есть - новый коммит поверх неё (агент
+# работал в её копии, патч - относительно её головы).
+rework=""
+if git ls-remote --exit-code --heads "$FORGEJO_URL/$REPO.git" "$branch" >/dev/null 2>&1; then
+	rework=1
+	git clone -q -b "$branch" "$FORGEJO_URL/$REPO.git" "$work/repo"
+else
+	git clone -q "$FORGEJO_URL/$REPO.git" "$work/repo"
+fi
+cd "$work/repo"
+[ -n "$rework" ] || git switch -q -c "$branch"
+git apply --check "$patch"
 git apply --index "$patch"
 run=$(cat "$result/run.json")
 # Заголовок по роли: agent (разработка), spec (спецификация), tests (приёмочные тесты).
 role=$(printf '%s' "$run" | jq -r '.role // "dev"')
 prefix=$([ "$role" = dev ] && echo agent || echo "$role")
-git -c user.name=factory-bot -c user.email=bot@factory.local commit -q -m "$prefix: #$ISSUE $ISSUE_TITLE"
-git push -q -f origin "$branch"
+msg="$prefix: #$ISSUE $ISSUE_TITLE"
+[ -z "$rework" ] || msg="$prefix: #$ISSUE доработка по замечаниям"
+git -c user.name=factory-bot -c user.email=bot@factory.local commit -q -m "$msg"
+if [ -n "$rework" ]; then
+	git push -q origin "$branch"
+else
+	git push -q -f origin "$branch"
+fi
 
 body=$(jq -n --arg issue "$ISSUE" --argjson run "$run" \
 	'"Closes #" + $issue + "\n\nРоль: " + ($run.role // "dev") + ", исполнитель: " + $run.executor

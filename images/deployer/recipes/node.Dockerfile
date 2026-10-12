@@ -1,5 +1,6 @@
-# Рецепт фабрики для приложения Node без внешних зависимостей: код из src/,
-# запуск node src/server.js на порту 8080. Шаги сборки задаёт фабрика, а не репозиторий.
+# Рецепт фабрики для приложения Node без зависимостей для работы: код из src/, запуск
+# node src/server.ts (TypeScript: Node 24 стирает типы сам, без сборки) или src/server.js
+# на порту 8080. Шаги сборки задаёт фабрика, а не репозиторий.
 FROM docker.io/library/node:24.21.0-alpine3.24
 # npm, npx, yarn и corepack приложению не нужны, а их зависимости - главный источник
 # уязвимостей базового образа (Trivy находит их и не даёт выложить).
@@ -11,4 +12,4 @@ COPY src ./src
 ENV NODE_ENV=production PORT=8080
 USER node
 EXPOSE 8080
-CMD ["node", "src/server.js"]
+CMD ["/bin/sh", "-c", "if [ -f src/server.ts ]; then exec node src/server.ts; else exec node src/server.js; fi"]

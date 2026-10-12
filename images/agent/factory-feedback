@@ -1,0 +1,32 @@
+#!/bin/sh
+# Замечания к прошлой попытке агента: комментарии и ревью PR его ветки, оставленные
+# или обновлённые после последнего коммита ветки (ревью ИИ, замечания человека).
+# Нет PR или замечаний - пустой вывод.
+#
+# Использование: factory-feedback FORGEJO_URL РЕПОЗИТОРИЙ ВЕТКА
+# Токен для чтения (если репозиторий закрыт) - FORGEJO_TOKEN; в аргументы команд не попадает.
+set -eu
+url=${1:?адрес Forgejo}
+repo=${2:?владелец/имя}
+branch=${3:?ветка}
+
+hdr=$(mktemp)
+trap 'rm -f "$hdr"' EXIT
+chmod 600 "$hdr"
+[ -z "${FORGEJO_TOKEN:-}" ] || printf 'Authorization: token %s\n' "$FORGEJO_TOKEN" >"$hdr"
+get() { curl -fsS -H @"$hdr" "$url/api/v1$1"; }
+
+pr=$(get "/repos/$repo/pulls?state=open&limit=50" |
+	jq -r --arg b "$branch" '[.[] | select(.head.ref == $b)][0].number // empty')
+[ -n "$pr" ] || exit 0
+sha=$(get "/repos/$repo/pulls/$pr" | jq -r .head.sha)
+since=$(get "/repos/$repo/git/commits/$sha" | jq -r '.created // .commit.committer.date')
+
+# Комментарии обсуждения PR и тексты ревью - по времени, не больше 20 КБ.
+{
+	get "/repos/$repo/issues/$pr/comments" |
+		jq -r --arg s "$since" '.[] | select(.updated_at > $s) | "### \(.user.login)\n\n\(.body)\n"'
+	get "/repos/$repo/pulls/$pr/reviews" |
+		jq -r --arg s "$since" '.[] | select(.submitted_at > $s and (.body | length) > 0) |
+			"### ревью \(.user.login) (\(.state))\n\n\(.body)\n"'
+} | head -c 20000
