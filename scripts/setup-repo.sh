@@ -50,18 +50,24 @@ g() {
 		-c user.name="$owner" -c user.email="$FORGEJO_ADMIN_EMAIL" "$@"
 }
 if api GET "/repos/$repo/branches/main" >/dev/null 2>&1; then
-	# Процессные файлы принадлежат фабрике: .forgejo/ и .factory/ приводятся к шаблону.
+	# Процессные файлы принадлежат фабрике: .forgejo/ приводится к шаблону. Настройки
+	# экземпляра (.factory/config.yml: роли, исполнители, пороги ворот) - решение владельца
+	# репозитория: из шаблона только при первом появлении.
 	g clone -q --depth 1 "$FORGEJO_URL/$repo.git" "$tmp/src"
-	for d in .forgejo .factory; do
-		[ -d "examples/$name/$d" ] || continue
-		rm -rf "${tmp:?}/src/$d"
-		cp -R "examples/$name/$d" "$tmp/src/"
-		g -C "$tmp/src" add -A "$d"
-	done
+	if [ -d "examples/$name/.forgejo" ]; then
+		rm -rf "${tmp:?}/src/.forgejo"
+		cp -R "examples/$name/.forgejo" "$tmp/src/"
+		g -C "$tmp/src" add -A .forgejo
+	fi
+	if [ -f "examples/$name/.factory/config.yml" ] && [ ! -f "$tmp/src/.factory/config.yml" ]; then
+		mkdir -p "$tmp/src/.factory"
+		cp "examples/$name/.factory/config.yml" "$tmp/src/.factory/config.yml"
+		g -C "$tmp/src" add .factory/config.yml
+	fi
 	if ! g -C "$tmp/src" diff --cached --quiet; then
 		g -C "$tmp/src" commit -q -m "процессные файлы фабрики из шаблона ai-factory"
 		g -C "$tmp/src" push -q origin main
-		log "процессные файлы (.forgejo/, .factory/) обновлены из шаблона"
+		log "процессные файлы (.forgejo/, новые настройки .factory/) обновлены из шаблона"
 	fi
 else
 	mkdir -p "$tmp/src"
