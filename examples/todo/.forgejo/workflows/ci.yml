@@ -19,11 +19,19 @@ jobs:
           git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
           git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
           chown -R node:node work
-      - name: Зависимости разработки (без скриптов установки)
-        run: cd work && factory-untrusted npm ci --ignore-scripts --no-audit --no-fund
+      - name: Зависимости разработки (без скриптов установки, с повторами)
+        run: cd work && factory-untrusted factory-npm-ci
       - name: Модульные тесты
         # Команда задана здесь, а не сценарием package.json: PR не может её подменить.
-        run: cd work && factory-untrusted node --test "test/**/*.test.ts"
+        run: cd work && factory-untrusted node --test "test/**/*.test.ts" 2>&1 | tee ../check.log
+      - name: Подробности - комментарием в PR (для доработки)
+        if: failure()
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: factory-pr-comment "модульные тесты" check.log 60
 
   types:
     runs-on: ci
@@ -33,10 +41,18 @@ jobs:
           git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
           git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
           chown -R node:node work
-      - name: Зависимости разработки (без скриптов установки)
-        run: cd work && factory-untrusted npm ci --ignore-scripts --no-audit --no-fund
+      - name: Зависимости разработки (без скриптов установки, с повторами)
+        run: cd work && factory-untrusted factory-npm-ci
       - name: Проверка типов TypeScript
-        run: cd work && factory-untrusted npx --no-install tsc --noEmit
+        run: cd work && factory-untrusted npx --no-install tsc --noEmit 2>&1 | tee ../check.log
+      - name: Подробности - комментарием в PR (для доработки)
+        if: failure()
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: factory-pr-comment "типы TypeScript" check.log 60
 
   acceptance:
     runs-on: ci
@@ -46,12 +62,20 @@ jobs:
           git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
           git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
           chown -R node:node work
-      - name: Зависимости разработки (без скриптов установки)
-        run: cd work && factory-untrusted npm ci --ignore-scripts --no-audit --no-fund
+      - name: Зависимости разработки (без скриптов установки, с повторами)
+        run: cd work && factory-untrusted factory-npm-ci
       - name: Приёмочные сценарии (Gherkin) - сделанных пунктов и пункта PR
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: cd work && factory-acceptance "${{ github.server_url }}" "${{ github.repository }}" "$BRANCH"
+        run: cd work && factory-acceptance "${{ github.server_url }}" "${{ github.repository }}" "$BRANCH" 2>&1 | tee ../check.log
+      - name: Подробности - комментарием в PR (для доработки)
+        if: failure()
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: factory-pr-comment "приёмочные сценарии" check.log 80
 
   mutation:
     runs-on: ci
@@ -61,14 +85,26 @@ jobs:
           git clone -q "${{ github.server_url }}/${{ github.repository }}.git" work
           git -C work fetch -q origin "$PR_REF" && git -C work checkout -q FETCH_HEAD
           git -C work diff --name-only origin/main...HEAD -- 'src/*.ts' | grep -v '\.d\.ts$' > changed.txt || true
+          # Пометки "Stryker disable" в изменениях PR отключили бы проверку - не допускаются.
+          if git -C work diff origin/main...HEAD -- src | grep -q '^+.*Stryker disable'; then
+            echo "в изменениях есть пометки Stryker disable - мутационное тестирование нельзя отключать" | tee check.log
+            exit 1
+          fi
           chown -R node:node work
-      - name: Зависимости разработки (без скриптов установки)
-        run: cd work && factory-untrusted npm ci --ignore-scripts --no-audit --no-fund
+      - name: Зависимости разработки (без скриптов установки, с повторами)
+        run: cd work && factory-untrusted factory-npm-ci
       - name: Мутационное тестирование изменённого кода (StrykerJS)
         run: |
           threshold=$(yq '.gate.mutation_break // 60' work/.factory/config.yml)
-          # shellcheck disable=SC2046
-          cd work && factory-mutation "$threshold" $(cat ../changed.txt)
+          cd work && factory-mutation "$threshold" $(cat ../changed.txt) 2>&1 | tee ../check.log
+      - name: Подробности - комментарием в PR (для доработки)
+        if: failure()
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: factory-pr-comment "мутационное тестирование (выжившие мутанты - слабые места модульных тестов)" check.log 120
 
   secrets:
     runs-on: ci

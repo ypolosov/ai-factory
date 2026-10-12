@@ -3,8 +3,9 @@
 # и загружает в Docker заданий агента и проверок, когда содержимое каталога меняется.
 FROM docker.io/library/node:24.21.0-bookworm-slim
 
+# procps (ps) нужен StrykerJS: его командный запуск тестов завершает процессы через ps.
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends git ca-certificates curl jq ripgrep \
+	&& apt-get install -y --no-install-recommends git ca-certificates curl jq ripgrep procps \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Сканеры для проверок PR, все под лицензиями OSI: Gitleaks (MIT) - секреты,
@@ -48,7 +49,7 @@ RUN npm install -g \
 	&& npm cache clean --force
 
 COPY opencode.json /etc/factory/opencode.json
-COPY factory-agent factory-publish factory-untrusted factory-role factory-feedback factory-tasks factory-acceptance factory-mutation /usr/local/bin/
+COPY factory-agent factory-publish factory-untrusted factory-role factory-feedback factory-tasks factory-acceptance factory-mutation factory-npm-ci factory-pr-comment /usr/local/bin/
 COPY prompts /etc/factory/prompts
 COPY checks /etc/factory/checks
 

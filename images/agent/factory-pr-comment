@@ -1,0 +1,24 @@
+#!/bin/sh
+# Комментарий в PR с хвостом журнала упавшей проверки: замечания агенту на доработку
+# (factory-feedback отдаёт их агенту) и подробности человеку.
+#
+# Использование: factory-pr-comment ЗАГОЛОВОК ФАЙЛ_ЖУРНАЛА [СТРОК]
+# Окружение: FORGEJO_URL, REPO, PR, BOT_TOKEN (в аргументы команд не попадает).
+set -eu
+title=${1:?заголовок}
+logf=${2:?файл журнала}
+lines=${3:-60}
+: "${FORGEJO_URL:?}" "${REPO:?}" "${PR:?}" "${BOT_TOKEN:?}"
+[ -s "$logf" ] || exit 0
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$tmp/auth"
+chmod 600 "$tmp/auth"
+# Без управляющих последовательностей цвета; обрезка по строкам и по объёму.
+tail -n "$lines" "$logf" | sed 's/\x1b\[[0-9;]*m//g' | head -c 12000 >"$tmp/tail"
+jq -n --arg t "$title" --rawfile l "$tmp/tail" \
+	'{body: ("## Проверка не прошла: " + $t + "\n\n```\n" + $l + "\n```")}' >"$tmp/c.json"
+curl -fsS -X POST -H @"$tmp/auth" -H 'Content-Type: application/json' --data @"$tmp/c.json" \
+	"$FORGEJO_URL/api/v1/repos/$REPO/issues/$PR/comments" >/dev/null
+echo "подробности проверки отправлены комментарием в PR #$PR"

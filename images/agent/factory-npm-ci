@@ -1,0 +1,12 @@
+#!/bin/sh
+# npm ci для проверок PR: без скриптов установки, с ограничением соединений и повторами -
+# сбой сети через прокси (ECONNRESET) не должен валить проверки и запускать доработку.
+set -u
+n=0
+until npm ci --ignore-scripts --no-audit --no-fund --maxsockets=6 \
+	--fetch-retries=4 --fetch-retry-mintimeout=2000 --fetch-retry-maxtimeout=20000; do
+	n=$((n + 1))
+	[ "$n" -lt 3 ] || exit 1
+	echo "npm ci: сбой, повтор $n через $((n * 10)) с" >&2
+	sleep $((n * 10))
+done

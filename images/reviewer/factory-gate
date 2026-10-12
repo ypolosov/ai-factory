@@ -99,7 +99,7 @@ for c in $CHECKS; do
 done
 if [ -n "$failed" ]; then
 	# shellcheck disable=SC2016 # обратные кавычки - разметка markdown
-	printf '## Ворота: не прошли обязательные проверки\n\n%s\n\nПочини их; подробности - в журналах проверок PR.\n' \
+	printf '## Ворота: не прошли обязательные проверки\n\n%s\n\nПочини их; подробности - в комментариях проверок выше.\n' \
 		"$(for f in $failed; do printf -- '- `%s`\n' "$f"; done)" >"$tmp/fb.md"
 	comment "$tmp/fb.md"
 	rework "красные проверки:$failed"

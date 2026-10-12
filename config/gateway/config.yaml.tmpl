@@ -51,6 +51,10 @@ frontendPolicies:
 llm:
   port: 4000
   policies:
+    # Длинные ответы открытых моделей через OpenRouter не укладываются в 120 с по умолчанию.
+    timeout:
+      requestTimeout: 300s
+      backendRequestTimeout: 300s
     apiKey:
       mode: strict
       location:

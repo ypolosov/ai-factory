@@ -12,6 +12,8 @@ shift
 	echo "нет изменённых файлов кода - мутационное тестирование не нужно"
 	exit 0
 }
+# tsconfigFile - несуществующий файл: правка tsconfig в песочнице не нужна (простой
+# tsconfig без extends), а без неё Stryker не грузит TypeScript из своего каталога.
 cfg=$(mktemp /tmp/stryker.XXXXXX)
 mv "$cfg" "$cfg.json"
 cfg=$cfg.json
@@ -22,7 +24,8 @@ jq -n --argjson b "$threshold" '{
 	thresholds: {high: 80, low: $b, break: $b},
 	reporters: ["clear-text", "progress"],
 	coverageAnalysis: "off",
-	concurrency: 2
+	concurrency: 2,
+	tsconfigFile: "tsconfig.stryker-unused.json"
 }' --args "$@" >"$cfg"
 chmod 644 "$cfg"
 echo "мутируются: $*; порог: $threshold%"

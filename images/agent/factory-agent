@@ -57,55 +57,67 @@ $(cat "$task")"
 chown -R node:node .
 gw="-e GATEWAY_URL -e GATEWAY_KEY -e TASK_ID"
 
+# run_harness - запуск обвязки исполнителя; журнал дописывается в agent.log.
+run_harness() {
+	case $FACTORY_EXECUTOR in
+	opencode)
+		# shellcheck disable=SC2086 # список флагов через пробел
+		factory-untrusted $gw opencode run --pure --auto --model "gateway/$FACTORY_MODEL" "$prompt" \
+			>>"$out/agent.log" 2>&1
+		rc=$?
+		;;
+	claude)
+		# Подписка владельца: токен claude setup-token, запросы - прозрачно через шлюз.
+		[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || { echo "нет CLAUDE_CODE_OAUTH_TOKEN" >&2 && exit 2; }
+		# shellcheck disable=SC2086
+		ANTHROPIC_BASE_URL=$GATEWAY_URL \
+			ANTHROPIC_CUSTOM_HEADERS="$(printf 'x-gateway-key: %s\nx-task-id: %s' "$GATEWAY_KEY" "$TASK_ID")" \
+			factory-untrusted $gw -e ANTHROPIC_BASE_URL -e ANTHROPIC_CUSTOM_HEADERS -e CLAUDE_CODE_OAUTH_TOKEN \
+			claude -p "$prompt" --model "$FACTORY_MODEL" --permission-mode acceptEdits \
+			--allowedTools "Bash Read Edit Write Glob Grep" >>"$out/agent.log" 2>&1
+		rc=$?
+		;;
+	codex)
+		# Подписка владельца: отдельный вход ChatGPT для фабрики - в ~/.codex/auth.json
+		# пользователя node; запросы - через шлюз.
+		[ -n "${CODEX_AUTH_JSON:-}" ] || { echo "нет CODEX_AUTH_JSON" >&2 && exit 2; }
+		auth=/home/node/.codex/auth.json
+		install -d -m 700 -o node -g node /home/node/.codex
+		(umask 077 && printf '%s' "$CODEX_AUTH_JSON" >"$auth")
+		chown node:node "$auth"
+		auth_before=$(sha256sum "$auth")
+		set --
+		[ "$FACTORY_MODEL" = default ] || set -- -m "$FACTORY_MODEL"
+		# Своя песочница Codex (bubblewrap) в контейнере без прав на пространства имён
+		# не запускает ни одной команды; песочница здесь - контейнер задания и пользователь node.
+		# shellcheck disable=SC2086
+		factory-untrusted $gw codex exec --skip-git-repo-check --sandbox danger-full-access "$@" \
+			-c model_provider=gw \
+			-c "model_providers.gw={name=\"gateway\",base_url=\"$GATEWAY_URL/v1\",wire_api=\"responses\",requires_openai_auth=true,env_http_headers={\"x-gateway-key\"=\"GATEWAY_KEY\",\"x-task-id\"=\"TASK_ID\"}}" \
+			"$prompt" >>"$out/agent.log" 2>&1
+		rc=$?
+		# Обновлённые в задании токены пропадут вместе с контейнером.
+		if [ "$(sha256sum "$auth")" != "$auth_before" ]; then
+			echo "внимание: Codex обновил токены входа в задании - вход фабрики (.state/codex) мог устареть" >&2
+		fi
+		;;
+	*)
+		echo "неизвестный исполнитель: $FACTORY_EXECUTOR" >&2
+		exit 2
+		;;
+	esac
+}
+
 start=$(date +%s)
+: >"$out/agent.log"
 set +e
-case $FACTORY_EXECUTOR in
-opencode)
-	# shellcheck disable=SC2086 # список флагов через пробел
-	factory-untrusted $gw opencode run --pure --auto --model "gateway/$FACTORY_MODEL" "$prompt" \
-		>"$out/agent.log" 2>&1
-	rc=$?
-	;;
-claude)
-	# Подписка владельца: токен claude setup-token, запросы - прозрачно через шлюз.
-	[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || { echo "нет CLAUDE_CODE_OAUTH_TOKEN" >&2 && exit 2; }
-	# shellcheck disable=SC2086
-	ANTHROPIC_BASE_URL=$GATEWAY_URL \
-		ANTHROPIC_CUSTOM_HEADERS="$(printf 'x-gateway-key: %s\nx-task-id: %s' "$GATEWAY_KEY" "$TASK_ID")" \
-		factory-untrusted $gw -e ANTHROPIC_BASE_URL -e ANTHROPIC_CUSTOM_HEADERS -e CLAUDE_CODE_OAUTH_TOKEN \
-		claude -p "$prompt" --model "$FACTORY_MODEL" --permission-mode acceptEdits \
-		--allowedTools "Bash Read Edit Write Glob Grep" >"$out/agent.log" 2>&1
-	rc=$?
-	;;
-codex)
-	# Подписка владельца: отдельный вход ChatGPT для фабрики - в ~/.codex/auth.json
-	# пользователя node; запросы - через шлюз.
-	[ -n "${CODEX_AUTH_JSON:-}" ] || { echo "нет CODEX_AUTH_JSON" >&2 && exit 2; }
-	auth=/home/node/.codex/auth.json
-	install -d -m 700 -o node -g node /home/node/.codex
-	(umask 077 && printf '%s' "$CODEX_AUTH_JSON" >"$auth")
-	chown node:node "$auth"
-	auth_before=$(sha256sum "$auth")
-	set --
-	[ "$FACTORY_MODEL" = default ] || set -- -m "$FACTORY_MODEL"
-	# Своя песочница Codex (bubblewrap) в контейнере без прав на пространства имён
-	# не запускает ни одной команды; песочница здесь - контейнер задания и пользователь node.
-	# shellcheck disable=SC2086
-	factory-untrusted $gw codex exec --skip-git-repo-check --sandbox danger-full-access "$@" \
-		-c model_provider=gw \
-		-c "model_providers.gw={name=\"gateway\",base_url=\"$GATEWAY_URL/v1\",wire_api=\"responses\",requires_openai_auth=true,env_http_headers={\"x-gateway-key\"=\"GATEWAY_KEY\",\"x-task-id\"=\"TASK_ID\"}}" \
-		"$prompt" >"$out/agent.log" 2>&1
-	rc=$?
-	# Обновлённые в задании токены пропадут вместе с контейнером.
-	if [ "$(sha256sum "$auth")" != "$auth_before" ]; then
-		echo "внимание: Codex обновил токены входа в задании - вход фабрики (.state/codex) мог устареть" >&2
-	fi
-	;;
-*)
-	echo "неизвестный исполнитель: $FACTORY_EXECUTOR" >&2
-	exit 2
-	;;
-esac
+run_harness
+# Сбой модели у провайдера (тайм-аут, 502-504) - ещё одна попытка поверх сделанного.
+if [ "$rc" -ne 0 ] && grep -Eqi 'gateway timeout|upstream call timeout|50[234]|overloaded' "$out/agent.log"; then
+	echo "сбой модели у провайдера - повтор обвязки" >&2
+	printf '\n--- повтор после сбоя модели ---\n' >>"$out/agent.log"
+	run_harness
+fi
 set -e
 end=$(date +%s)
 

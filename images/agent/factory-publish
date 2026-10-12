@@ -22,7 +22,40 @@ result=$(cd "$result" && pwd)
 : "${FORGEJO_URL:?}" "${REPO:?}" "${ISSUE:?}" "${ISSUE_TITLE:?}" "${BOT_TOKEN:?}"
 
 patch=$result/agent.patch
-[ -s "$patch" ] || { echo "агент не внёс изменений - PR не нужен" >&2 && exit 1; }
+branch=agent/issue-$ISSUE
+run=$(cat "$result/run.json")
+# Заголовок по роли: agent (разработка), spec (спецификация), tests (приёмочные тесты).
+role=$(printf '%s' "$run" | jq -r '.role // "dev"')
+prefix=$([ "$role" = dev ] && echo agent || echo "$role")
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+creds=$work/.git-credentials
+host=${FORGEJO_URL#http://}
+printf 'http://factory-bot:%s@%s\n' "$BOT_TOKEN" "$host" >"$creds"
+chmod 600 "$creds"
+printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$work/auth.header"
+chmod 600 "$work/auth.header"
+git() { command git -c credential.helper="store --file=$creds" "$@"; }
+gitbot() { git -c user.name=factory-bot -c user.email=bot@factory.local "$@"; }
+
+# Доработка: ветка прошлой попытки уже есть - новый коммит поверх неё (агент
+# работал в её копии, патч - относительно её головы).
+rework=""
+if git ls-remote --exit-code --heads "$FORGEJO_URL/$REPO.git" "$branch" >/dev/null 2>&1; then
+	rework=1
+fi
+
+if [ ! -s "$patch" ]; then
+	[ -n "$rework" ] || { echo "агент не внёс изменений - PR не нужен" >&2 && exit 1; }
+	# Доработка без изменений: агент счёл, что менять нечего (например, проверки упали
+	# не по его вине) - пустой коммит перезапускает проверки и считается кругом.
+	git clone -q -b "$branch" "$FORGEJO_URL/$REPO.git" "$work/repo"
+	gitbot -C "$work/repo" commit -q --allow-empty -m "$prefix: #$ISSUE доработка: изменений нет, повтор проверок"
+	git -C "$work/repo" push -q origin "$branch"
+	echo "доработка без изменений: проверки PR перезапущены"
+	exit 0
+fi
 
 # Детерминированные ворота до любой записи. Пути - из всех заголовков патча,
 # включая переименования и копирование.
@@ -52,22 +85,7 @@ lines=$(git apply --numstat "$patch" | awk '{ s += $1 + $2 } END { print s + 0 }
 bytes=$(wc -c <"$patch")
 [ "$bytes" -le 1048576 ] || { echo "патч слишком большой: $bytes байт" >&2 && exit 1; }
 
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-creds=$work/.git-credentials
-host=${FORGEJO_URL#http://}
-printf 'http://factory-bot:%s@%s\n' "$BOT_TOKEN" "$host" >"$creds"
-chmod 600 "$creds"
-printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$work/auth.header"
-chmod 600 "$work/auth.header"
-git() { command git -c credential.helper="store --file=$creds" "$@"; }
-
-branch=agent/issue-$ISSUE
-# Доработка: ветка прошлой попытки уже есть - новый коммит поверх неё (агент
-# работал в её копии, патч - относительно её головы).
-rework=""
-if git ls-remote --exit-code --heads "$FORGEJO_URL/$REPO.git" "$branch" >/dev/null 2>&1; then
-	rework=1
+if [ -n "$rework" ]; then
 	git clone -q -b "$branch" "$FORGEJO_URL/$REPO.git" "$work/repo"
 else
 	git clone -q "$FORGEJO_URL/$REPO.git" "$work/repo"
@@ -76,13 +94,9 @@ cd "$work/repo"
 [ -n "$rework" ] || git switch -q -c "$branch"
 git apply --check "$patch"
 git apply --index "$patch"
-run=$(cat "$result/run.json")
-# Заголовок по роли: agent (разработка), spec (спецификация), tests (приёмочные тесты).
-role=$(printf '%s' "$run" | jq -r '.role // "dev"')
-prefix=$([ "$role" = dev ] && echo agent || echo "$role")
 msg="$prefix: #$ISSUE $ISSUE_TITLE"
 [ -z "$rework" ] || msg="$prefix: #$ISSUE доработка по замечаниям"
-git -c user.name=factory-bot -c user.email=bot@factory.local commit -q -m "$msg"
+gitbot commit -q -m "$msg"
 if [ -n "$rework" ]; then
 	git push -q origin "$branch"
 else
