@@ -72,7 +72,7 @@ export function guardPatch(patch: string, agentExitCode: number, o: GuardOptions
   if (!patch.trim() || files.length === 0) findings.push({ level: 'block', message: 'агент ничего не изменил' });
   for (const f of files) {
     const hit = o.protectedPaths.find((p) => (p.endsWith('/') ? f.startsWith(p) : f === p));
-    if (hit) findings.push({ level: 'block', message: `агент изменил защищённый путь ${f}` });
+    if (hit) findings.push({ level: 'block', message: `изменён защищённый путь ${f}: агенту нельзя, человеку - решение владельца` });
   }
   if (/^(new file mode|new mode) 120000$/m.test(patch)) findings.push({ level: 'block', message: 'патч добавляет символическую ссылку' });
   const bytes = reviewBytes(patch);

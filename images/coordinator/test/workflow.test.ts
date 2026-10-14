@@ -145,7 +145,7 @@ describe('координатор: задача -> агент -> страж -> PR
     const issue = (await tracker.createIssue({ title: 'Поменять CI', body: '', labels: ['agent'] })).key;
     expect(await settle(issue)).toEqual([labels.failed]);
     expect((await mf.forge.listPulls({ state: 'all' })).length).toBe(before);
-    expect((await tracker.listComments(issue)).at(-1)?.body).toContain('защищённый путь .github/workflows/ci.yml');
+    expect((await tracker.listComments(issue)).at(-1)?.body).toContain('изменён защищённый путь .github/workflows/ci.yml');
   });
 
   it('агент упал с изменением - PR с красным вердиктом', async () => {

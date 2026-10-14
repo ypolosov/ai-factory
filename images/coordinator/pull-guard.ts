@@ -24,16 +24,18 @@ export function pullGuard(d: PullGuardDeps) {
           if ((await d.forge.statuses(p.headSha)).some((s) => s.key === VERDICT_KEY)) continue;
           const v = guardPatch(await d.forge.pullDiff(p.number), 0, d.guard, await d.targetConfig());
           const ok = v.state === 'success';
-          await d.forge.setStatus(p.headSha, {
-            key: VERDICT_KEY,
-            state: ok ? 'success' : 'failure',
-            description: ok ? 'страж: изменение в границах правил' : `страж: замечаний ${v.findings.length}`,
-          });
+          // Сначала комментарий, потом статус: сбой между ними не оставит вердикта без объяснения -
+          // следующий проход повторит проверку.
           const text = v.findings.map((f) => `- ${f.message}`).join('\n') || '- замечаний нет';
           await d.forge.commentPull(
             p.number,
             `Вердикт стража фабрики (${ok ? 'зелёный' : 'красный'}) для ${p.headSha.slice(0, 7)}:\n${text}`,
           );
+          await d.forge.setStatus(p.headSha, {
+            key: VERDICT_KEY,
+            state: ok ? 'success' : 'failure',
+            description: ok ? 'страж: изменение в границах правил' : `страж: замечаний ${v.findings.length}`,
+          });
           d.log(`PR ${p.number} ${p.headSha.slice(0, 7)}: ${v.state}`);
         }
       } catch (e) {
