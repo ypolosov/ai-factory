@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Mastra } from '@mastra/core/mastra';
 import { LibSQLStore } from '@mastra/libsql';
 import { selectForge, selectJobs, selectKnowledge, selectNotifier, selectTracker } from '../ports/select.ts';
+import { compositeKnowledge, trackerKnowledge } from '../ports/tracker-knowledge.ts';
 import type { Deps } from './actions.ts';
 import { broker } from './broker.ts';
 import { loadConfig } from './config.ts';
@@ -39,7 +40,12 @@ const knowledgeDir = join(cfg.data, 'knowledge');
 let knowledgeSha = 'HEAD';
 const stories: StoryDeps = {
   tracker: deps.tracker,
-  knowledge: selectKnowledge({ kind: 'gitdocs', dir: knowledgeDir, web: cfg.knowledgeWeb, ref: () => knowledgeSha }),
+  // Знание: правила и решения в git цели и задачи трекера.
+  knowledge: compositeKnowledge([
+    selectKnowledge({ kind: 'gitdocs', dir: knowledgeDir, web: cfg.knowledgeWeb, ref: () => knowledgeSha }),
+    // Задачи на решение противоречий пересказывают противоречие - знанием они не считаются.
+    trackerKnowledge(deps.tracker, (i) => i.labels.includes(cfg.storyLabels.decision)),
+  ]),
   refreshKnowledge: async () => {
     knowledgeSha = (await deps.git.sync(knowledgeDir, (await deps.forge.repo()).defaultBranch)).sha;
   },

@@ -41,6 +41,7 @@ export function memoryTracker(user = 'factory-bot'): Tracker {
       return [...issues.values()]
         .filter((i) => state === 'all' || i.state === state)
         .filter((i) => !q.label || i.labels.includes(q.label))
+        .filter((i) => !q.text || `${i.title}\n${i.body}`.toLowerCase().includes((q.text ?? '').toLowerCase()))
         .slice(0, q.limit ?? 50)
         .map((i) => ({ ...i, labels: [...i.labels] }));
     },

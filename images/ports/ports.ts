@@ -41,6 +41,7 @@ export interface LabelEvent {
 export interface IssueQuery {
   state?: IssueState | 'all';
   label?: string;
+  text?: string; // поиск по названию и описанию
   limit?: number;
 }
 

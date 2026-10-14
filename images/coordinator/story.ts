@@ -38,7 +38,8 @@ export async function claimStory(d: StoryDeps, issue: string): Promise<Statement
 
 export async function judgeStory(d: StoryDeps, s: Statement): Promise<Judgement> {
   await d.refreshKnowledge();
-  const passages = await d.knowledge.search(`${s.title}\n${s.body}`, 8);
+  // Сама стори знанием о себе не считается.
+  const passages = (await d.knowledge.search(`${s.title}\n${s.body}`, 9)).filter((p) => p.source !== s.issue).slice(0, 8);
   return d.judge.check(s, passages);
 }
 

@@ -58,6 +58,19 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
     });
     afterAll(async () => fx?.cleanup());
 
+    it('поиск по тексту задачи', async () => {
+      const word = `zx${uniq()}`;
+      const i = await t.createIssue({ title: `поиск ${uniq()}`, body: `описание со словом ${word}` });
+      // Поиск носителя может отставать от записи (индекс Forgejo строится в очереди): ждём до 20 с.
+      let found = false;
+      for (let n = 0; n < 40 && !found; n++) {
+        found = (await t.listIssues({ text: word, state: 'all' })).some((x) => x.key === i.key);
+        if (!found) await new Promise((r) => setTimeout(r, 500));
+      }
+      assert.ok(found, `задача ${i.key} не найдена по слову ${word}`);
+      assert.equal((await t.listIssues({ text: `zx${uniq()}`, state: 'all' })).length, 0);
+    });
+
     it('созданная задача открыта и читается по ключу', async () => {
       const title = `задача ${uniq()}`;
       const made = await t.createIssue({ title, body: 'описание', labels: ['agent'] });

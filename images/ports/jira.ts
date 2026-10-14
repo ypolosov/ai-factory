@@ -116,6 +116,7 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
     async listIssues(q = {}) {
       const parts = [`project = "${cfg.project}"`];
       if (q.label) parts.push(`labels = "${q.label.replace(/"/g, '\\"')}"`);
+      if (q.text) parts.push(`text ~ "${q.text.replace(/["\\]/g, ' ')}"`);
       const state = q.state ?? 'open';
       if (state === 'open') parts.push('statusCategory != Done');
       if (state === 'closed') parts.push('statusCategory = Done');
