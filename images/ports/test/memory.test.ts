@@ -7,7 +7,7 @@ trackerContract('в памяти', async () => ({ tracker: memoryTracker(), clea
 
 forgeContract('в памяти', async () => {
   const m = memoryForge();
-  return { forge: m.forge, openPull: m.openPull, pushBranch: async () => m.pushBranch(), cleanup: async () => {} };
+  return { forge: m.forge, openPull: m.openPull, pushBranch: async () => m.pushBranch(), tag: m.tag, cleanup: async () => {} };
 });
 
 jobsContract('в памяти', async () => ({

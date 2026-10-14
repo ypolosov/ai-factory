@@ -156,6 +156,18 @@ export function githubForge(cfg: GithubConfig): Forge {
         }),
       );
     },
+    async tags() {
+      return (await api.json<Json[]>('GET', '/tags?per_page=100')).map((t) => ({
+        name: String(t.name),
+        sha: String((t.commit as Json).sha),
+      }));
+    },
+    async commits(base, head) {
+      const list = base
+        ? ((await api.json('GET', `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`)).commits as Json[])
+        : await api.json<Json[]>('GET', `/commits?sha=${encodeURIComponent(head)}&per_page=100`);
+      return list.map((c) => ({ sha: String(c.sha), message: String((c.commit as Json).message) }));
+    },
     async requiredChecks(branch) {
       // Ответ о ветке показывает защиту и без прав администратора.
       const b = await api.optional(`/branches/${encodeURIComponent(branch)}`);

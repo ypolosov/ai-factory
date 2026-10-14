@@ -104,9 +104,10 @@ export function memoryTracker(user = 'factory-bot'): Tracker {
 export function memoryForge(user = 'factory-bot') {
   const defaultBranch = 'main';
   const heads = new Map<string, string>([[defaultBranch, 'sha-0']]);
-  const commits = new Map<string, { author: string; date: string; file: string }>([
-    ['sha-0', { author: user, date: now(), file: 'README.md' }],
+  const commits = new Map<string, { author: string; date: string; file: string; parent?: string; message?: string }>([
+    ['sha-0', { author: user, date: now(), file: 'README.md', message: 'init' }],
   ]);
+  const tags = new Map<string, string>();
   const pulls = new Map<number, Pull>();
   const pullComments = new Map<number, Comment[]>();
   const statuses = new Map<string, CommitStatus[]>();
@@ -187,6 +188,16 @@ export function memoryForge(user = 'factory-bot') {
     async requiredChecks() {
       return [];
     },
+    async tags() {
+      return [...tags].reverse().map(([name, sha]) => ({ name, sha }));
+    },
+    async commits(base, head) {
+      const out: { sha: string; message: string }[] = [];
+      for (let sha: string | undefined = head; sha && sha !== base; sha = commits.get(sha)?.parent) {
+        out.push({ sha, message: commits.get(sha)?.message ?? '' });
+      }
+      return out.reverse();
+    },
   };
   let branches = 0;
   const pushBranch = () => {
@@ -194,7 +205,7 @@ export function memoryForge(user = 'factory-bot') {
     const branch = `feature-${k}`;
     const sha = `sha-${k}`;
     const file = `src/f${k}.ts`;
-    commits.set(sha, { author: user, date: now(), file });
+    commits.set(sha, { author: user, date: now(), file, parent: heads.get(defaultBranch), message: `add ${file}` });
     heads.set(branch, sha);
     return { branch, file };
   };
@@ -202,9 +213,12 @@ export function memoryForge(user = 'factory-bot') {
     forge,
     pushBranch,
     // Ветка, отправленная мимо адаптера (например, git push потребителя в тесте).
-    setHead(branch: string, sha: string, file = 'README.md') {
-      commits.set(sha, { author: user, date: now(), file });
+    setHead(branch: string, sha: string, file = 'README.md', message = `change ${file}`) {
+      commits.set(sha, { author: user, date: now(), file, parent: heads.get(branch) ?? heads.get(defaultBranch), message });
       heads.set(branch, sha);
+    },
+    async tag(name: string, sha: string) {
+      tags.set(name, sha);
     },
     async openPull() {
       const b = pushBranch();

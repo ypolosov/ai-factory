@@ -17,6 +17,8 @@ export interface ForgeFixture {
   openPull(): Promise<{ n: number; branch: string; file: string }>;
   // Ветка с одним изменённым файлом без PR.
   pushBranch(): Promise<{ branch: string; file: string }>;
+  // Лёгкий тег на коммите; убирается в cleanup.
+  tag(name: string, sha: string): Promise<void>;
   cleanup(): Promise<void>;
 }
 
@@ -185,6 +187,30 @@ export function forgeContract(name: string, setup: () => Promise<ForgeFixture>) 
       assert.equal((await f.findPullByBranch(pr.branch))?.number, pr.n);
       assert.equal(await f.findPullByBranch(`no-${uniq()}`), undefined);
       assert.ok((await f.listPulls({ state: 'open' })).some((x) => x.number === pr.n));
+    });
+
+    it('тег виден с коммитом', async () => {
+      const head = (await f.branchHead((await f.repo()).defaultBranch)) ?? '';
+      const name = `v0.0.${Date.now()}`;
+      await fx.tag(name, head);
+      assert.deepEqual(
+        (await f.tags()).find((t) => t.name === name),
+        { name, sha: head },
+      );
+    });
+
+    it('коммиты между двумя точками', async () => {
+      const base = (await f.branchHead((await f.repo()).defaultBranch)) ?? '';
+      const b = await fx.pushBranch();
+      const head = (await f.branchHead(b.branch)) ?? '';
+      const between = await f.commits(base, head);
+      assert.deepEqual(
+        between.map((c) => c.sha),
+        [head],
+      );
+      assert.match(between[0]?.message ?? '', new RegExp(b.file.replace(/[.]/g, '[.]')));
+      const all = (await f.commits(undefined, head)).map((c) => c.sha);
+      assert.ok(all.includes(head) && all.includes(base));
     });
 
     it('PR открывается из ветки', async () => {

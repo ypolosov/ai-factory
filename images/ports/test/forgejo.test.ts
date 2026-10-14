@@ -51,6 +51,7 @@ if (!url || !token) {
       forge: forgejoForge(cfg),
       cleanup,
       pushBranch,
+      tag: async (name: string, sha: string) => void (await call('POST', `/repos/${cfg.repo}/tags`, { tag_name: name, target: sha })),
       openPull: async () => {
         const b = await pushBranch();
         const p = (await call('POST', `/repos/${cfg.repo}/pulls`, { head: b.branch, base: 'main', title: `PR ${seq}` })) as {

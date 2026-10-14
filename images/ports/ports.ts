@@ -118,6 +118,10 @@ export interface Forge {
   setStatus(sha: string, s: CommitStatus): Promise<void>;
   statuses(sha: string): Promise<CommitStatus[]>;
   requiredChecks(branch: string): Promise<string[]>;
+  // Теги репозитория с коммитами; новые - первыми.
+  tags(): Promise<{ name: string; sha: string }[]>;
+  // Коммиты, достижимые из head и недостижимые из base (base не задан - последние из head).
+  commits(base: string | undefined, head: string): Promise<{ sha: string; message: string }[]>;
 }
 
 export type JobState = 'pending' | 'running' | 'success' | 'failed' | 'stopped';

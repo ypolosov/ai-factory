@@ -31,6 +31,7 @@ if (!repo || !token) {
     const run = Math.random().toString(16).slice(2, 8);
     const forge = githubForge({ repo, token });
     const branches: string[] = [];
+    const tags: string[] = [];
     let seq = 0;
     const base = async () => ((await call('GET', '')) as { default_branch: string }).default_branch;
     const pushBranch = async () => {
@@ -49,6 +50,10 @@ if (!repo || !token) {
     return {
       forge,
       pushBranch,
+      tag: async (name: string, sha: string) => {
+        await call('POST', '/git/refs', { ref: `refs/tags/${name}`, sha });
+        tags.push(name);
+      },
       openPull: async () => {
         const b = await pushBranch();
         const p = (await call('POST', '/pulls', { title: `contract ${run} ${seq}`, head: b.branch, base: await base() })) as {
@@ -57,6 +62,7 @@ if (!repo || !token) {
         return { n: p.number, ...b };
       },
       cleanup: async () => {
+        for (const t of tags) await call('DELETE', `/git/refs/tags/${t}`);
         for (const branch of branches) {
           const p = await forge.findPullByBranch(branch);
           if (p) await call('PATCH', `/pulls/${p.number}`, { state: 'closed' });

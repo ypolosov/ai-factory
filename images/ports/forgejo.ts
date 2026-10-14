@@ -240,6 +240,15 @@ export function forgejoForge(cfg: ForgejoConfig): Forge {
         }),
       );
     },
+    async tags() {
+      return (await api.json<Json[]>('GET', '/tags?limit=50')).map((t) => ({ name: String(t.name), sha: String((t.commit as Json).sha) }));
+    },
+    async commits(base, head) {
+      const list = base
+        ? ((await api.json('GET', `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`)).commits as Json[])
+        : await api.json<Json[]>('GET', `/commits?sha=${encodeURIComponent(head)}&limit=50&stat=false`);
+      return list.map((c) => ({ sha: String(c.sha), message: String((c.commit as Json).message) }));
+    },
     async requiredChecks(branch) {
       const p = await api.optional(`/branch_protections/${encodeURIComponent(branch)}`);
       return ((p?.status_check_contexts as string[] | null) ?? []).map(String);
