@@ -67,6 +67,10 @@ if load atlassian.env ATLASSIAN_SITE ATLASSIAN_EMAIL JIRA_API_TOKEN CONFLUENCE_A
 		if [ "$code" = 200 ]; then ok "Jira: вход как $(field .displayName)"; else bad "Jira: myself -> $code $(field '.message // .errorMessages[0] // empty')"; fi
 		code=$(get "https://api.atlassian.com/ex/jira/$cloud/rest/api/3/project/$JIRA_PROJECT")
 		if [ "$code" = 200 ]; then ok "Jira: проект $(field '.key + " - " + .name')"; else bad "Jira: проект $JIRA_PROJECT -> $code"; fi
+		# Песочница контрактных тестов адаптера Jira: тесты заводят и закрывают задачи только там.
+		test_project=${JIRA_TEST_PROJECT:-FCT}
+		code=$(get "https://api.atlassian.com/ex/jira/$cloud/rest/api/3/project/$test_project")
+		if [ "$code" = 200 ]; then ok "Jira: песочница тестов $(field '.key + " - " + .name')"; else bad "Jira: песочница тестов $test_project -> $code"; fi
 		basic "$ATLASSIAN_EMAIL" "$CONFLUENCE_API_TOKEN"
 		code=$(get "https://api.atlassian.com/ex/confluence/$cloud/wiki/rest/api/space/$CONFLUENCE_SPACE")
 		if [ "$code" = 200 ]; then
@@ -114,8 +118,15 @@ if load github-target.env GITHUB_TARGET_REPO GITHUB_READ_TOKEN GITHUB_PUBLISH_TO
 		auth "Bearer $tok"
 		code=$(get "https://api.github.com/repos/$GITHUB_TARGET_REPO")
 		exp=$(sed -n 's/^github-authentication-token-expiration: *//Ip' "$tmp/head" | tr -d '\r')
-		if [ "$code" = 200 ]; then ok "токен $kind: доступ к $(field .full_name); истекает: ${exp:-не указано}"; else bad "токен $kind: $GITHUB_TARGET_REPO -> $code $(field '.message // empty')"; fi
+		# Репозиторий открытый: ответ 200 доказывает только, что токен действителен.
+		# Право записи проверяют контрактные тесты адаптера GitHub.
+		if [ "$code" = 200 ]; then ok "токен $kind действителен, $(field .full_name) виден; истекает: ${exp:-не указано}"; else bad "токен $kind: $GITHUB_TARGET_REPO -> $code $(field '.message // empty')"; fi
 	done
+	# Песочница контрактных тестов адаптера GitHub: туда пишет только токен публикации.
+	contract_repo=${GITHUB_CONTRACT_REPO:-ypolosov/factory-contract-tests}
+	auth "Bearer $GITHUB_PUBLISH_TOKEN"
+	code=$(get "https://api.github.com/repos/$contract_repo")
+	if [ "$code" = 200 ]; then ok "песочница $(field .full_name) видна (запись проверят контрактные тесты)"; else bad "песочница $contract_repo -> $code"; fi
 fi
 
 echo "Discord"
