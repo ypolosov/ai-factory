@@ -1,0 +1,30 @@
+@startuml c4-l2-target
+!include <C4/C4_Container>
+!include common.puml
+
+title C4 L2 - контейнеры целевой системы Переговорки (платформа цели: GitHub + Actions)
+
+Person(users, "Сотрудник", "Ищет свободную переговорную,\nбронирует, отменяет")
+Person(admin, "Администратор офиса", "Заводит переговорные,\nправит правила бронирования")
+
+System_Boundary(rooms, "Переговорки") {
+  Container(spa, "Веб-приложение", "TypeScript, React, Vite; nginx", "Календарь переговорных,\nформа брони, админка")
+  Container(api, "API", "TypeScript, NestJS", "Переговорные, брони, правила:\nбез пересечений, рабочие часы,\nвместимость, повторы")
+  ContainerDb(db, "База", "PostgreSQL", "Переговорные, брони;\nзапрет пересечений - ограничением")
+}
+
+System_Ext(discord, "Discord", "Канал офиса: уведомления о бронях")
+System_Ext(gh, "GitHub", "Репозиторий, Actions (CI цели),\nGHCR (образы)")
+System_Ext(factory, "Фабрика ПО на ИИ", "Создаёт и меняет систему,\nвыкладывает на стенд, наблюдает")
+
+Rel_D(users, spa, "бронирует", "HTTPS")
+Rel_D(admin, spa, "настраивает", "HTTPS")
+Rel_R(spa, api, "вызывает", "JSON/HTTP")
+Rel_D(api, db, "читает и пишет", "SQL")
+Rel_R(api, discord, "уведомления", "вебхук")
+Rel_U(gh, rooms, "собирает и тестирует,\nпубликует образы")
+Rel_U(factory, rooms, "выкладывает образы,\nпроверяет доступность")
+Rel_R(factory, gh, "PR, статусы стражей")
+
+SHOW_LEGEND()
+@enduml

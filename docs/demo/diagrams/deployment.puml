@@ -1,0 +1,66 @@
+@startuml deployment
+!include <C4/C4_Deployment>
+!include common.puml
+
+title Развёртывание демо: ноутбук + облачные сервисы; все соединения - исходящие с ноутбука
+
+Deployment_Node(laptop, "Ноутбук владельца", "Windows 11, WSL2, Docker Desktop, 24 ГБ для WSL") {
+  Deployment_Node(exo_n, "Экзокортекс владельца", "Claude Code, Codex в терминале") {
+    Container(exo, "Обвязка агентов", "MCP-клиент", "Читает правила из git цели,\nходит в MCP фабрики")
+  }
+  Deployment_Node(fstand, "compose: factory", "Docker") {
+    Container(coord, "Координатор", "Mastra core", "Опрашивает Jira, запускает\nзадания, ждёт людей")
+    Container(mcp, "MCP фабрики и бот", "TypeScript", "MCP для экзокортексов;\nбот Discord")
+    ContainerDb(kb, "База знаний и сборщики", "PostgreSQL; Onyx на переходе", "Опрос Jira, Confluence,\nGitHub, Discord")
+    Container(gw, "Шлюз моделей", "agentgateway", "Учёт цены по задаче")
+    Container(egress, "Прокси выхода", "allowlist", "Единственный выход\nдля заданий")
+    Container(cd, "Выкладка и наблюдение", "deployer, Gatus, GlitchTip", "Тянет образы из GHCR")
+  }
+  Deployment_Node(runner_n, "Свой раннер Bitbucket", "Linux Docker runner") {
+    Deployment_Node(jobs, "Docker заданий", "отдельный dind, сеть jobs") {
+      Container(step, "Шаг задания", "образ исполнителя", "Агент без права записи;\nпубликация - отдельным шагом")
+    }
+  }
+  Deployment_Node(tstand, "compose: rooms (стенд цели)", "Docker") {
+    Container(spa, "Веб-приложение", "nginx")
+    Container(api, "API", "NestJS")
+    ContainerDb(db, "База", "PostgreSQL")
+  }
+}
+
+Deployment_Node(bbc, "Bitbucket Cloud", "SaaS") {
+  Container(pl, "Pipelines фабрики", "оркестрация шагов", "Репозиторий фабрики,\nочередь шагов для раннера")
+}
+Deployment_Node(ghc, "GitHub", "SaaS") {
+  Container(actions, "Actions цели", "hosted runners", "Сборка, тесты, e2e")
+  ContainerDb(ghcr, "GHCR", "реестр образов", "Образы цели")
+}
+Deployment_Node(atl, "Atlassian Cloud", "SaaS") {
+  Container(jira, "Jira", "трекер")
+  Container(conf, "Confluence", "вики")
+}
+Deployment_Node(dsc, "Discord", "SaaS") {
+  Container(chan, "Сервер команды", "каналы, бот")
+}
+Deployment_Node(vend, "Вендоры моделей", "SaaS") {
+  Container(models, "Модели", "Anthropic, OpenAI;\nOpenRouter - эмбеддинги")
+}
+
+Rel(coord, jira, "опрос событий, статусы", "HTTPS")
+Rel(coord, pl, "запуск задания", "HTTPS")
+Rel(step, pl, "раннер забирает шаги", "HTTPS")
+Rel(step, egress, "весь выход", "HTTP proxy")
+Rel(egress, ghc, "клон, PR, статусы", "HTTPS")
+Rel(egress, models, "подписки вендора", "HTTPS")
+Rel(gw, models, "модели и эмбеддинги", "HTTPS")
+Rel(kb, atl, "опрос изменений", "HTTPS")
+Rel(mcp, chan, "бот", "WebSocket")
+Rel(exo, mcp, "MCP", "localhost")
+Rel(actions, ghcr, "публикует образы")
+Rel(cd, ghcr, "тянет образы", "HTTPS")
+Rel(cd, tstand, "выкладка", "docker compose")
+Rel(spa, api, "JSON/HTTP")
+Rel(api, db, "SQL")
+
+SHOW_LEGEND()
+@enduml

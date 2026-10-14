@@ -1,0 +1,22 @@
+' Общий вид UML-диаграмм демо (сценарии, функции): шрифт, без тени.
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam dpi 110
+skinparam wrapWidth 260
+skinparam maxMessageSize 260
+skinparam ArrowColor #4B5563
+skinparam packageBorderColor #94A3B8
+skinparam packageBackgroundColor #F8FAFC
+skinparam sequence {
+  ParticipantBorderColor #4B5563
+  ParticipantBackgroundColor #FFFFFF
+  LifeLineBorderColor #94A3B8
+  GroupBorderColor #94A3B8
+  GroupBackgroundColor #F1F5F9
+}
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #EFF6FF
+  BorderColor #1D4ED8
+}

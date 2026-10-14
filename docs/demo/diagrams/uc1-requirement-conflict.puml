@@ -1,0 +1,30 @@
+@startuml uc1-requirement-conflict
+!include common-uml.puml
+
+title UC1 Требование -> согласование знаний -> решение архитектора
+
+actor "Product Owner" as PO
+participant "Бот\n(Discord)" as BOT
+participant "База знаний\nи библиотекарь" as KB
+participant "Confluence" as CONF
+participant "Сверщик\n(агент)" as REC
+participant "Jira" as JIRA
+actor "Архитектор" as ARC
+participant "GitHub\n(правила и ADR цели)" as GH
+
+autonumber
+PO -> BOT : что известно про повторяющиеся брони?
+BOT -> KB : поиск
+KB --> BOT : ADR-5 "не больше 8 повторов", задача ROOMS-7, обсуждение в канале
+BOT --> PO : выжимка со ссылками
+PO -> CONF : стори "повтор каждую неделю без даты конца"
+KB -> CONF : опрос изменений: новая версия страницы
+KB -> REC : сверить новое утверждение
+REC -> KB : связь: стори <-> ADR-5 - противоречие
+REC -> JIRA : задача архитектору: цитаты обеих сторон, ссылки
+REC -> BOT : уведомление в канал продукта
+ARC -> GH : PR: ADR-5 пересмотрен (до 26 повторов) + правило-страж
+note right of GH : слияние PR = решение;\nстраж проверяет новый предел
+GH --> KB : правила и решения обновлены
+BOT --> PO : согласовано, ссылка на ADR-5; можно нарезать задачи (UC2)
+@enduml

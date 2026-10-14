@@ -1,0 +1,58 @@
+@startuml c4-l1-context
+!include <C4/C4_Context>
+!include common.puml
+
+title C4 L1 - контекст: кто работает с фабрикой и с какими системами она связана
+
+Person(product, "Продукт", "Product Owner, Project Manager:\nтребования, планирование, отчёты")
+Person(eng, "Инженеры", "Архитектор, дизайнер,\nразработчики BE и FE, QA, DevOps")
+Person(ops, "Эксплуатация и релиз", "Инженер эксплуатации,\nрелиз-менеджер")
+
+System_Ext(exo, "Экзокортекс человека", "У каждого свой: обвязка агентов\n(Claude Code, Codex, Cursor, ...),\nнавыки, практики")
+
+System_Boundary(scope, "Предмет демо") {
+  System(factory, "Фабрика ПО на ИИ", "Координирует работу, исполняет задачи\nагентами, проверяет результат стражами\nправил и управлением, ведёт базу знаний")
+  System(target, "Целевая система Переговорки", "Фронтенд + бэкенд:\nбронирование переговорных")
+}
+Person(users, "Сотрудники", "Пользователи\nприложения")
+
+System_Ext(jira, "Jira", "Задачи и статусы")
+System_Ext(conf, "Confluence", "Требования,\nстраницы продукта")
+System_Ext(discord, "Discord", "Каналы команды,\nбот фабрики")
+System_Ext(bb, "Bitbucket Cloud", "Платформа фабрики:\nрепозиторий и Pipelines")
+System_Ext(gh, "GitHub", "Платформа цели:\nрепозиторий, Actions, GHCR")
+System_Ext(llm, "Вендоры моделей", "Anthropic, OpenAI - подписки;\nOpenRouter - эмбеддинги")
+
+Lay_R(product, eng)
+Lay_R(eng, ops)
+Lay_D(eng, exo)
+Lay_D(exo, factory)
+Lay_R(factory, target)
+Lay_R(target, users)
+Lay_D(factory, bb)
+Lay_R(jira, conf)
+Lay_R(conf, discord)
+Lay_R(discord, bb)
+Lay_R(bb, gh)
+Lay_R(gh, llm)
+
+Rel(product, exo, "работают через")
+Rel(eng, exo, "работают через")
+Rel(ops, exo, "работают через")
+Rel(product, jira, "задачи, планы")
+Rel(product, conf, "требования")
+Rel(ops, discord, "алерты, команды боту")
+Rel(exo, factory, "MCP фабрики;\nправила из git")
+Rel(users, target, "бронируют")
+
+Rel(factory, jira, "читает и ведёт задачи")
+Rel(factory, conf, "собирает знание")
+Rel(factory, discord, "ответы, уведомления")
+Rel(factory, bb, "свои задания\nна своём раннере")
+Rel(factory, gh, "PR, статусы стражей")
+Rel(factory, llm, "модели через шлюз")
+Rel(gh, target, "CI собирает образы")
+Rel(factory, target, "выкладка на стенд,\nнаблюдение")
+
+SHOW_LEGEND()
+@enduml

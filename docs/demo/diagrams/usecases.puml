@@ -1,0 +1,56 @@
+@startuml usecases
+!include common-uml.puml
+left to right direction
+
+title Основные сценарии демо: люди-агенты (слева) и агенты фабрики (справа)
+
+actor "Product Owner" as PO
+actor "Project Manager" as PM
+actor "Архитектор" as ARC
+actor "Дизайнер" as DES
+actor "Разработчики\nBE и FE" as DEV
+actor "QA" as QA
+actor "DevOps" as DO
+actor "Эксплуатация" as OPS
+actor "Релиз-менеджер" as RM
+
+rectangle "Фабрика ПО на ИИ" {
+  usecase "UC1 Требование ->\nсогласование знаний" as UC1
+  usecase "UC2 Планирование:\nспринт, дейли, учёт времени" as UC2
+  usecase "UC3 Макет ->\nпроверка соответствия" as UC3
+  usecase "UC4 Задача -> PR ->\nстражи -> слияние" as UC4
+  usecase "UC5 Релиз и выкладка" as UC5
+  usecase "UC6 Сбой -> баг ->\nисправление" as UC6
+  usecase "UC7 Знание -> правила-стражи" as UC7
+  usecase "UC8 Вопросы к базе\nи отчёты учёта" as UC8
+}
+
+actor "Библиотекарь\n(агент)" as LIB
+actor "Исполнитель\n(агент)" as EXE
+actor "Судья-ревьюер\n(агент)" as JDG
+actor "Сверщик\n(агент)" as REC
+
+PO --> UC1
+PO --> UC8
+PM --> UC2
+PM --> UC6
+ARC --> UC1
+ARC --> UC7
+DES --> UC3
+DEV --> UC4
+QA --> UC4
+QA --> UC6
+DO --> UC5
+OPS --> UC6
+RM --> UC5
+
+UC1 --> LIB
+UC1 --> REC
+UC2 --> LIB
+UC3 --> JDG
+UC4 --> EXE
+UC4 --> JDG
+UC6 --> EXE
+UC7 --> REC
+UC8 --> LIB
+@enduml

@@ -1,0 +1,51 @@
+@startuml uc4-task-to-merge
+!include common-uml.puml
+
+title UC4 Задача -> PR -> стражи -> слияние (ядро демо)
+
+actor "Разработчик\n(оркестратор)" as DEV
+participant "Экзокортекс\nразработчика" as EXO
+participant "Jira" as JIRA
+participant "Координатор" as CO
+participant "MCP фабрики\nи база знаний" as KB
+participant "Bitbucket Pipelines\n+ свой раннер" as BP
+participant "Исполнитель\n(агент)" as EXE
+participant "Стражи\nи судья" as G
+participant "GitHub\n(цель)" as GH
+participant "Actions\n(CI цели)" as CI
+actor "Ревьюер\n(человек)" as REV
+participant "Выкладка" as CD
+
+autonumber
+DEV -> EXO : беру задачу ROOMS-12
+EXO -> KB : контекст задачи
+KB --> EXO : требования, решения, ссылки на Jira, Confluence, ADR
+group HITL: замысел
+  DEV -> EXO : спецификация и сценарии приёмки - вместе с агентом
+  EXO -> GH : PR "spec: ROOMS-12"
+  DEV -> GH : слияние PR спецификации = утверждение
+end
+DEV -> JIRA : метка agent
+CO -> JIRA : опрос: ROOMS-12 готова к исполнению
+CO -> BP : запуск задания с ключом задачи
+group HOOTL: исполнение в песочнице
+  BP -> EXE : тесты до кода, затем реализация
+  EXE -> KB : правила проекта и контекст (только чтение)
+  EXE --> BP : патч, журнал, цена; права записи нет
+  BP -> GH : шаг публикации: ветка и PR (свой токен, без ключа модели)
+end
+GH -> CI : PR запускает CI цели
+CI --> GH : сборка, тесты, e2e - статусы
+BP -> G : стражи: правила из git, секреты, лицензии; судья другого семейства
+G --> GH : статус factory/verdict и комментарий
+CO -> REV : Discord: готово для человека (фаза ревью ждёт решения)
+alt доработать
+  REV -> GH : замечания
+  CO -> BP : повтор исполнения с замечаниями
+else принять
+  REV -> GH : одобрение и слияние (управление)
+end
+GH -> CI : main: образ в GHCR
+CD -> CD : тянет образ, выкладывает на стенд, проверяет доступность
+CO -> JIRA : задача закрыта: ссылки на PR и выкладку, цена в учёте
+@enduml

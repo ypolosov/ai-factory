@@ -1,0 +1,29 @@
+@startuml uc5-release
+!include common-uml.puml
+
+title UC5 Релиз и выкладка
+
+actor "Релиз-менеджер" as RM
+participant "Бот\n(Discord)" as BOT
+participant "База знаний" as KB
+participant "GitHub\n(цель)" as GH
+participant "Actions\n(CI цели)" as CI
+actor "DevOps" as DO
+participant "Выкладка" as CD
+participant "Jira" as JIRA
+participant "Confluence" as CONF
+
+autonumber
+RM -> BOT : что войдёт в выпуск 1.1?
+BOT -> KB : слитые PR с прошлого тега и их задачи
+KB --> BOT : изменения со ссылками; незакрытые задачи
+BOT --> RM : черновик заметок о выпуске
+RM -> GH : тег v1.1.0 (решение о выпуске)
+GH -> CI : сборка релизных образов
+CI -> GH : образы v1.1.0 в GHCR
+DO -> CD : подтверждает выкладку в окружение\n(стенд; в пилоте - по правилам цели)
+CD -> CD : выкладка, проверки доступности, откат при сбое
+CD -> JIRA : задачи версии 1.1.0 помечены выпущенными
+BOT -> CONF : страница заметок о выпуске
+BOT --> RM : выпуск на стенде, ссылки
+@enduml

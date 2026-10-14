@@ -1,0 +1,29 @@
+@startuml uc6-incident
+!include common-uml.puml
+
+title UC6 Сбой на стенде -> баг -> исправление
+
+participant "Стенд цели" as ST
+participant "Gatus,\nGlitchTip" as MON
+participant "Мост сбоев" as BR
+participant "Jira" as JIRA
+participant "Бот\n(Discord)" as BOT
+actor "Эксплуатация" as OPS
+actor "Project Manager" as PM
+participant "Координатор" as CO
+participant "Исполнитель\nи стражи" as EXE
+
+autonumber
+ST -> MON : API отвечает 500 на повтор брони
+MON -> BR : событие ошибки
+BR -> JIRA : баг со ссылкой на событие; дубли - по отпечатку
+BR -> BOT : уведомление в канал эксплуатации
+OPS -> BOT : похожие сбои и связанные PR?
+BOT --> OPS : ссылки: PR ROOMS-12, ADR-5, прошлые события
+PM -> JIRA : приоритет и метка agent (HOTL)
+CO -> EXE : исправление по UC4: тест, воспроизводящий сбой, затем код
+EXE --> CO : PR прошёл стражи
+note over CO : слияние - человеком (UC4)
+MON -> MON : проверка зелёная после выкладки
+BR -> JIRA : баг закрыт: ссылки на исправление и выкладку
+@enduml

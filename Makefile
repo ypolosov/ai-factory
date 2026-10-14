@@ -1,4 +1,4 @@
-.PHONY: check test contract up smoke gateway-check down
+.PHONY: check test contract diagrams up smoke gateway-check down
 
 SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
 	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
@@ -18,6 +18,12 @@ test:
 # Контракты портов на живом носителе (одноразовый Forgejo в Docker).
 contract:
 	./scripts/port-contract.sh
+
+# Диаграммы демо: PlantUML и C4-PlantUML -> PNG рядом с исходниками.
+DIAGRAMS := $(notdir $(filter-out %/common.puml %/common-uml.puml,$(wildcard docs/demo/diagrams/*.puml)))
+diagrams:
+	docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD/docs/demo/diagrams":/data -w /data \
+		docker.io/plantuml/plantuml:1.2026.8 -tpng -charset UTF-8 $(DIAGRAMS)
 
 up:
 	./scripts/stand-up.sh

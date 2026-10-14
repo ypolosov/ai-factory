@@ -1,0 +1,93 @@
+@startuml functional
+!include common-uml.puml
+
+title Функции фабрики: цикл работы, база знаний и стражи, роли (цвет - режим автономии)
+
+skinparam rectangle {
+  RoundCorner 8
+}
+skinparam rectangle<<HITL>> {
+  BackgroundColor #FFF7ED
+  BorderColor #C2410C
+}
+skinparam rectangle<<HOTL>> {
+  BackgroundColor #EFF6FF
+  BorderColor #1D4ED8
+}
+skinparam rectangle<<HOOTL>> {
+  BackgroundColor #F0FDF4
+  BorderColor #15803D
+}
+skinparam rectangle<<KB>> {
+  BackgroundColor #F5F3FF
+  BorderColor #6D28D9
+}
+skinparam rectangle<<X>> {
+  BackgroundColor #F3F4F6
+  BorderColor #6B7280
+}
+hide stereotype
+
+package "Роли в своих каналах" as R {
+  rectangle "F28 Вопросы и правки\nиз чата, вики, экзокортекса" as F28 <<HITL>>
+  rectangle "F26 Проверить заведённое\nлюдьми: дубли, конфликты" as F26 <<HOTL>>
+  rectangle "F29 Отражать работу\nв трекере" as F29 <<HOTL>>
+}
+
+package "Цикл работы над изменением" as L {
+  rectangle "F01 Принять сигнал:\nзадача, баг, алерт" as F01 <<HOTL>>
+  rectangle "F02 Уточнить замысел:\nспецификация и приёмка" as F02 <<HITL>>
+  rectangle "F03 Решения архитектуры:\nADR и fitness-тесты" as F03 <<HITL>>
+  rectangle "F04 Нарезать работу" as F04 <<HOTL>>
+  rectangle "F05 Тесты до кода" as F05 <<HOTL>>
+  rectangle "F06 Исполнить\nв песочнице" as F06 <<HOOTL>>
+  rectangle "F07 Проверить:\nстражи правил и ревью" as F07 <<HOOTL>>
+  rectangle "F08 Решить о слиянии:\nуправление" as F08 <<HITL>>
+  rectangle "F09 Выложить на стенд" as F09 <<HOOTL>>
+  rectangle "F10 Вернуть опыт\nэксплуатации" as F10 <<HOTL>>
+}
+
+package "База знаний: правда в git, ссылки на источники" as K {
+  rectangle "F19 Собрать\nиз источников" as F19 <<KB>>
+  rectangle "F20 Актуализировать,\nудаления до индекса" as F20 <<KB>>
+  rectangle "F23 Граф связей:\nзадача - решение - PR" as F23 <<KB>>
+  rectangle "F21 Согласовать;\nконфликт - хозяину" as F21 <<KB>>
+  rectangle "F24 Знание -> правила-стражи" as F24 <<KB>>
+  rectangle "F22 Отдать знание:\nMCP, бот, правила в git" as F22 <<KB>>
+}
+
+package "Сквозные" as X {
+  rectangle "F14 Координация фаз" as F14 <<X>>
+  rectangle "F11 Модели и учёт цены" as F11 <<X>>
+  rectangle "F13 Изоляция исполнения" as F13 <<X>>
+  rectangle "F15 Прослеживание" as F15 <<X>>
+}
+
+F28 -down-> F01
+F26 -[norank,dashed]-> F04 : возврат автору
+F01 -right-> F02
+F02 -right-> F03
+F03 -right-> F04
+F04 -right-> F05
+F05 -down-> F06
+F06 -left-> F07
+F07 -[norank,dashed]-> F06 : доработка
+F07 -left-> F08
+F08 -left-> F09
+F09 -left-> F10
+F10 -[norank,dashed]-> F01 : новый сигнал
+
+F19 -right-> F20
+F20 -right-> F23
+F23 -right-> F21
+F21 -right-> F24
+F23 -down-> F22
+F24 -[norank,thickness=2]-> F07 : стражи
+F22 -[norank,thickness=2]-> F02 : контекст
+F21 -[norank,dashed]-> F01 : конфликт - задачей
+F10 -[norank,dashed]-> F19 : события
+F14 -[hidden]right-> F11
+F11 -[hidden]right-> F13
+F13 -[hidden]right-> F15
+F10 -[hidden]down-> F14
+@enduml

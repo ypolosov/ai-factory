@@ -1,0 +1,8 @@
+' Общий вид диаграмм демо: шрифт, отступы, без тени.
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam dpi 110
+skinparam wrapWidth 260
+skinparam maxMessageSize 200
+LAYOUT_WITH_LEGEND()

@@ -1,0 +1,56 @@
+@startuml c4-l2-factory
+!include <C4/C4_Container>
+!include common.puml
+
+title C4 L2 - контейнеры фабрики (экземпляр демо на Bitbucket + Pipelines)
+
+Person(human, "Человек-агент", "Любая роль; оркестратор\nсвоей команды агентов")
+System_Ext(exo, "Экзокортекс", "Любая обвязка агентов")
+System_Ext(jira, "Jira", "Задачи")
+System_Ext(conf, "Confluence", "Требования")
+System_Ext(discord, "Discord", "Каналы команды")
+
+System_Boundary(factory, "Фабрика ПО на ИИ") {
+  Container(mcp, "MCP фабрики", "TypeScript, MCP", "Вход для экзокортексов: контекст\nзадачи, поиск со ссылками,\nпредложение правки")
+  Container(bot, "Бот", "TypeScript, Discord", "Вопросы к базе, уведомления,\nкоманды: перезапуск проверок")
+  Container(coord, "Координатор", "TypeScript, Mastra core", "Фазы задачи с режимом\nHITL/HOTL/HOOTL; ждёт решения\nчеловека; запускает задания")
+  ContainerDb(kb, "База знаний", "PostgreSQL; на переходе Onyx", "Правда - git; индексы, граф\nсвязей, конфликты, правила-стражи")
+  Container(guards, "Стражи и управление", "правила из git, судьи", "Проверки по правилам; судья\nдругого семейства; политика слияния")
+  Container(pipes, "Задания фабрики", "Bitbucket Pipelines, POSIX sh", "Тесты до кода, исполнение,\nпубликация PR, стражи, сверка")
+  Container(collect, "Сборщики", "хаб MCP проекта", "Jira, Confluence, GitHub, Discord:\nссылка + отпечаток версии")
+  Container(gw, "Шлюз моделей", "agentgateway", "Ключи ролей, маршруты,\nучёт цены по задаче")
+  Container(runner, "Свой раннер и образ исполнителя", "Bitbucket runner, Docker", "Claude Code, Codex, OpenCode\nза одним контрактом; выход\nв сеть - через прокси")
+  Container(cd, "Выкладка и наблюдение", "deployer, Gatus, GlitchTip", "Образ из GHCR на стенд;\nсбой -> задача в трекере")
+}
+
+System_Ext(bb, "Bitbucket Cloud", "Репозиторий и\nPipelines фабрики")
+System_Ext(gh, "GitHub", "Репозиторий, Actions,\nGHCR цели")
+System_Ext(llm, "Вендоры моделей", "Anthropic, OpenAI,\nOpenRouter")
+System(target, "Переговорки", "Стенд цели\nв docker compose")
+
+
+Rel_R(human, exo, "работает через")
+Rel_D(exo, mcp, "MCP")
+Rel_R(human, discord, "вопросы, решения")
+Rel_D(mcp, kb, "поиск, контекст")
+Rel_D(bot, kb, "поиск")
+Rel_U(bot, discord, "сообщения")
+Rel_U(coord, jira, "события задач, статусы")
+Rel_L(coord, bot, "уведомления,\nожидание решения")
+Rel_U(collect, conf, "опрос изменений")
+Rel_U(collect, jira, "опрос изменений")
+Rel_D(collect, kb, "записи со ссылками")
+Rel_D(coord, bb, "запуск задания\nс ключом задачи")
+Rel_U(bb, runner, "шаги задания")
+Rel_L(runner, pipes, "исполняет")
+Rel_U(pipes, guards, "проверяет результат")
+Rel_L(guards, kb, "правила-стражи")
+Rel_D(pipes, gh, "клон; PR и статусы -\nотдельным шагом публикации")
+Rel_R(runner, gw, "модели")
+Rel_D(gw, llm, "подписки и ключи")
+Rel_U(gh, cd, "образы в GHCR")
+Rel_D(cd, target, "выкладка, доступность")
+Rel_U(cd, jira, "сбой -> задача")
+
+SHOW_LEGEND()
+@enduml
