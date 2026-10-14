@@ -194,6 +194,9 @@ export function forgejoForge(cfg: ForgejoConfig): Forge {
     async findPullByBranch(branch) {
       return (await forge.listPulls({ state: 'open' })).find((p) => p.sourceBranch === branch);
     },
+    async openPull({ title, body, head, base }) {
+      return toPull(await api.json('POST', '/pulls', { title, body, head, base }));
+    },
     async pullCommits(n) {
       return (await api.json<Json[]>('GET', `/pulls/${n}/commits?limit=50`)).map((c) => ({
         sha: String(c.sha),

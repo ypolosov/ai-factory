@@ -1,7 +1,7 @@
 // Контракт хостинга на живом GitHub: песочница ypolosov/factory-contract-tests.
 // Запуск - scripts/port-contract-saas.sh; без GITHUB_TEST_REPO и GITHUB_TEST_TOKEN - пропуск.
-// Песочница не удаляется (у токена нет прав администратора): тесты закрывают свои PR
-// и удаляют свои ветки.
+// Песочница не удаляется (у токена нет прав администратора): тесты закрывают PR
+// из своих веток и удаляют ветки.
 import { test } from 'vitest';
 import { githubForge } from '../github.ts';
 import { forgeContract } from './contract.ts';
@@ -29,29 +29,38 @@ if (!repo || !token) {
 
   forgeContract('GitHub', async () => {
     const run = Math.random().toString(16).slice(2, 8);
-    const made: { n: number; branch: string }[] = [];
+    const forge = githubForge({ repo, token });
+    const branches: string[] = [];
     let seq = 0;
+    const base = async () => ((await call('GET', '')) as { default_branch: string }).default_branch;
+    const pushBranch = async () => {
+      const head = ((await call('GET', `/git/ref/heads/${await base()}`)) as { object: { sha: string } }).object.sha;
+      const branch = `contract-${run}-${++seq}`;
+      const file = `src/f-${run}-${seq}.ts`;
+      await call('POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: head });
+      branches.push(branch);
+      await call('PUT', `/contents/${file}`, {
+        message: `add ${file}`,
+        content: Buffer.from(`export const f = ${seq};\n`).toString('base64'),
+        branch,
+      });
+      return { branch, file };
+    };
     return {
-      forge: githubForge({ repo, token }),
+      forge,
+      pushBranch,
       openPull: async () => {
-        const base = ((await call('GET', '')) as { default_branch: string }).default_branch;
-        const head = ((await call('GET', `/git/ref/heads/${base}`)) as { object: { sha: string } }).object.sha;
-        const branch = `contract-${run}-${++seq}`;
-        const file = `src/f-${run}-${seq}.ts`;
-        await call('POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: head });
-        await call('PUT', `/contents/${file}`, {
-          message: `add ${file}`,
-          content: Buffer.from(`export const f = ${seq};\n`).toString('base64'),
-          branch,
-        });
-        const p = (await call('POST', '/pulls', { title: `contract ${run} ${seq}`, head: branch, base })) as { number: number };
-        made.push({ n: p.number, branch });
-        return { n: p.number, branch, file };
+        const b = await pushBranch();
+        const p = (await call('POST', '/pulls', { title: `contract ${run} ${seq}`, head: b.branch, base: await base() })) as {
+          number: number;
+        };
+        return { n: p.number, ...b };
       },
       cleanup: async () => {
-        for (const m of made) {
-          await call('PATCH', `/pulls/${m.n}`, { state: 'closed' });
-          await call('DELETE', `/git/refs/heads/${m.branch}`);
+        for (const branch of branches) {
+          const p = await forge.findPullByBranch(branch);
+          if (p) await call('PATCH', `/pulls/${p.number}`, { state: 'closed' });
+          await call('DELETE', `/git/refs/heads/${branch}`);
         }
       },
     };

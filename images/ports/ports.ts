@@ -106,6 +106,8 @@ export interface Forge {
   getPull(n: number): Promise<Pull>;
   listPulls(q?: { state?: PullState | 'all'; limit?: number }): Promise<Pull[]>;
   findPullByBranch(branch: string): Promise<Pull | undefined>;
+  // Открыть PR из уже отправленной ветки head в base.
+  openPull(p: { title: string; body: string; head: string; base: string }): Promise<Pull>;
   pullCommits(n: number): Promise<PullCommit[]>;
   pullDiff(n: number): Promise<string>;
   pullReviews(n: number): Promise<Review[]>;

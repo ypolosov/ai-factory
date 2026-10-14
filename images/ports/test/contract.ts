@@ -15,6 +15,8 @@ export interface ForgeFixture {
   forge: Forge;
   // Ветка с одним изменённым файлом и открытый PR из неё в ветку по умолчанию.
   openPull(): Promise<{ n: number; branch: string; file: string }>;
+  // Ветка с одним изменённым файлом без PR.
+  pushBranch(): Promise<{ branch: string; file: string }>;
   cleanup(): Promise<void>;
 }
 
@@ -144,6 +146,18 @@ export function forgeContract(name: string, setup: () => Promise<ForgeFixture>) 
       assert.equal((await f.findPullByBranch(pr.branch))?.number, pr.n);
       assert.equal(await f.findPullByBranch(`no-${uniq()}`), undefined);
       assert.ok((await f.listPulls({ state: 'open' })).some((x) => x.number === pr.n));
+    });
+
+    it('PR открывается из ветки', async () => {
+      const b = await fx.pushBranch();
+      const base = (await f.repo()).defaultBranch;
+      const p = await f.openPull({ title: 'порт открыл PR', body: 'описание PR', head: b.branch, base });
+      assert.equal(p.state, 'open');
+      assert.equal(p.title, 'порт открыл PR');
+      assert.equal(p.sourceBranch, b.branch);
+      assert.equal(p.targetBranch, base);
+      assert.equal(p.headSha, await f.branchHead(b.branch));
+      assert.equal((await f.getPull(p.number)).body, 'описание PR');
     });
 
     it('нет PR - ошибка not_found', async () => {

@@ -36,22 +36,27 @@ if (!url || !token) {
   forgeContract('Forgejo', async () => {
     const { cfg, cleanup } = await makeRepo();
     let seq = 0;
+    const pushBranch = async () => {
+      const branch = `feature-${++seq}`;
+      const file = `src/f${seq}.ts`;
+      await call('POST', `/repos/${cfg.repo}/contents/${file}`, {
+        content: Buffer.from(`export const f = ${seq};\n`).toString('base64'),
+        message: `add ${file}`,
+        branch: 'main',
+        new_branch: branch,
+      });
+      return { branch, file };
+    };
     return {
       forge: forgejoForge(cfg),
       cleanup,
+      pushBranch,
       openPull: async () => {
-        const branch = `feature-${++seq}`;
-        const file = `src/f${seq}.ts`;
-        await call('POST', `/repos/${cfg.repo}/contents/${file}`, {
-          content: Buffer.from(`export const f = ${seq};\n`).toString('base64'),
-          message: `add ${file}`,
-          branch: 'main',
-          new_branch: branch,
-        });
-        const p = (await call('POST', `/repos/${cfg.repo}/pulls`, { head: branch, base: 'main', title: `PR ${seq}` })) as {
+        const b = await pushBranch();
+        const p = (await call('POST', `/repos/${cfg.repo}/pulls`, { head: b.branch, base: 'main', title: `PR ${seq}` })) as {
           number: number;
         };
-        return { n: p.number, branch, file };
+        return { n: p.number, ...b };
       },
     };
   });

@@ -112,6 +112,9 @@ export function githubForge(cfg: GithubConfig): Forge {
       const ps = await api.json<Json[]>('GET', `/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}`);
       return ps[0] ? toPull(ps[0]) : undefined;
     },
+    async openPull({ title, body, head, base }) {
+      return toPull(await api.json('POST', '/pulls', { title, body, head, base }));
+    },
     async pullCommits(n) {
       return (await api.json<Json[]>('GET', `/pulls/${n}/commits?per_page=100`)).map((c) => ({
         sha: String(c.sha),

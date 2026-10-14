@@ -112,6 +112,25 @@ export function memoryForge(user = 'factory-bot') {
     async findPullByBranch(branch) {
       return [...pulls.values()].find((p) => p.sourceBranch === branch && p.state === 'open');
     },
+    async openPull({ title, body, head, base }) {
+      const headSha = heads.get(head);
+      if (!headSha || !heads.has(base)) throw new PortError('not_found', `нет ветки ${headSha ? base : head}`);
+      if (await forge.findPullByBranch(head)) throw new PortError('conflict', `PR из ${head} уже открыт`);
+      const n = ++seq;
+      const p: Pull = {
+        number: n,
+        title,
+        body,
+        state: 'open',
+        sourceBranch: head,
+        targetBranch: base,
+        headSha,
+        author: user,
+        url: `http://memory/pulls/${n}`,
+      };
+      pulls.set(n, p);
+      return { ...p };
+    },
     async pullCommits(n) {
       const sha = pull(n).headSha;
       const c = commits.get(sha);
@@ -143,27 +162,23 @@ export function memoryForge(user = 'factory-bot') {
       return [];
     },
   };
+  let branches = 0;
+  const pushBranch = () => {
+    const k = ++branches;
+    const branch = `feature-${k}`;
+    const sha = `sha-${k}`;
+    const file = `src/f${k}.ts`;
+    commits.set(sha, { author: user, date: now(), file });
+    heads.set(branch, sha);
+    return { branch, file };
+  };
   return {
     forge,
-    openPull() {
-      const n = ++seq;
-      const branch = `feature-${n}`;
-      const sha = `sha-${n}`;
-      const file = `src/f${n}.ts`;
-      commits.set(sha, { author: user, date: now(), file });
-      heads.set(branch, sha);
-      pulls.set(n, {
-        number: n,
-        title: `PR ${n}`,
-        body: '',
-        state: 'open',
-        sourceBranch: branch,
-        targetBranch: defaultBranch,
-        headSha: sha,
-        author: user,
-        url: `http://memory/pulls/${n}`,
-      });
-      return { n, branch, file };
+    pushBranch,
+    async openPull() {
+      const b = pushBranch();
+      const p = await forge.openPull({ title: `PR ${b.branch}`, body: '', head: b.branch, base: defaultBranch });
+      return { n: p.number, ...b };
     },
   };
 }
