@@ -95,7 +95,9 @@ async function onyx(cfg: Config, fetchFn: Fetch, method: string, path: string, b
 }
 
 export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promise<{ sha: string; docs: Doc[] }> {
-  const branch = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/branches/main`)).json()) as { commit: { id: string; timestamp?: string } };
+  const branch = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/branches/main`)).json()) as {
+    commit: { id: string; timestamp?: string };
+  };
   const sha = branch.commit.id;
   const tree = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/git/trees/${sha}?recursive=true&per_page=10000`)).json()) as {
     tree: { path: string; type: string; size: number }[];
@@ -171,7 +173,11 @@ export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promi
           { type: 'text', text: `${it.title}\n\n${it.body ?? ''}`.trim(), link },
           ...comments
             .filter((c) => c.body?.trim())
-            .map((c) => ({ type: 'text' as const, text: `${c.user.login}: ${c.body}`, link: c.html_url.replace(cfg.forgejoUrl, cfg.publicUrl) })),
+            .map((c) => ({
+              type: 'text' as const,
+              text: `${c.user.login}: ${c.body}`,
+              link: c.html_url.replace(cfg.forgejoUrl, cfg.publicUrl),
+            })),
         ],
         metadata: { repo, kind, number: String(it.number), state: it.state },
         doc_updated_at: it.updated_at,
@@ -216,7 +222,7 @@ export async function loop(cfg: Config, fetchFn: Fetch, intervalMs: number, log:
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
-  const dir = env['SECRETS_DIR'] ?? '/secrets';
+  const dir = env.SECRETS_DIR ?? '/secrets';
   const secret = (name: string): string => readFileSync(`${dir}/${name}`, 'utf-8').trim();
   let ccPairId: number | null = null;
   try {
@@ -226,18 +232,18 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
   }
   return {
     ccPairId,
-    forgejoUrl: env['FORGEJO_URL'] ?? 'http://forgejo:3000',
-    publicUrl: env['FORGEJO_PUBLIC_URL'] ?? 'http://127.0.0.1:3000',
-    kbUrl: env['KB_URL'] ?? 'http://kb',
+    forgejoUrl: env.FORGEJO_URL ?? 'http://forgejo:3000',
+    publicUrl: env.FORGEJO_PUBLIC_URL ?? 'http://127.0.0.1:3000',
+    kbUrl: env.KB_URL ?? 'http://kb',
     forgejoToken: secret('forgejo.token'),
     onyxToken: secret('onyx.token'),
-    repos: (env['KB_REPOS'] ?? '').split(/\s+/).filter(Boolean),
+    repos: (env.KB_REPOS ?? '').split(/\s+/).filter(Boolean),
   };
 }
 
 if (import.meta.main) {
   const cfg = configFromEnv();
-  const interval = Number(process.env['KB_SYNC_INTERVAL'] ?? 120) * 1000;
+  const interval = Number(process.env.KB_SYNC_INTERVAL ?? 120) * 1000;
   console.log(`kbsync: ${cfg.repos.join(' ')} -> ${cfg.kbUrl}, раз в ${interval / 1000} с`);
   void loop(cfg, fetch, interval, console.log);
 }

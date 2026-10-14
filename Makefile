@@ -1,4 +1,4 @@
-.PHONY: check test contract contract-saas diagrams platforms-check up smoke gateway-check down
+.PHONY: check test fmt contract contract-saas diagrams platforms-check up smoke gateway-check down
 
 SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
 	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
@@ -10,10 +10,16 @@ check:
 	shfmt -d $(SCRIPTS)
 	docker compose config -q
 
-# Код фабрики на TypeScript: проверка типов и модульные тесты в Node 24 стенда.
+# Код фабрики на TypeScript в Node 24 стенда: типы (tsc), стиль и линтер (Biome),
+# архитектура (dependency-cruiser), модульные тесты (Vitest).
 test:
 	docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$$PWD":/w -w /w \
-		docker.io/library/node:24.21.0-alpine3.24 sh -c 'npm ci --no-audit --no-fund --silent && npx tsc --noEmit && npm test'
+		docker.io/library/node:24.21.0-alpine3.24 sh -c 'npm ci --no-audit --no-fund --silent && npx tsc --noEmit && npx biome ci && npx depcruise --config .dependency-cruiser.cjs images && npm test'
+
+# Форматирование и безопасные исправления линтера Biome.
+fmt:
+	docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$$PWD":/w -w /w \
+		docker.io/library/node:24.21.0-alpine3.24 sh -c 'npm ci --no-audit --no-fund --silent && npx biome check --write'
 
 # Контракты портов на живом носителе (одноразовый Forgejo в Docker).
 contract:

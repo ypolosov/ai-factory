@@ -1,6 +1,7 @@
 // Эталонный адаптер в памяти проходит контракт: так проверяется сам набор тестов.
-import { memoryForge, memoryTracker } from './memory.ts';
+
 import { forgeContract, trackerContract } from './contract.ts';
+import { memoryForge, memoryTracker } from './memory.ts';
 
 trackerContract('в памяти', async () => ({ tracker: memoryTracker(), cleanup: async () => {} }));
 

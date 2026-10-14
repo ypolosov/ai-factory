@@ -11,9 +11,10 @@
 // разрешённые репозитории), GLITCHTIP_URL, PORT. Секреты - файлы в SECRETS_DIR (/secrets):
 // forgejo.token (учётка эксплуатации), hook.token (токен вебхука), glitchtip.token (чтение
 // событий; нет файла - задача без стека).
-import http from 'node:http';
-import { readFileSync } from 'node:fs';
+
 import { timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import http from 'node:http';
 
 export interface Alert {
   title: string;
@@ -51,15 +52,15 @@ export function parseAlerts(payload: unknown): Alert[] {
   for (const a of attachments as Record<string, unknown>[]) {
     if (!a || typeof a !== 'object') continue;
     const fields = new Map<string, string>();
-    if (Array.isArray(a['fields'])) {
-      for (const f of a['fields'] as Record<string, unknown>[]) fields.set(str(f?.['title'], 100), str(f?.['value'], 200));
+    if (Array.isArray(a.fields)) {
+      for (const f of a.fields as Record<string, unknown>[]) fields.set(str(f?.title, 100), str(f?.value, 200));
     }
-    const link = str(a['title_link'], 500);
+    const link = str(a.title_link, 500);
     if (!/^https?:\/\//.test(link)) continue;
     alerts.push({
-      title: str(a['title'], 200).replace(/\s+/g, ' ').trim() || 'ошибка без названия',
+      title: str(a.title, 200).replace(/\s+/g, ' ').trim() || 'ошибка без названия',
       link,
-      culprit: str(a['text'], 300),
+      culprit: str(a.text, 300),
       project: fields.get('Project') ?? '',
       release: fields.get('Release') ?? '',
       environment: fields.get('Environment') ?? '',
@@ -80,17 +81,17 @@ export function formatStack(event: unknown): string {
   if (!Array.isArray(entries)) return '';
   const lines: string[] = [];
   for (const e of entries as Record<string, unknown>[]) {
-    if (e?.['type'] !== 'exception') continue;
-    const values = (e['data'] as { values?: unknown } | undefined)?.values;
+    if (e?.type !== 'exception') continue;
+    const values = (e.data as { values?: unknown } | undefined)?.values;
     if (!Array.isArray(values)) continue;
     for (const v of values as Record<string, unknown>[]) {
-      lines.push(`${str(v?.['type'], 100)}: ${str(v?.['value'], 500)}`);
-      const frames = (v?.['stacktrace'] as { frames?: unknown } | undefined)?.frames;
+      lines.push(`${str(v?.type, 100)}: ${str(v?.value, 500)}`);
+      const frames = (v?.stacktrace as { frames?: unknown } | undefined)?.frames;
       if (!Array.isArray(frames)) continue;
       for (const f of [...(frames as Record<string, unknown>[])].reverse()) {
-        const line = f?.['lineNo'] ?? f?.['lineno'] ?? '?';
-        const col = f?.['colNo'] ?? f?.['colno'] ?? '?';
-        lines.push(`    at ${str(f?.['function'], 200) || '?'} (${str(f?.['filename'], 300)}:${line}:${col})`);
+        const line = f?.lineNo ?? f?.lineno ?? '?';
+        const col = f?.colNo ?? f?.colno ?? '?';
+        lines.push(`    at ${str(f?.function, 200) || '?'} (${str(f?.filename, 300)}:${line}:${col})`);
       }
     }
   }
@@ -206,7 +207,7 @@ export function createServer(cfg: Config, fetchFn: Fetch = fetch, log: (m: strin
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
-  const dir = env['SECRETS_DIR'] ?? '/secrets';
+  const dir = env.SECRETS_DIR ?? '/secrets';
   const secret = (name: string, required: boolean): string => {
     try {
       return readFileSync(`${dir}/${name}`, 'utf-8').trim();
@@ -216,18 +217,23 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     }
   };
   return {
-    forgejoUrl: env['FORGEJO_URL'] ?? 'http://forgejo:3000',
+    forgejoUrl: env.FORGEJO_URL ?? 'http://forgejo:3000',
     forgejoToken: secret('forgejo.token', true),
-    opsUser: env['FORGEJO_OPS_USER'] ?? 'factory-ops',
-    glitchtipUrl: env['GLITCHTIP_URL'] ?? 'http://glitchtip:8000',
+    opsUser: env.FORGEJO_OPS_USER ?? 'factory-ops',
+    glitchtipUrl: env.GLITCHTIP_URL ?? 'http://glitchtip:8000',
     glitchtipToken: secret('glitchtip.token', false),
     hookToken: secret('hook.token', true),
-    repos: new Set((env['DEPLOY_APPS'] ?? '').split(/\s+/).filter(Boolean).map((e) => e.split('=')[0]!)),
+    repos: new Set(
+      (env.DEPLOY_APPS ?? '')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((e) => e.split('=')[0]!),
+    ),
   };
 }
 
 if (import.meta.main) {
   const cfg = configFromEnv();
-  const port = Number(process.env['PORT'] ?? 8000);
+  const port = Number(process.env.PORT ?? 8000);
   createServer(cfg).listen(port, () => console.log(`errbridge: :${port}, репозитории: ${[...cfg.repos].join(' ')}`));
 }

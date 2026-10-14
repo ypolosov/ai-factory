@@ -1,6 +1,6 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { isIndexed, loop, repoDocs, splitFile, syncRepo, type Config, type Fetch } from '../kbsync.ts';
+import { test } from 'vitest';
+import { type Config, type Fetch, isIndexed, loop, repoDocs, splitFile, syncRepo } from '../kbsync.ts';
 
 const cfg: Config = {
   forgejoUrl: 'http://forgejo:3000',
@@ -24,7 +24,18 @@ test('какие файлы попадают в базу', () => {
 });
 
 test('Markdown режется по заголовкам, ссылка - на строку заголовка', () => {
-  const md = ['# Дизайн', 'вступление', '', '### ADR-10. Проверка Origin', 'решение', '```', '# не заголовок', '```', '## Риски', 'риск'].join('\n');
+  const md = [
+    '# Дизайн',
+    'вступление',
+    '',
+    '### ADR-10. Проверка Origin',
+    'решение',
+    '```',
+    '# не заголовок',
+    '```',
+    '## Риски',
+    'риск',
+  ].join('\n');
   const s = splitFile(md, 'design.md', 'http://x/f');
   assert.deepEqual(
     s.map((x) => x.link),
@@ -44,7 +55,11 @@ test('код режется кусками по 60 строк', () => {
 });
 
 // Поддельные Forgejo и Onyx.
-function fake(files: Record<string, string>, ingested: string[] = [], wiki = false): { fetch: Fetch; calls: { method: string; url: string; body: unknown }[] } {
+function fake(
+  files: Record<string, string>,
+  ingested: string[] = [],
+  wiki = false,
+): { fetch: Fetch; calls: { method: string; url: string; body: unknown }[] } {
   const calls: { method: string; url: string; body: unknown }[] = [];
   const fn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -60,14 +75,34 @@ function fake(files: Record<string, string>, ingested: string[] = [], wiki = fal
       }
       if (p.includes('/raw/')) return new Response(files[decodeURI(p.split('/raw/')[1]!)] ?? '');
       if (p.endsWith('/issues') && u.searchParams.get('type') === 'issues') {
-        return Response.json([{ number: 25, title: 'Спецификация', body: 'текст задачи', html_url: 'http://127.0.0.1:3000/factory-admin/todo/issues/25', updated_at: '2026-10-12T11:00:00Z', state: 'closed' }]);
+        return Response.json([
+          {
+            number: 25,
+            title: 'Спецификация',
+            body: 'текст задачи',
+            html_url: 'http://127.0.0.1:3000/factory-admin/todo/issues/25',
+            updated_at: '2026-10-12T11:00:00Z',
+            state: 'closed',
+          },
+        ]);
       }
       if (p.endsWith('/issues')) return Response.json([]);
-      if (p.endsWith('/wiki/pages')) return wiki ? Response.json([{ title: 'Эксплуатация', sub_url: 'Эксплуатация' }]) : new Response('нет', { status: 404 });
+      if (p.endsWith('/wiki/pages'))
+        return wiki ? Response.json([{ title: 'Эксплуатация', sub_url: 'Эксплуатация' }]) : new Response('нет', { status: 404 });
       if (p.includes('/wiki/page/')) {
-        return Response.json({ content_base64: Buffer.from('# Эксплуатация\nПорт 3000').toString('base64'), html_url: 'http://127.0.0.1:3000/factory-admin/todo/wiki/%D0%AD' });
+        return Response.json({
+          content_base64: Buffer.from('# Эксплуатация\nПорт 3000').toString('base64'),
+          html_url: 'http://127.0.0.1:3000/factory-admin/todo/wiki/%D0%AD',
+        });
       }
-      if (p.endsWith('/comments')) return Response.json([{ body: 'Решение человека: Origin', html_url: 'http://127.0.0.1:3000/factory-admin/todo/issues/25#issuecomment-1', user: { login: 'factory-admin' } }]);
+      if (p.endsWith('/comments'))
+        return Response.json([
+          {
+            body: 'Решение человека: Origin',
+            html_url: 'http://127.0.0.1:3000/factory-admin/todo/issues/25#issuecomment-1',
+            user: { login: 'factory-admin' },
+          },
+        ]);
       return new Response('нет', { status: 404 });
     }
     assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer ot');
@@ -85,12 +120,16 @@ test('документы репозитория: файлы с кусками и
   assert.equal(sha, 'abc123def');
   assert.deepEqual(
     docs.map((d) => d.id),
-    ['forgejo:factory-admin/todo:file:openspec/design.md', 'forgejo:factory-admin/todo:file:src/server.ts', 'forgejo:factory-admin/todo:issue:25'],
+    [
+      'forgejo:factory-admin/todo:file:openspec/design.md',
+      'forgejo:factory-admin/todo:file:src/server.ts',
+      'forgejo:factory-admin/todo:issue:25',
+    ],
   );
   const design = docs[0]!;
   assert.equal(design.semantic_identifier, 'todo: openspec/design.md');
   assert.equal(design.sections[1]!.link, 'http://127.0.0.1:3000/factory-admin/todo/src/commit/abc123def/openspec/design.md#L2');
-  assert.equal(design.metadata['commit'], 'abc123def');
+  assert.equal(design.metadata.commit, 'abc123def');
   const issue = docs[2]!;
   assert.equal(issue.semantic_identifier, 'todo задача #25: Спецификация');
   assert.equal(issue.sections[1]!.text, 'factory-admin: Решение человека: Origin');
@@ -117,7 +156,10 @@ test('проход: загрузка всего и удаление пропав
   assert.equal(posts.length, 2);
   assert.equal((posts[0]!.body as { document: { id: string } }).document.id, 'forgejo:factory-admin/todo:file:README.md');
   const del = calls.filter((c) => c.method === 'DELETE');
-  assert.deepEqual(del.map((c) => c.url), ['http://kb/api/onyx-api/ingestion/forgejo%3Afactory-admin%2Ftodo%3Afile%3Aold.md']);
+  assert.deepEqual(
+    del.map((c) => c.url),
+    ['http://kb/api/onyx-api/ingestion/forgejo%3Afactory-admin%2Ftodo%3Afile%3Aold.md'],
+  );
 });
 
 test('своя связка Onyx: номер в теле загрузки, список - по связке', async () => {

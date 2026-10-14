@@ -1,14 +1,6 @@
 // Адаптер GitHub для порта хостинга (REST API v3). Носитель платформы цели в демо;
 // трекер у цели - Jira, поэтому порта трекера здесь нет. Токен - fine-grained на репозиторий.
-import {
-  PortError,
-  type Comment,
-  type CommitStatus,
-  type Forge,
-  type Pull,
-  type Review,
-  type StatusState,
-} from './ports.ts';
+import { type Comment, type CommitStatus, type Forge, PortError, type Pull, type Review, type StatusState } from './ports.ts';
 
 export interface GithubConfig {
   repo: string; // "владелец/имя"
@@ -38,7 +30,16 @@ function client(cfg: GithubConfig) {
     }
     if (r.ok) return r;
     const text = (await r.text()).slice(0, 300);
-    const code = r.status === 404 ? 'not_found' : r.status === 401 || r.status === 403 ? 'auth' : r.status === 409 ? 'conflict' : r.status === 422 ? 'invalid' : 'unavailable';
+    const code =
+      r.status === 404
+        ? 'not_found'
+        : r.status === 401 || r.status === 403
+          ? 'auth'
+          : r.status === 409
+            ? 'conflict'
+            : r.status === 422
+              ? 'invalid'
+              : 'unavailable';
     throw new PortError(code, `${method} ${path}: ${r.status} ${text}`);
   }
   return {

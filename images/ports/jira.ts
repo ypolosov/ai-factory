@@ -1,7 +1,7 @@
 // Адаптер Jira Cloud для порта трекера (REST API v3 через api.atlassian.com, токен с областями
 // read:jira-work, write:jira-work, read:jira-user). Ключ задачи - ключ Jira (DRAW-12).
 // Описание и комментарии в Jira - документ ADF; порт работает с простым текстом.
-import { PortError, type Comment, type Issue, type LabelEvent, type Tracker } from './ports.ts';
+import { type Comment, type Issue, type LabelEvent, PortError, type Tracker } from './ports.ts';
 
 export interface JiraConfig {
   site: string; // https://<сайт>.atlassian.net - для адресов задач и поиска cloudId
@@ -67,7 +67,16 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
     }
     if (!r.ok) {
       const text = (await r.text()).slice(0, 300);
-      const code = r.status === 404 ? 'not_found' : r.status === 401 || r.status === 403 ? 'auth' : r.status === 409 ? 'conflict' : r.status === 400 ? 'invalid' : 'unavailable';
+      const code =
+        r.status === 404
+          ? 'not_found'
+          : r.status === 401 || r.status === 403
+            ? 'auth'
+            : r.status === 409
+              ? 'conflict'
+              : r.status === 400
+                ? 'invalid'
+                : 'unavailable';
       throw new PortError(code, `${method} ${path}: ${r.status} ${text}`);
     }
     return (r.status === 204 || r.headers.get('content-length') === '0' ? undefined : await r.json().catch(() => undefined)) as T;
@@ -169,9 +178,7 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
     async listDependencies(key) {
       const i = await call('GET', `/issue/${encodeURIComponent(key)}?fields=issuelinks`);
       const links = ((i.fields as Json).issuelinks as Json[] | undefined) ?? [];
-      return links
-        .filter((l) => (l.type as Json).name === 'Blocks' && l.outwardIssue)
-        .map((l) => String((l.outwardIssue as Json).key));
+      return links.filter((l) => (l.type as Json).name === 'Blocks' && l.outwardIssue).map((l) => String((l.outwardIssue as Json).key));
     },
     async labelEvents(key) {
       const r = await call<{ values: Json[] }>('GET', `/issue/${encodeURIComponent(key)}/changelog?maxResults=100`);
@@ -179,8 +186,16 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
       for (const h of r.values ?? []) {
         for (const item of (h.items as Json[]) ?? []) {
           if (item.field !== 'labels') continue;
-          const from = new Set(String(item.fromString ?? '').split(' ').filter(Boolean));
-          const to = new Set(String(item.toString ?? '').split(' ').filter(Boolean));
+          const from = new Set(
+            String(item.fromString ?? '')
+              .split(' ')
+              .filter(Boolean),
+          );
+          const to = new Set(
+            String(item.toString ?? '')
+              .split(' ')
+              .filter(Boolean),
+          );
           for (const l of to) if (!from.has(l)) events.push({ label: l, action: 'added', at: String(h.created) });
           for (const l of from) if (!to.has(l)) events.push({ label: l, action: 'removed', at: String(h.created) });
         }

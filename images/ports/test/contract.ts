@@ -1,9 +1,10 @@
 // Контрактные тесты портов: один набор для всех адаптеров. Адаптер считается
 // заменяемым, только если проходит его целиком (заменяемость доказывает второй
 // носитель, а не публичный API).
-import { describe, it, beforeAll, afterAll } from 'vitest';
+
 import assert from 'node:assert/strict';
-import { PortError, type Forge, type Tracker } from '../ports.ts';
+import { afterAll, beforeAll, describe, it } from 'vitest';
+import { type Forge, PortError, type Tracker } from '../ports.ts';
 
 export interface TrackerFixture {
   tracker: Tracker;
@@ -55,7 +56,10 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
       await t.createIssue({ title: 'c', body: '' });
       await t.close(b.key);
       const open = await t.listIssues({ label, state: 'open' });
-      assert.deepEqual(open.map((i) => i.key), [a.key]);
+      assert.deepEqual(
+        open.map((i) => i.key),
+        [a.key],
+      );
       const all = await t.listIssues({ label, state: 'all' });
       assert.deepEqual(all.map((i) => i.key).sort(), [a.key, b.key].sort());
     });
@@ -64,7 +68,10 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
       const i = await t.createIssue({ title: 'к', body: '' });
       await t.addComment(i.key, 'первый');
       const cs = await t.listComments(i.key);
-      assert.deepEqual(cs.map((c) => c.body), ['первый']);
+      assert.deepEqual(
+        cs.map((c) => c.body),
+        ['первый'],
+      );
       assert.ok(cs[0]?.author);
       assert.ok(!Number.isNaN(Date.parse(cs[0]?.createdAt ?? '')));
     });
@@ -162,7 +169,10 @@ export function forgeContract(name: string, setup: () => Promise<ForgeFixture>) 
       await f.setStatus(sha, { key: 'factory/gate', state: 'pending', description: 'идёт' });
       await f.setStatus(sha, { key: 'factory/gate', state: 'success', description: 'готово' });
       const st = (await f.statuses(sha)).filter((s) => s.key === 'factory/gate');
-      assert.deepEqual(st.map((s) => s.state), ['success']);
+      assert.deepEqual(
+        st.map((s) => s.state),
+        ['success'],
+      );
     });
 
     it('обязательные проверки ветки - список', async () => {

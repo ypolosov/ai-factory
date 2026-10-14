@@ -1,17 +1,17 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
+import { test } from 'vitest';
 import {
+  type Alert,
+  type Config,
   createServer,
+  type Fetch,
   formatStack,
   issueBody,
   issueIdFromLink,
   parseAlerts,
   report,
-  type Alert,
-  type Config,
-  type Fetch,
 } from '../errbridge.ts';
 
 // Тело вебхука GlitchTip 6 (apps/alerts/webhooks.py, send_issue_as_webhook).
@@ -118,11 +118,7 @@ test('стек события - место ошибки первым, обрат
   });
   assert.equal(
     stack,
-    [
-      "Error: упало 'x'",
-      '    at start (file:///app/src/server.ts:10:5)',
-      '    at main (file:///app/src/server.ts:20:1)',
-    ].join('\n'),
+    ["Error: упало 'x'", '    at start (file:///app/src/server.ts:10:5)', '    at main (file:///app/src/server.ts:20:1)'].join('\n'),
   );
   assert.equal(formatStack({}), '');
 });

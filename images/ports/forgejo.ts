@@ -1,11 +1,11 @@
 // Адаптер Forgejo для портов трекера и хостинга (REST API v1). Задачи и PR живут
 // в одном репозитории; ключ задачи - её номер строкой.
 import {
-  PortError,
   type Comment,
   type CommitStatus,
   type Forge,
   type Issue,
+  PortError,
   type Pull,
   type Review,
   type StatusState,
@@ -36,7 +36,16 @@ function client(cfg: ForgejoConfig) {
     }
     if (r.ok) return r;
     const text = (await r.text()).slice(0, 300);
-    const code = r.status === 404 ? 'not_found' : r.status === 401 || r.status === 403 ? 'auth' : r.status === 409 ? 'conflict' : r.status === 422 ? 'invalid' : 'unavailable';
+    const code =
+      r.status === 404
+        ? 'not_found'
+        : r.status === 401 || r.status === 403
+          ? 'auth'
+          : r.status === 409
+            ? 'conflict'
+            : r.status === 422
+              ? 'invalid'
+              : 'unavailable';
     throw new PortError(code, `${method} ${path}: ${r.status} ${text}`);
   }
   return {

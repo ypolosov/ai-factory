@@ -1,29 +1,33 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AddressInfo } from 'node:net';
+import { test } from 'vitest';
 import {
+  type Config,
   chunks,
   completion,
   createServer,
-  limiter,
   forceFirst,
+  limiter,
+  type Plan,
   parseClaude,
   planRequest,
+  type Reply,
   replySchema,
   runClaude,
-  type Config,
-  type Plan,
-  type Reply,
 } from '../claude-cli.ts';
 
 const tools = [
   {
     type: 'function',
-    function: { name: 'internal_search', description: 'Поиск по базе', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
+    function: {
+      name: 'internal_search',
+      description: 'Поиск по базе',
+      parameters: { type: 'object', properties: { query: { type: 'string' } } },
+    },
   },
 ];
 
@@ -45,7 +49,10 @@ test('разговор с инструментами -> подсказка, те
   assert.match(plan.prompt, /\[Пользователь\]\nпочему Origin\?/);
   assert.match(plan.prompt, /вызов инструмента internal_search \(id c1\) с аргументами \{"query":"Origin"\}/);
   assert.match(plan.prompt, /\[Результат инструмента, id c1\]\nADR-10/);
-  assert.deepEqual(plan.tools.map((t) => t.name), ['internal_search']);
+  assert.deepEqual(
+    plan.tools.map((t) => t.name),
+    ['internal_search'],
+  );
   assert.equal(plan.toolChoice, 'auto');
 });
 
@@ -86,7 +93,13 @@ test('ответ Claude Code: вызов инструмента', () => {
   const reply = parseClaude(
     JSON.stringify({
       result: '',
-      structured_output: { content: 'игнор', tool_calls: [{ name: 'internal_search', arguments_json: '{ "query": "Origin" }' }, { name: 'чужой', arguments_json: '{}' }] },
+      structured_output: {
+        content: 'игнор',
+        tool_calls: [
+          { name: 'internal_search', arguments_json: '{ "query": "Origin" }' },
+          { name: 'чужой', arguments_json: '{}' },
+        ],
+      },
       usage: { input_tokens: 10, cache_read_input_tokens: 5, output_tokens: 7 },
     }),
     withTools,
@@ -99,7 +112,10 @@ test('ответ Claude Code: вызов инструмента', () => {
 test('ответ Claude Code: текст, плохие аргументы, ошибка', () => {
   const none: Plan = { ...withTools, toolChoice: 'none' };
   assert.equal(parseClaude(JSON.stringify({ result: 'Ответ [1]' }), none).content, 'Ответ [1]');
-  const bad = parseClaude(JSON.stringify({ structured_output: { content: '', tool_calls: [{ name: 'internal_search', arguments_json: 'не json' }] } }), withTools);
+  const bad = parseClaude(
+    JSON.stringify({ structured_output: { content: '', tool_calls: [{ name: 'internal_search', arguments_json: 'не json' }] } }),
+    withTools,
+  );
   assert.equal(bad.toolCalls[0]!.arguments, '{}');
   const textOnly = parseClaude(JSON.stringify({ result: 'просто текст' }), withTools);
   assert.equal(textOnly.content, 'просто текст');
@@ -107,14 +123,23 @@ test('ответ Claude Code: текст, плохие аргументы, ош�
 });
 
 const textReply: Reply = { content: 'Потому что ADR-10.', toolCalls: [], usage: { prompt_tokens: 3, completion_tokens: 4 } };
-const callReply: Reply = { content: '', toolCalls: [{ name: 'internal_search', arguments: '{"query":"x"}' }], usage: { prompt_tokens: 1, completion_tokens: 1 } };
+const callReply: Reply = {
+  content: '',
+  toolCalls: [{ name: 'internal_search', arguments: '{"query":"x"}' }],
+  usage: { prompt_tokens: 1, completion_tokens: 1 },
+};
 
 test('ответ в формате Chat Completions', () => {
-  const t = completion(textReply, 'kb-claude-cli') as { choices: { message: { content: string }; finish_reason: string }[]; usage: { total_tokens: number } };
+  const t = completion(textReply, 'kb-claude-cli') as {
+    choices: { message: { content: string }; finish_reason: string }[];
+    usage: { total_tokens: number };
+  };
   assert.equal(t.choices[0]!.message.content, 'Потому что ADR-10.');
   assert.equal(t.choices[0]!.finish_reason, 'stop');
   assert.equal(t.usage.total_tokens, 7);
-  const c = completion(callReply, 'kb-claude-cli') as { choices: { message: { content: null; tool_calls: { function: { name: string } }[] }; finish_reason: string }[] };
+  const c = completion(callReply, 'kb-claude-cli') as {
+    choices: { message: { content: null; tool_calls: { function: { name: string } }[] }; finish_reason: string }[];
+  };
   assert.equal(c.choices[0]!.message.content, null);
   assert.equal(c.choices[0]!.message.tool_calls[0]!.function.name, 'internal_search');
   assert.equal(c.choices[0]!.finish_reason, 'tool_calls');
@@ -123,11 +148,19 @@ test('ответ в формате Chat Completions', () => {
 test('поток SSE: роль, содержимое, конец, расход, DONE', () => {
   const parts = chunks(textReply, 'm', true);
   assert.equal(parts.at(-1), 'data: [DONE]\n\n');
-  const data = parts.slice(0, -1).map((p) => JSON.parse(p.slice(6)) as { choices: { delta: { content?: string; tool_calls?: unknown[] }; finish_reason: string | null }[]; usage?: unknown });
+  const data = parts.slice(0, -1).map(
+    (p) =>
+      JSON.parse(p.slice(6)) as {
+        choices: { delta: { content?: string; tool_calls?: unknown[] }; finish_reason: string | null }[];
+        usage?: unknown;
+      },
+  );
   assert.equal(data[1]!.choices[0]!.delta.content, 'Потому что ADR-10.');
   assert.equal(data[2]!.choices[0]!.finish_reason, 'stop');
   assert.ok(data[3]!.usage);
-  const calls = chunks(callReply, 'm', false).slice(0, -1).map((p) => JSON.parse(p.slice(6)) as { choices: { delta: { tool_calls?: { index: number }[] }; finish_reason: string | null }[] });
+  const calls = chunks(callReply, 'm', false)
+    .slice(0, -1)
+    .map((p) => JSON.parse(p.slice(6)) as { choices: { delta: { tool_calls?: { index: number }[] }; finish_reason: string | null }[] });
   assert.equal(calls[1]!.choices[0]!.delta.tool_calls![0]!.index, 0);
   assert.equal(calls.at(-1)!.choices[0]!.finish_reason, 'tool_calls');
 });

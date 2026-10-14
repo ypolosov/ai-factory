@@ -11,10 +11,11 @@
 // FORCE_FIRST_TOOL (инструмент, обязательный на первом шаге, например internal_search),
 // DUMP_FILE (отладка: последний запрос клиента), PORT (8000). Секреты - файлы в SECRETS_DIR (/secrets): token (ключ, который предъявляет
 // шлюз), claude-oauth.token (вход подписки), gateway.key (ключ шлюза для подписок).
-import http from 'node:http';
+
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import http from 'node:http';
 
 type Json = Record<string, unknown>;
 
@@ -59,48 +60,46 @@ const BODY_LIMIT = 4 * 1024 * 1024;
 function text(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return content
-      .map((p) => (p && typeof p === 'object' && typeof (p as Json)['text'] === 'string' ? (p as Json)['text'] : ''))
-      .join('');
+    return content.map((p) => (p && typeof p === 'object' && typeof (p as Json).text === 'string' ? (p as Json).text : '')).join('');
   }
   return content == null ? '' : JSON.stringify(content);
 }
 
 // Запрос Chat Completions -> системная подсказка, текст разговора, инструменты.
 export function planRequest(body: Json): Plan {
-  const messages = Array.isArray(body['messages']) ? (body['messages'] as Json[]) : [];
+  const messages = Array.isArray(body.messages) ? (body.messages as Json[]) : [];
   const system: string[] = [];
   const turns: string[] = [];
   for (const m of messages) {
-    const role = String(m['role'] ?? '');
-    const content = text(m['content']);
+    const role = String(m.role ?? '');
+    const content = text(m.content);
     if (role === 'system' || role === 'developer') {
       system.push(content);
     } else if (role === 'user') {
       turns.push(`[Пользователь]\n${content}`);
     } else if (role === 'assistant') {
-      const calls = Array.isArray(m['tool_calls']) ? (m['tool_calls'] as Json[]) : [];
+      const calls = Array.isArray(m.tool_calls) ? (m.tool_calls as Json[]) : [];
       const callText = calls
         .map((c) => {
-          const f = (c['function'] ?? {}) as Json;
-          return `вызов инструмента ${String(f['name'])} (id ${String(c['id'])}) с аргументами ${String(f['arguments'])}`;
+          const f = (c.function ?? {}) as Json;
+          return `вызов инструмента ${String(f.name)} (id ${String(c.id)}) с аргументами ${String(f.arguments)}`;
         })
         .join('\n');
       turns.push(`[Ассистент]\n${[content, callText].filter(Boolean).join('\n')}`);
     } else if (role === 'tool') {
-      turns.push(`[Результат инструмента, id ${String(m['tool_call_id'])}]\n${content}`);
+      turns.push(`[Результат инструмента, id ${String(m.tool_call_id)}]\n${content}`);
     }
   }
-  const tools: ToolDef[] = (Array.isArray(body['tools']) ? (body['tools'] as Json[]) : [])
-    .map((t) => (t['function'] ?? {}) as Json)
-    .filter((f) => typeof f['name'] === 'string')
-    .map((f) => ({ name: String(f['name']), description: String(f['description'] ?? ''), parameters: f['parameters'] ?? {} }));
+  const tools: ToolDef[] = (Array.isArray(body.tools) ? (body.tools as Json[]) : [])
+    .map((t) => (t.function ?? {}) as Json)
+    .filter((f) => typeof f.name === 'string')
+    .map((f) => ({ name: String(f.name), description: String(f.description ?? ''), parameters: f.parameters ?? {} }));
   let toolChoice = 'auto';
-  const tc = body['tool_choice'];
+  const tc = body.tool_choice;
   if (tools.length === 0 || tc === 'none') toolChoice = 'none';
   else if (tc === 'required') toolChoice = 'required';
-  else if (tc && typeof tc === 'object') toolChoice = String(((tc as Json)['function'] as Json | undefined)?.['name'] ?? 'auto');
-  const hasToolResults = messages.some((m) => m['role'] === 'tool');
+  else if (tc && typeof tc === 'object') toolChoice = String(((tc as Json).function as Json | undefined)?.name ?? 'auto');
+  const hasToolResults = messages.some((m) => m.role === 'tool');
   return { system: system.join('\n\n'), prompt: turns.join('\n\n'), tools, toolChoice, hasToolResults };
 }
 
@@ -154,41 +153,40 @@ export function toolInstructions(plan: Plan): string {
 // Ответ claude -p --output-format json -> ответ обёртки.
 export function parseClaude(stdout: string, plan: Plan): Reply {
   const out = JSON.parse(stdout) as Json;
-  if (out['is_error'] === true) throw new Error(`Claude Code: ${String(out['result'] ?? 'ошибка')}`);
-  const u = (out['usage'] ?? {}) as Json;
+  if (out.is_error === true) throw new Error(`Claude Code: ${String(out.result ?? 'ошибка')}`);
+  const u = (out.usage ?? {}) as Json;
   const usage = {
-    prompt_tokens:
-      Number(u['input_tokens'] ?? 0) + Number(u['cache_read_input_tokens'] ?? 0) + Number(u['cache_creation_input_tokens'] ?? 0),
-    completion_tokens: Number(u['output_tokens'] ?? 0),
+    prompt_tokens: Number(u.input_tokens ?? 0) + Number(u.cache_read_input_tokens ?? 0) + Number(u.cache_creation_input_tokens ?? 0),
+    completion_tokens: Number(u.output_tokens ?? 0),
   };
-  if (plan.toolChoice === 'none') return { content: String(out['result'] ?? ''), toolCalls: [], usage };
-  let structured = out['structured_output'] as Json | undefined;
-  if (!structured && typeof out['result'] === 'string') {
+  if (plan.toolChoice === 'none') return { content: String(out.result ?? ''), toolCalls: [], usage };
+  let structured = out.structured_output as Json | undefined;
+  if (!structured && typeof out.result === 'string') {
     try {
-      structured = JSON.parse(out['result']) as Json;
+      structured = JSON.parse(out.result) as Json;
     } catch {
-      return { content: out['result'], toolCalls: [], usage };
+      return { content: out.result, toolCalls: [], usage };
     }
   }
-  const calls = Array.isArray(structured?.['tool_calls']) ? (structured['tool_calls'] as Json[]) : [];
+  const calls = Array.isArray(structured?.tool_calls) ? (structured.tool_calls as Json[]) : [];
   const toolCalls = calls
-    .filter((c) => plan.tools.some((t) => t.name === c['name']))
+    .filter((c) => plan.tools.some((t) => t.name === c.name))
     .map((c) => {
-      let args = String(c['arguments_json'] ?? '{}');
+      let args = String(c.arguments_json ?? '{}');
       try {
         args = JSON.stringify(JSON.parse(args));
       } catch {
         args = '{}';
       }
-      return { name: String(c['name']), arguments: args };
+      return { name: String(c.name), arguments: args };
     });
-  return { content: toolCalls.length > 0 ? '' : String(structured?.['content'] ?? ''), toolCalls, usage };
+  return { content: toolCalls.length > 0 ? '' : String(structured?.content ?? ''), toolCalls, usage };
 }
 
 export function completion(reply: Reply, model: string, id = `chatcmpl-${randomUUID()}`): Json {
   const message: Json = { role: 'assistant', content: reply.toolCalls.length > 0 ? null : reply.content };
   if (reply.toolCalls.length > 0) {
-    message['tool_calls'] = reply.toolCalls.map((c, i) => ({
+    message.tool_calls = reply.toolCalls.map((c, i) => ({
       id: `call_${i}_${id.slice(-8)}`,
       type: 'function',
       function: { name: c.name, arguments: c.arguments },
@@ -207,17 +205,17 @@ export function completion(reply: Reply, model: string, id = `chatcmpl-${randomU
 // Готовый ответ -> куски SSE в формате chat.completion.chunk.
 export function chunks(reply: Reply, model: string, includeUsage: boolean): string[] {
   const full = completion(reply, model);
-  const base = { id: full['id'], object: 'chat.completion.chunk', created: full['created'], model };
-  const choice = (full['choices'] as Json[])[0]!;
-  const message = choice['message'] as Json;
+  const base = { id: full.id, object: 'chat.completion.chunk', created: full.created, model };
+  const choice = (full.choices as Json[])[0]!;
+  const message = choice.message as Json;
   const out: Json[] = [{ ...base, choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] }];
-  if (Array.isArray(message['tool_calls'])) {
+  if (Array.isArray(message.tool_calls)) {
     out.push({
       ...base,
       choices: [
         {
           index: 0,
-          delta: { tool_calls: (message['tool_calls'] as Json[]).map((c, i) => ({ index: i, ...c })) },
+          delta: { tool_calls: (message.tool_calls as Json[]).map((c, i) => ({ index: i, ...c })) },
           finish_reason: null,
         },
       ],
@@ -225,8 +223,8 @@ export function chunks(reply: Reply, model: string, includeUsage: boolean): stri
   } else if (reply.content) {
     out.push({ ...base, choices: [{ index: 0, delta: { content: reply.content }, finish_reason: null }] });
   }
-  out.push({ ...base, choices: [{ index: 0, delta: {}, finish_reason: choice['finish_reason'] }] });
-  if (includeUsage) out.push({ ...base, choices: [], usage: full['usage'] });
+  out.push({ ...base, choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason }] });
+  if (includeUsage) out.push({ ...base, choices: [], usage: full.usage });
   return [...out.map((c) => `data: ${JSON.stringify(c)}\n\n`), 'data: [DONE]\n\n'];
 }
 
@@ -239,16 +237,16 @@ export function runClaude(cfg: Config, plan: Plan, taskId: string): Promise<Repl
   // --tools - последним: он принимает несколько значений.
   args.push('--tools', '');
   const env: NodeJS.ProcessEnv = {
-    PATH: process.env['PATH'] ?? '/usr/local/bin:/usr/bin:/bin',
-    HOME: process.env['HOME'] ?? '/tmp',
+    PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+    HOME: process.env.HOME ?? '/tmp',
     LANG: 'C.UTF-8',
     CLAUDE_CODE_OAUTH_TOKEN: cfg.oauthToken,
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     DISABLE_AUTOUPDATER: '1',
   };
   if (cfg.gatewayUrl) {
-    env['ANTHROPIC_BASE_URL'] = cfg.gatewayUrl;
-    env['ANTHROPIC_CUSTOM_HEADERS'] = `x-gateway-key: ${cfg.gatewayKey}\nx-task-id: ${taskId}`;
+    env.ANTHROPIC_BASE_URL = cfg.gatewayUrl;
+    env.ANTHROPIC_CUSTOM_HEADERS = `x-gateway-key: ${cfg.gatewayKey}\nx-task-id: ${taskId}`;
   }
   return new Promise((resolve, reject) => {
     const child = spawn(cfg.claudeBin, args, { env, cwd: '/tmp', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -313,7 +311,7 @@ export function createServer(
   return http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://claude-cli');
     if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { status: 'ok' });
-    const auth = String(req.headers['authorization'] ?? '').replace(/^Bearer /, '');
+    const auth = String(req.headers.authorization ?? '').replace(/^Bearer /, '');
     if (!sameToken(auth, cfg.token)) return sendJson(res, 401, { error: { message: 'unauthorized' } });
     if (req.method === 'GET' && url.pathname === '/v1/models') {
       return sendJson(res, 200, { object: 'list', data: [{ id: cfg.model, object: 'model', owned_by: 'claude-code' }] });
@@ -340,9 +338,9 @@ export function createServer(
         return sendJson(res, 400, { error: { message: 'bad json' } });
       }
       // Отладка: последний запрос клиента - в файл (DUMP_FILE), чтобы видеть, что шлёт приложение.
-      if (process.env['DUMP_FILE']) writeFileSync(process.env['DUMP_FILE'], JSON.stringify(body, null, 1));
+      if (process.env.DUMP_FILE) writeFileSync(process.env.DUMP_FILE, JSON.stringify(body, null, 1));
       const plan = forceFirst(planRequest(body), cfg.forceFirstTool);
-      const model = String(body['model'] ?? cfg.model);
+      const model = String(body.model ?? cfg.model);
       const taskId = String(req.headers['x-task-id'] ?? 'kb-claude-cli');
       const started = Date.now();
       queue(() => run(plan, taskId)).then(
@@ -351,9 +349,9 @@ export function createServer(
             `ответ за ${Date.now() - started} мс: инструментов предложено ${plan.tools.length} (${plan.toolChoice}), ` +
               `вызвано ${reply.toolCalls.length}, токены ${reply.usage.completion_tokens}`,
           );
-          if (body['stream'] === true) {
+          if (body.stream === true) {
             res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-            const includeUsage = ((body['stream_options'] ?? {}) as Json)['include_usage'] === true;
+            const includeUsage = ((body.stream_options ?? {}) as Json).include_usage === true;
             for (const c of chunks(reply, model, includeUsage)) res.write(c);
             res.end();
           } else {
@@ -370,23 +368,23 @@ export function createServer(
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
-  const dir = env['SECRETS_DIR'] ?? '/secrets';
+  const dir = env.SECRETS_DIR ?? '/secrets';
   const secret = (name: string): string => readFileSync(`${dir}/${name}`, 'utf-8').trim();
   return {
-    claudeBin: env['CLAUDE_BIN'] ?? 'claude',
-    model: env['CLAUDE_MODEL'] ?? 'sonnet',
-    gatewayUrl: env['GATEWAY_URL'] ?? '',
+    claudeBin: env.CLAUDE_BIN ?? 'claude',
+    model: env.CLAUDE_MODEL ?? 'sonnet',
+    gatewayUrl: env.GATEWAY_URL ?? '',
     token: secret('token'),
     oauthToken: secret('claude-oauth.token'),
-    gatewayKey: env['GATEWAY_URL'] ? secret('gateway.key') : '',
-    maxParallel: Number(env['MAX_PARALLEL'] ?? 2),
-    timeoutMs: Number(env['TIMEOUT_MS'] ?? 180000),
-    forceFirstTool: env['FORCE_FIRST_TOOL'] ?? '',
+    gatewayKey: env.GATEWAY_URL ? secret('gateway.key') : '',
+    maxParallel: Number(env.MAX_PARALLEL ?? 2),
+    timeoutMs: Number(env.TIMEOUT_MS ?? 180000),
+    forceFirstTool: env.FORCE_FIRST_TOOL ?? '',
   };
 }
 
 if (import.meta.main) {
   const cfg = configFromEnv();
-  const port = Number(process.env['PORT'] ?? 8000);
+  const port = Number(process.env.PORT ?? 8000);
   createServer(cfg).listen(port, () => console.log(`claude-cli: :${port}, модель ${cfg.model}`));
 }

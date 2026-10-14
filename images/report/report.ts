@@ -175,7 +175,10 @@ export function render(repos: string[], tasks: Task[], deploys: Map<string, Depl
   }
   out.push(`| все | | ${merged.length} | ${pct(merged.filter((t) => t.firstAttempt).length, merged.length)} | | | |`, '');
   out.push('## 4. DORA выкладок', '');
-  out.push('| Приложение | Выкладок | В сутки | Неудачных попыток | Доля неудачных | Восстановление, мин (медиана) |', '|---|---|---|---|---|---|');
+  out.push(
+    '| Приложение | Выкладок | В сутки | Неудачных попыток | Доля неудачных | Восстановление, мин (медиана) |',
+    '|---|---|---|---|---|---|',
+  );
   for (const r of repos) {
     const d = dora(deploys.get(r) ?? []);
     out.push(
@@ -183,14 +186,17 @@ export function render(repos: string[], tasks: Task[], deploys: Map<string, Depl
     );
   }
   out.push('', '## Задачи', '');
-  out.push('| Задача | PR | Исполнитель, модель | Кругов | Решения ворот по кругам | С первой попытки | Задача -> стенд, мин | Цена, $ |', '|---|---|---|---|---|---|---|---|');
+  out.push(
+    '| Задача | PR | Исполнитель, модель | Кругов | Решения ворот по кругам | С первой попытки | Задача -> стенд, мин | Цена, $ |',
+    '|---|---|---|---|---|---|---|---|',
+  );
   for (const t of tasks) {
     out.push(
       `| ${t.title} | #${t.pr} | ${t.executor}, ${t.model} | ${t.rounds} | ${t.decisions.join('; ') || '-'} | ${t.merged ? (t.firstAttempt ? 'да' : 'нет') : 'не слит'} | ` +
         `${fmt(minutes(t.labeledAt, t.standAt))} | ${usd(total(t))} |`,
     );
   }
-  return out.join('\n') + '\n';
+  return `${out.join('\n')}\n`;
 }
 
 // --- сбор данных ---
@@ -206,7 +212,16 @@ export function loadLog(dbPath: string): LogRow[] {
     )
     .all() as { t: string; m: string; s: string; c: string; i: number; cr: number; o: number; cost: number | null }[];
   db.close();
-  return rows.map((r) => ({ taskId: r.t, model: r.m, startedAt: r.s, completedAt: r.c, input: r.i, cacheRead: r.cr, output: r.o, cost: r.cost }));
+  return rows.map((r) => ({
+    taskId: r.t,
+    model: r.m,
+    startedAt: r.s,
+    completedAt: r.c,
+    input: r.i,
+    cacheRead: r.cr,
+    output: r.o,
+    cost: r.cost,
+  }));
 }
 
 export async function collect(base: string, token: string, repo: string, log: LogRow[], fetchFn: Fetch = fetch) {
@@ -216,8 +231,16 @@ export async function collect(base: string, token: string, repo: string, log: Lo
     return res.json() as Promise<unknown>;
   };
   const gateDecision = async (sha: string) => {
-    const st = (await get(`/repos/${repo}/commits/${sha}/statuses?limit=50`)) as { id: number; context: string; description: string; created_at: string }[];
-    return st.filter((s) => s.context === 'factory / ai-gate').sort((a, b) => a.id - b.id).at(-1);
+    const st = (await get(`/repos/${repo}/commits/${sha}/statuses?limit=50`)) as {
+      id: number;
+      context: string;
+      description: string;
+      created_at: string;
+    }[];
+    return st
+      .filter((s) => s.context === 'factory / ai-gate')
+      .sort((a, b) => a.id - b.id)
+      .at(-1);
   };
   const pulls = (await get(`/repos/${repo}/pulls?state=all&limit=50`)) as {
     number: number;
@@ -234,14 +257,20 @@ export async function collect(base: string, token: string, repo: string, log: Lo
     const issue = Number(/Closes #(\d+)/.exec(p.body ?? '')?.[1]);
     if (!issue) continue;
     const it = (await get(`/repos/${repo}/issues/${issue}`)) as { title: string };
-    const timeline = (await get(`/repos/${repo}/issues/${issue}/timeline`)) as { type: string; label?: { name: string }; created_at: string }[];
+    const timeline = (await get(`/repos/${repo}/issues/${issue}/timeline`)) as {
+      type: string;
+      label?: { name: string };
+      created_at: string;
+    }[];
     const labeledAt = timeline.find((e) => e.type === 'label' && e.label?.name === 'agent')?.created_at ?? null;
-    const commits = ((await get(`/repos/${repo}/pulls/${p.number}/commits?limit=50`)) as {
-      sha: string;
-      author: { login: string } | null;
-      commit: { author: { name: string } };
-      parents: unknown[];
-    }[]).reverse();
+    const commits = (
+      (await get(`/repos/${repo}/pulls/${p.number}/commits?limit=50`)) as {
+        sha: string;
+        author: { login: string } | null;
+        commit: { author: { name: string } };
+        parents: unknown[];
+      }[]
+    ).reverse();
     let rounds = 0;
     let decision = '';
     let gated = false;
@@ -270,8 +299,16 @@ export async function collect(base: string, token: string, repo: string, log: Lo
     const { agent, gate } = taskRows(log, repo, issue, p.number, from, p.merged_at ?? p.closed_at);
     let standAt: string | null = null;
     if (p.merged && p.merge_commit_sha) {
-      const st = (await get(`/repos/${repo}/commits/${p.merge_commit_sha}/statuses?limit=50`)) as { context: string; status: string; created_at: string }[];
-      standAt = st.filter((s) => s.context === 'deploy / stand' && s.status === 'success').map((s) => s.created_at).sort()[0] ?? null;
+      const st = (await get(`/repos/${repo}/commits/${p.merge_commit_sha}/statuses?limit=50`)) as {
+        context: string;
+        status: string;
+        created_at: string;
+      }[];
+      standAt =
+        st
+          .filter((s) => s.context === 'deploy / stand' && s.status === 'success')
+          .map((s) => s.created_at)
+          .sort()[0] ?? null;
     }
     const executor = /исполнитель: ([^,]+)/.exec(p.body ?? '')?.[1] ?? '?';
     const ms = models(agent);
@@ -299,7 +336,14 @@ export async function collect(base: string, token: string, repo: string, log: Lo
   const main = (await get(`/repos/${repo}/commits?sha=main&limit=100&stat=false`)) as { sha: string }[];
   const deploys: DeployEvent[] = [];
   for (const c of main) {
-    const st = ((await get(`/repos/${repo}/commits/${c.sha}/statuses?limit=50`)) as { id: number; context: string; status: string; created_at: string }[])
+    const st = (
+      (await get(`/repos/${repo}/commits/${c.sha}/statuses?limit=50`)) as {
+        id: number;
+        context: string;
+        status: string;
+        created_at: string;
+      }[]
+    )
       .filter((s) => s.context === 'deploy / stand' && s.status !== 'pending')
       .sort((a, b) => a.id - b.id);
     const last = st.at(-1);
@@ -309,15 +353,15 @@ export async function collect(base: string, token: string, repo: string, log: Lo
 }
 
 if (import.meta.main) {
-  const repos = (process.env['REPOS'] ?? '').split(/\s+/).filter(Boolean);
-  const token = readFileSync(`${process.env['SECRETS_DIR'] ?? '/secrets'}/admin.token`, 'utf-8').trim();
-  const log = loadLog(process.env['DB'] ?? '/db/gateway.sqlite');
+  const repos = (process.env.REPOS ?? '').split(/\s+/).filter(Boolean);
+  const token = readFileSync(`${process.env.SECRETS_DIR ?? '/secrets'}/admin.token`, 'utf-8').trim();
+  const log = loadLog(process.env.DB ?? '/db/gateway.sqlite');
   const all: Task[] = [];
   const deploys = new Map<string, DeployEvent[]>();
   for (const r of repos) {
-    const { tasks, deploys: d } = await collect(process.env['FORGEJO_URL'] ?? 'http://forgejo:3000', token, r, log);
+    const { tasks, deploys: d } = await collect(process.env.FORGEJO_URL ?? 'http://forgejo:3000', token, r, log);
     all.push(...tasks);
     deploys.set(r, d);
   }
-  process.stdout.write(render(repos, all, deploys, new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC'));
+  process.stdout.write(render(repos, all, deploys, `${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`));
 }

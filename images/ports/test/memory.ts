@@ -1,15 +1,6 @@
 // Эталонные адаптеры в памяти: проверяют набор контрактных тестов и служат
 // заменой носителя в модульных тестах потребителей.
-import {
-  PortError,
-  type Comment,
-  type CommitStatus,
-  type Forge,
-  type Issue,
-  type LabelEvent,
-  type Pull,
-  type Tracker,
-} from '../ports.ts';
+import { type Comment, type CommitStatus, type Forge, type Issue, type LabelEvent, PortError, type Pull, type Tracker } from '../ports.ts';
 
 const now = () => new Date().toISOString();
 

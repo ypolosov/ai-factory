@@ -36,7 +36,7 @@ export function parseDsn(dsn: string): Dsn | null {
   const parts = url.pathname.split('/').filter(Boolean);
   const project = parts.pop();
   if (!url.username || !project || !/^\d+$/.test(project)) return null;
-  const prefix = parts.length > 0 ? '/' + parts.join('/') : '';
+  const prefix = parts.length > 0 ? `/${parts.join('/')}` : '';
   return { storeUrl: `${url.protocol}//${url.host}${prefix}/api/${project}/store/`, publicKey: url.username };
 }
 
@@ -100,14 +100,14 @@ export async function send(dsn: Dsn, event: Record<string, unknown>, timeoutMs =
 
 // Перехватчик необработанных исключений; без SENTRY_DSN ничего не меняет.
 export function install(env: NodeJS.ProcessEnv = process.env): boolean {
-  const dsn = env['SENTRY_DSN'] ? parseDsn(env['SENTRY_DSN']) : null;
+  const dsn = env.SENTRY_DSN ? parseDsn(env.SENTRY_DSN) : null;
   if (!dsn) return false;
   let crashing = false;
   process.on('uncaughtException', (error) => {
     console.error(error);
     if (crashing) return;
     crashing = true;
-    const event = buildEvent(error, { release: env['SENTRY_RELEASE'], environment: env['SENTRY_ENVIRONMENT'] });
+    const event = buildEvent(error, { release: env.SENTRY_RELEASE, environment: env.SENTRY_ENVIRONMENT });
     void send(dsn, event).finally(() => process.exit(1));
   });
   return true;

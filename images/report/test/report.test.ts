@@ -1,6 +1,6 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { agentMinutes, dora, executorOf, median, minutes, models, render, rowCost, taskRows, type LogRow, type Task } from '../report.ts';
+import { test } from 'vitest';
+import { agentMinutes, dora, executorOf, type LogRow, median, minutes, models, render, rowCost, type Task, taskRows } from '../report.ts';
 
 const row = (o: Partial<LogRow>): LogRow => ({
   taskId: 't',
@@ -40,8 +40,14 @@ test('записи задачи: метки с репозиторием всег
     row({ taskId: 'hello-issue-9-run-1' }),
   ];
   const { agent, gate } = taskRows(rows, 'factory-admin/todo', 9, 18, '2026-10-12T09:00:00', '2026-10-12T12:00:00Z');
-  assert.deepEqual(agent.map((r) => r.taskId), ['todo-issue-9-run-1', 'issue-9-run-2']);
-  assert.deepEqual(gate.map((r) => r.taskId), ['todo-gate-pr-18-claude-opus', 'pr-18-review']);
+  assert.deepEqual(
+    agent.map((r) => r.taskId),
+    ['todo-issue-9-run-1', 'issue-9-run-2'],
+  );
+  assert.deepEqual(
+    gate.map((r) => r.taskId),
+    ['todo-gate-pr-18-claude-opus', 'pr-18-review'],
+  );
 });
 
 test('время модели - сумма прогонов, модели - по частоте, исполнитель - по семейству', () => {
@@ -88,7 +94,12 @@ test('отчёт: четыре раздела и строка задачи', () 
     mergedAt: '2026-10-12T10:07:00Z',
     standAt: '2026-10-12T10:08:00Z',
   };
-  const md = render(['factory-admin/todo'], [t], new Map([['factory-admin/todo', [{ sha: 'x', at: '2026-10-12T10:08:00Z', ok: true }]]]), 'сегодня');
+  const md = render(
+    ['factory-admin/todo'],
+    [t],
+    new Map([['factory-admin/todo', [{ sha: 'x', at: '2026-10-12T10:08:00Z', ok: true }]]]),
+    'сегодня',
+  );
   for (const h of ['## 1. Цена', '## 2. Время', '## 3. Слиты с первой попытки', '## 4. DORA']) assert.ok(md.includes(h), h);
   assert.match(md, /\| codex \| gpt-6\.1-sol \| 1 \| 100% \| 2\.0 \| 8\.0 \| 0\.26 \|/);
   assert.match(md, /\| #10 Пустой текст \| #20 \| codex, gpt-6\.1-sol \| 1 \| 90, 91 -> человеку \| да \| 8\.0 \| 0\.26 \|/);

@@ -1,7 +1,7 @@
 // Контракт на живом Forgejo: запускает scripts/port-contract.sh в одноразовом
 // контейнере. Без FORGEJO_TEST_URL и FORGEJO_TEST_TOKEN (обычный make test) - пропуск.
 import { test } from 'vitest';
-import { forgejoForge, forgejoTracker, type ForgejoConfig } from '../forgejo.ts';
+import { type ForgejoConfig, forgejoForge, forgejoTracker } from '../forgejo.ts';
 import { forgeContract, trackerContract } from './contract.ts';
 
 const url = process.env.FORGEJO_TEST_URL;
