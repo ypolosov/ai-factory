@@ -1,6 +1,6 @@
 // Служба координатора демо: задача трекера с меткой-триггером -> задание агента у исполнителя
 // заданий -> страж -> PR в цели. Запуск: node main.ts (Node 24 стирает типы, сборки нет).
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Mastra } from '@mastra/core/mastra';
 import { LibSQLStore } from '@mastra/libsql';
@@ -26,11 +26,13 @@ import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
 import { incidentLoop } from './incidents.ts';
 import { gatewayJudge } from './judge.ts';
+import { gatewayAsk } from './llm.ts';
 import { mcpHttp } from './mcp.ts';
 import { pullGuard } from './pull-guard.ts';
 import { missingImages, notes, type ReleaseDeps } from './release.ts';
 import { releaseLoop } from './release-loop.ts';
 import { releaseWorkflow } from './release-workflow.ts';
+import { proposeRule } from './rule-candidates.ts';
 import { runStore } from './runs.ts';
 import type { StoryDeps } from './story.ts';
 import { storyLoop } from './story-loop.ts';
@@ -67,7 +69,7 @@ const stories: StoryDeps = {
   refreshKnowledge: async () => {
     knowledgeSha = (await deps.git.sync(knowledgeDir, (await deps.forge.repo()).defaultBranch)).sha;
   },
-  judge: gatewayJudge(cfg.judge),
+  judge: gatewayJudge(gatewayAsk(cfg.judge)),
   notifier: chat ? { post: (text) => chat.post(cfg.productChannel, text) } : selectNotifier(cfg.notifier),
   labels: cfg.storyLabels,
 };
@@ -156,10 +158,18 @@ const bot = chat
       forge: deps.forge,
       knowledge: stories.knowledge,
       refreshKnowledge: stories.refreshKnowledge,
-      librarian: gatewayLibrarian(cfg.judge),
+      librarian: gatewayLibrarian(gatewayAsk(cfg.judge)),
       agentLabel: cfg.labels.trigger,
       release: { draft: async () => (await notes(releases)).text, confirm: releaseChecks.confirm },
       account: async () => accountText(await account({ runs, forge: deps.forge, usage: gatewayUsage(cfg.gatewayLog) })),
+      proposeRule: () =>
+        proposeRule({
+          forge: deps.forge,
+          git: deps.git,
+          workDir: () => mkdtempSync(join(cfg.data, 'rule-')),
+          ask: (prompt) => gatewayAsk(cfg.judge)(prompt, 'rules-candidate'),
+          post: (text) => chat.post(cfg.devChannel, text),
+        }),
       log,
     })
   : undefined;

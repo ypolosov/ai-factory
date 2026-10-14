@@ -66,9 +66,69 @@ export function targetChecks(config: string | undefined): Finding[] {
     .map((k) => ({ level: 'block' as const, message: `цель не объявила команду ${k} (checks.${k} в .factory/config.yml)` }));
 }
 
+// Правило-страж цели (.factory/config.yml, раздел rules): запрет шаблона в добавленных
+// строках файлов под paths, кроме exclude. Правило утверждает человек слиянием PR.
+export interface Rule {
+  id: string;
+  source?: string; // откуда правило: ADR, замечания ревью
+  message: string;
+  paths: string[]; // префиксы путей
+  exclude: string[];
+  forbid: RegExp;
+}
+
+export function targetRules(config: string | undefined): { rules: Rule[]; findings: Finding[] } {
+  const rules: Rule[] = [];
+  const findings: Finding[] = [];
+  let raw: unknown[] = [];
+  try {
+    raw = ((parse(config ?? '') as { rules?: unknown[] } | null)?.rules ?? []) as unknown[];
+  } catch {
+    return { rules, findings };
+  }
+  for (const r of raw) {
+    const x = (r ?? {}) as Record<string, unknown>;
+    const id = String(x.id ?? '?');
+    try {
+      rules.push({
+        id,
+        ...(x.source ? { source: String(x.source) } : {}),
+        message: String(x.message ?? ''),
+        paths: ((x.paths as unknown[] | undefined) ?? ['']).map(String),
+        exclude: ((x.exclude as unknown[] | undefined) ?? []).map(String),
+        forbid: new RegExp(String(x.forbid ?? '(?!)')),
+      });
+    } catch {
+      findings.push({ level: 'block', message: `правило ${id} в .factory/config.yml не читается` });
+    }
+  }
+  return { rules, findings };
+}
+
+// Нарушения правил в добавленных строках патча: по находке на правило и файл.
+export function ruleFindings(patch: string, rules: Rule[]): Finding[] {
+  const out: Finding[] = [];
+  for (const section of patch.split(/^(?=diff --git )/m)) {
+    const file = patchFiles(section.split('\n', 1)[0] ?? '').at(-1);
+    if (!file) continue;
+    const added = section.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++'));
+    for (const r of rules) {
+      if (!r.paths.some((p) => file.startsWith(p)) || r.exclude.some((p) => file.startsWith(p))) continue;
+      const hit = added.find((l) => r.forbid.test(l.slice(1)));
+      if (hit)
+        out.push({
+          level: 'fail',
+          message: `правило ${r.id}${r.source ? ` (${r.source})` : ''}: ${r.message} - ${file}: ${hit.slice(1).trim().slice(0, 100)}`,
+        });
+    }
+  }
+  return out;
+}
+
 export function guardPatch(patch: string, agentExitCode: number, o: GuardOptions = DEFAULT_GUARD, targetConfig?: string): Verdict {
   const files = patchFiles(patch);
-  const findings: Finding[] = [...targetChecks(targetConfig)];
+  const { rules, findings: bad } = targetRules(targetConfig);
+  const findings: Finding[] = [...targetChecks(targetConfig), ...bad, ...ruleFindings(patch, rules)];
   if (!patch.trim() || files.length === 0) findings.push({ level: 'block', message: 'агент ничего не изменил' });
   for (const f of files) {
     const hit = o.protectedPaths.find((p) => (p.endsWith('/') ? f.startsWith(p) : f === p));

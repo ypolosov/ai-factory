@@ -2,7 +2,7 @@
 // Ключ записи передаётся git только окружением процесса (http.<адрес>.extraHeader), не
 // аргументами команды, и только для адреса цели.
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -20,6 +20,8 @@ export interface Git {
   publish(dir: string, p: { branch: string; message: string }): Promise<{ headSha: string }>;
   // Рабочая копия ветки в КАТАЛОГЕ - клон или обновление до вершины ветки.
   sync(dir: string, branch: string): Promise<{ sha: string }>;
+  // Файлы -> коммит в новой ветке поверх клона КАТАЛОГ/repo (после prepare) -> push.
+  commitFiles(dir: string, p: { branch: string; message: string; files: Record<string, string> }): Promise<{ headSha: string }>;
 }
 
 export interface GitConfig {
@@ -62,6 +64,20 @@ export function git(cfg: GitConfig): Git {
       const who = ['-c', `user.name=${cfg.author.name}`, '-c', `user.email=${cfg.author.email}`];
       await g(repo, ['checkout', '--quiet', '-b', branch]);
       await g(repo, ['apply', '--index', '--whitespace=nowarn', join(dir, 'agent.patch')]);
+      await g(repo, [...who, 'commit', '--quiet', '-m', message]);
+      await g(repo, ['push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`], cfg.write);
+      return { headSha: await g(repo, ['rev-parse', 'HEAD']) };
+    },
+    async commitFiles(dir, { branch, message, files }) {
+      const repo = join(dir, 'repo');
+      const who = ['-c', `user.name=${cfg.author.name}`, '-c', `user.email=${cfg.author.email}`];
+      await g(repo, ['checkout', '--quiet', '-b', branch]);
+      for (const [path, content] of Object.entries(files)) {
+        if (path.split('/').includes('..')) throw new Error(`плохой путь ${path}`);
+        mkdirSync(dirname(join(repo, path)), { recursive: true });
+        writeFileSync(join(repo, path), content);
+        await g(repo, ['add', '--', path]);
+      }
       await g(repo, [...who, 'commit', '--quiet', '-m', message]);
       await g(repo, ['push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`], cfg.write);
       return { headSha: await g(repo, ['rev-parse', 'HEAD']) };

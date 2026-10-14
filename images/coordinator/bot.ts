@@ -3,6 +3,7 @@
 // к боту или на команду.
 import type { Chat, ChatMessage, Forge, Knowledge, Passage, Tracker } from '../ports/ports.ts';
 import { VERDICT_KEY } from './actions.ts';
+import type { Ask } from './llm.ts';
 
 export interface Librarian {
   answer(question: string, passages: Passage[]): Promise<string>;
@@ -19,6 +20,7 @@ export interface BotDeps {
   // Выпуск: черновик заметок и подтверждение выкладки человеком.
   release?: { draft(): Promise<string>; confirm(tag: string, by: string): Promise<string> };
   account?(): Promise<string>; // учёт фабрики
+  proposeRule?(): Promise<string>; // правило-кандидат из повторяющихся замечаний
   log(message: string): void;
 }
 
@@ -27,7 +29,8 @@ export const HELP = `Я бот фабрики. Спросите меня (упо
 !задача <название>. <описание> - задача агенту фабрики
 !выпуск - что войдёт в следующий выпуск
 !выкладка vX.Y.Z - подтвердить выкладку выпуска на стенд
-!учёт - попытки, время и цена работы агентов по задачам`;
+!учёт - попытки, время и цена работы агентов по задачам
+!правила - сверщик ищет повторяющиеся замечания к PR и предлагает правило`;
 
 const STATES: [string, string][] = [
   ['agent-running', 'агент работает'],
@@ -61,6 +64,7 @@ export async function answer(d: BotDeps, m: ChatMessage): Promise<string | undef
   if (/^!(помощь|help)(\s|$)/i.test(text)) return HELP;
   if (d.release && /^!(выпуск|release)(\s|$)/i.test(text)) return d.release.draft();
   if (d.account && /^!(учёт|учет|account)(\s|$)/i.test(text)) return d.account();
+  if (d.proposeRule && /^!(правила|rules)(\s|$)/i.test(text)) return d.proposeRule();
   const deployTag = /^!(выкладка|deploy)\s+(v\d+\.\d+\.\d+)\s*$/i.exec(text)?.[2];
   if (d.release && deployTag) return d.release.confirm(deployTag, m.author);
   const task = /^!(задача|task)\s+([\s\S]+)$/i.exec(text)?.[2];
@@ -90,14 +94,8 @@ export function chatBot(d: BotDeps) {
   });
 }
 
-export interface GatewayLibrarianConfig {
-  url: string;
-  key(): string;
-  model: string;
-}
-
 // Ответ только по отрывкам, со ссылками [n]; список источников добавляется всегда.
-export function gatewayLibrarian(cfg: GatewayLibrarianConfig): Librarian {
+export function gatewayLibrarian(ask: Ask): Librarian {
   return {
     async answer(question, passages) {
       const list = passages.map((p, i) => `[${i + 1}] ${p.source} - ${p.title}\n${p.text}`).join('\n\n');
@@ -108,14 +106,7 @@ export function gatewayLibrarian(cfg: GatewayLibrarianConfig): Librarian {
 
 Отрывки:
 ${list}`;
-      const r = await fetch(`${cfg.url.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-gateway-key': cfg.key(), 'x-task-id': 'chat-librarian' },
-        body: JSON.stringify({ model: cfg.model, temperature: 0, messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!r.ok) throw new Error(`шлюз моделей: ${r.status}`);
-      const data = (await r.json()) as { choices?: { message?: { content?: string } }[] };
-      const text = data.choices?.[0]?.message?.content?.trim() || 'Ответа нет.';
+      const text = (await ask(prompt, 'chat-librarian')).trim() || 'Ответа нет.';
       return `${text}\n\nИсточники:\n${passages.map((p, i) => `[${i + 1}] ${p.title} - <${p.url}>`).join('\n')}`;
     },
   };

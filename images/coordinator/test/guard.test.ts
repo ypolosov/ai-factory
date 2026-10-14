@@ -57,6 +57,26 @@ describe('страж изменения агента', () => {
     expect(crashed.findings[0]?.message).toContain('кодом 1');
   });
 
+  it('правило-страж цели: шаблон в добавленных строках под путями, кроме исключений', () => {
+    const config = `${CONFIG}rules:
+  - id: no-random
+    source: ADR-3
+    message: случайность вне зерна запрещена
+    paths: [api/src/]
+    exclude: [api/src/draws/seed.ts]
+    forbid: 'Math\\.random'
+`;
+    const bad = guardPatch(diff('api/src/draws/redraw.ts', '').replace('+x', '+const i = Math.random();'), 0, DEFAULT_GUARD, config);
+    expect(bad.state).toBe('failure');
+    expect(bad.findings[0]?.message).toBe(
+      'правило no-random (ADR-3): случайность вне зерна запрещена - api/src/draws/redraw.ts: const i = Math.random();',
+    );
+    expect(guardPatch(diff('api/src/draws/seed.ts').replace('+x', '+Math.random()'), 0, DEFAULT_GUARD, config).state).toBe('success');
+    expect(guardPatch(diff('web/src/a.ts').replace('+x', '+Math.random()'), 0, DEFAULT_GUARD, config).state).toBe('success');
+    const broken = guardPatch(diff('a.ts'), 0, DEFAULT_GUARD, `${CONFIG}rules:\n  - id: x\n    forbid: '('\n`);
+    expect(broken.state).toBe('blocked');
+  });
+
   it('файлы блокировки зависимостей в размер патча не входят', () => {
     const lock = diff('api/package-lock.json') + 'x'.repeat(DEFAULT_GUARD.maxBytes);
     expect(guardPatch(diff('api/package.json') + lock, 0, DEFAULT_GUARD, CONFIG).state).toBe('success');

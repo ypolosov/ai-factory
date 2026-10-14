@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { ChatConfig, ForgeConfig, IncidentsConfig, JobsConfig, NotifierConfig, TrackerConfig, WikiConfig } from '../ports/select.ts';
 import type { Labels } from './actions.ts';
 import type { GitConfig } from './git.ts';
-import type { GatewayJudgeConfig } from './judge.ts';
+import type { GatewayModelConfig } from './llm.ts';
 import type { StoryLabels } from './story.ts';
 
 export interface Config {
@@ -21,7 +21,7 @@ export interface Config {
   labels: Labels;
   // Сверка требований: знание - документы цели в git, судья - модель через шлюз.
   knowledgeWeb: string;
-  judge: GatewayJudgeConfig;
+  judge: GatewayModelConfig;
   notifier: NotifierConfig;
   // Бот фабрики в чате команды; уведомления сверщика - в канал productChannel.
   chat?: ChatConfig;
@@ -36,6 +36,7 @@ export interface Config {
   // Сбор ошибок стенда (нет токена - сбои не опрашиваются) и канал эксплуатации.
   incidents?: IncidentsConfig;
   opsChannel: string;
+  devChannel: string;
   gatewayLog: string; // журнал запросов шлюза (SQLite) - для учёта
   mcpPort: number;
   mcpToken(): string;
@@ -155,6 +156,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         }
       : {}),
     opsChannel: env.OPS_CHANNEL ?? 'эксплуатация',
+    devChannel: env.DEV_CHANNEL ?? 'разработка',
     gatewayLog: env.GATEWAY_LOG ?? '/gateway-db/gateway.sqlite',
     mcpPort: Number(env.MCP_PORT ?? 8091),
     mcpToken: () => file('mcp.token').trim(),

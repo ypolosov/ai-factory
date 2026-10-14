@@ -2,6 +2,7 @@
 // проекта и отвечает, есть ли противоречие, с цитатами и источниками. Модель - через шлюз
 // фабрики; ответ модели проверяется: противоречие без отрывка-источника не принимается.
 import type { Passage } from '../ports/ports.ts';
+import type { Ask } from './llm.ts';
 
 export interface Conflict {
   source: string;
@@ -25,12 +26,6 @@ export interface Statement {
 
 export interface Judge {
   check(s: Statement, passages: Passage[]): Promise<Judgement>;
-}
-
-export interface GatewayJudgeConfig {
-  url: string; // адрес шлюза
-  key(): string; // ключ шлюза - читается на каждый запрос
-  model: string;
 }
 
 export function prompt(s: Statement, passages: Passage[]): string {
@@ -75,18 +70,10 @@ export function parseJudgement(content: string, passages: Passage[]): Judgement 
   return { verdict, summary: String(raw.summary ?? ''), conflicts: verdict === 'conflict' ? conflicts : [], checked: passages };
 }
 
-export function gatewayJudge(cfg: GatewayJudgeConfig): Judge {
+export function gatewayJudge(ask: Ask): Judge {
   return {
     async check(s, passages) {
-      const r = await fetch(`${cfg.url.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        // Номер задачи - в журнал шлюза для учёта.
-        headers: { 'content-type': 'application/json', 'x-gateway-key': cfg.key(), 'x-task-id': `${s.issue}-check` },
-        body: JSON.stringify({ model: cfg.model, temperature: 0, messages: [{ role: 'user', content: prompt(s, passages) }] }),
-      });
-      if (!r.ok) throw new Error(`шлюз моделей: ${r.status} ${(await r.text()).slice(0, 200)}`);
-      const data = (await r.json()) as { choices?: { message?: { content?: string } }[] };
-      return parseJudgement(data.choices?.[0]?.message?.content ?? '', passages);
+      return parseJudgement(await ask(prompt(s, passages), `${s.issue}-check`), passages);
     },
   };
 }
