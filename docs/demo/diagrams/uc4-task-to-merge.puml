@@ -17,16 +17,16 @@ actor "Ревьюер\n(человек)" as REV
 participant "Выкладка" as CD
 
 autonumber
-DEV -> EXO : беру задачу ROOMS-12
+DEV -> EXO : беру задачу DRAW-12
 EXO -> KB : контекст задачи
 KB --> EXO : требования, решения, ссылки на Jira, Confluence, ADR
 group HITL: замысел
   DEV -> EXO : спецификация и сценарии приёмки - вместе с агентом
-  EXO -> GH : PR "spec: ROOMS-12"
+  EXO -> GH : PR "spec: DRAW-12"
   DEV -> GH : слияние PR спецификации = утверждение
 end
 DEV -> JIRA : метка agent
-CO -> JIRA : опрос: ROOMS-12 готова к исполнению
+CO -> JIRA : опрос: DRAW-12 готова к исполнению
 CO -> BP : запуск задания с ключом задачи
 group HOOTL: исполнение в песочнице
   BP -> EXE : тесты до кода, затем реализация

@@ -26,7 +26,7 @@ System_Boundary(factory, "Фабрика ПО на ИИ") {
 System_Ext(bb, "Bitbucket Cloud", "Репозиторий и\nPipelines фабрики")
 System_Ext(gh, "GitHub", "Репозиторий, Actions,\nGHCR цели")
 System_Ext(llm, "Вендоры моделей", "Anthropic, OpenAI,\nOpenRouter")
-System(target, "Переговорки", "Стенд цели\nв docker compose")
+System(target, "Розыгрыш призов", "Стенд цели\nв docker compose")
 
 
 Rel_R(human, exo, "работает через")

@@ -21,7 +21,7 @@ Deployment_Node(laptop, "Ноутбук владельца", "Windows 11, WSL2, 
       Container(step, "Шаг задания", "образ исполнителя", "Агент без права записи;\nпубликация - отдельным шагом")
     }
   }
-  Deployment_Node(tstand, "compose: rooms (стенд цели)", "Docker") {
+  Deployment_Node(tstand, "compose: prize-draw (стенд цели)", "Docker") {
     Container(spa, "Веб-приложение", "nginx")
     Container(api, "API", "NestJS")
     ContainerDb(db, "База", "PostgreSQL")
