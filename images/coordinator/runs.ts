@@ -17,7 +17,7 @@ export interface RunMeta {
   jobUrl?: string;
 }
 
-export type RunFile = 'task.md' | 'repo.bundle' | 'agent.patch' | 'run.json' | 'agent.log' | 'done.json';
+export type RunFile = 'task.md' | 'repo.bundle' | 'agent.patch' | 'run.json' | 'agent.log' | 'secrets.json' | 'done.json';
 
 export interface RunStore {
   create(runId: string, issue: string): { meta: RunMeta; token: string };

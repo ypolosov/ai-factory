@@ -125,10 +125,29 @@ export function ruleFindings(patch: string, rules: Rule[]): Finding[] {
   return out;
 }
 
-export function guardPatch(patch: string, agentExitCode: number, o: GuardOptions = DEFAULT_GUARD, targetConfig?: string): Verdict {
+// Находки Gitleaks (отчёт JSON шага агента, значения скрыты): секрет не публикуется.
+export function secretFindings(report: string | undefined): Finding[] {
+  if (!report?.trim()) return [];
+  let list: { RuleID?: string; StartLine?: number }[];
+  try {
+    list = JSON.parse(report) as { RuleID?: string; StartLine?: number }[];
+  } catch {
+    return [{ level: 'block', message: 'отчёт сканера секретов не читается' }];
+  }
+  const rules = [...new Set(list.map((x) => x.RuleID ?? 'secret'))];
+  return rules.length ? [{ level: 'block', message: `в изменении найдены секреты (Gitleaks): ${rules.join(', ')}` }] : [];
+}
+
+export function guardPatch(
+  patch: string,
+  agentExitCode: number,
+  o: GuardOptions = DEFAULT_GUARD,
+  targetConfig?: string,
+  secretsReport?: string,
+): Verdict {
   const files = patchFiles(patch);
   const { rules, findings: bad } = targetRules(targetConfig);
-  const findings: Finding[] = [...targetChecks(targetConfig), ...bad, ...ruleFindings(patch, rules)];
+  const findings: Finding[] = [...targetChecks(targetConfig), ...bad, ...ruleFindings(patch, rules), ...secretFindings(secretsReport)];
   if (!patch.trim() || files.length === 0) findings.push({ level: 'block', message: 'агент ничего не изменил' });
   for (const f of files) {
     const hit = o.protectedPaths.find((p) => (p.endsWith('/') ? f.startsWith(p) : f === p));

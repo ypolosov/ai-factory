@@ -3,7 +3,8 @@
 # посредника координатора задачу, рабочую копию и ключи, запускает factory-agent и сдаёт итог.
 #
 # Вход:  BROKER_URL, RUN_TOKEN - разовый ключ запуска (у исполнителя - скрытая переменная).
-# Выход: agent.patch, run.json, agent.log и код агента - у посредника; код шага = код агента.
+# Выход: agent.patch, run.json, agent.log, secrets.json (находки Gitleaks в добавленных строках,
+#        значения скрыты) и код агента - у посредника; код шага = код агента.
 # Ключи шага (подписка, шлюз) приходят только от посредника, не печатаются и живут в окружении
 # этого процесса; недоверенный код получает их через factory-agent и factory-untrusted.
 set -eu
@@ -28,7 +29,13 @@ set +e
 (cd "$work/repo" && factory-agent --task "$work/task.md" --out "$work/out")
 rc=$?
 set -e
-for f in agent.patch run.json agent.log; do
+# Секреты в добавленных строках патча: правила Gitleaks фабрики, значения в отчёте скрыты.
+if [ -s "$work/out/agent.patch" ]; then
+	grep '^+' "$work/out/agent.patch" | grep -v '^+++' |
+		gitleaks stdin --no-banner --redact --exit-code 0 --config /etc/factory/checks/gitleaks.toml \
+			--report-format json --report-path "$work/out/secrets.json" >/dev/null 2>&1 || true
+fi
+for f in agent.patch run.json agent.log secrets.json; do
 	[ ! -f "$work/out/$f" ] || broker -X PUT --data-binary @"$work/out/$f" "$BROKER_URL/v1/files/$f"
 done
 broker -X POST -H 'content-type: application/json' --data "{\"exit_code\":$rc}" "$BROKER_URL/v1/done"

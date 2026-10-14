@@ -6,7 +6,7 @@
 //   GET  /v1/task              текст задачи
 //   GET  /v1/repo              рабочая копия цели (git bundle)
 //   GET  /v1/env               переменные шага с ключами (JSON); выдаются один раз
-//   PUT  /v1/files/<имя>       agent.patch, run.json, agent.log
+//   PUT  /v1/files/<имя>       agent.patch, run.json, agent.log, secrets.json
 //   POST /v1/done              {"exit_code": N} - шаг закончил; после этого запуск только читается
 //   GET  /healthz              без ключа
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -20,7 +20,7 @@ export interface BrokerOptions {
   maxUpload?: number; // байт на файл, по умолчанию 10 МБ
 }
 
-const UPLOADS: RunFile[] = ['agent.patch', 'run.json', 'agent.log'];
+const UPLOADS: RunFile[] = ['agent.patch', 'run.json', 'agent.log', 'secrets.json'];
 
 class HttpError extends Error {
   readonly status: number;

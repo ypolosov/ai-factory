@@ -88,7 +88,13 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
   );
   // Настройки цели - из базы, а не из патча: агент их не меняет (защищённый путь).
   const configPath = join(d.runs.dir(runId), 'repo', '.factory', 'config.yml');
-  const v = guardPatch(patch, exitCode, d.guard, existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined);
+  const v = guardPatch(
+    patch,
+    exitCode,
+    d.guard,
+    existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined,
+    d.runs.read(runId, 'secrets.json')?.toString('utf8'),
+  );
   if (v.state === 'blocked') {
     await d.tracker.addComment(t.issue, `Страж фабрики не пропустил изменение агента:\n${verdictText(v)}\nЖурнал: ${t.jobUrl}`);
     await relabel(d, t.issue, [d.labels.running], d.labels.failed);

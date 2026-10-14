@@ -77,6 +77,14 @@ describe('страж изменения агента', () => {
     expect(broken.state).toBe('blocked');
   });
 
+  it('секреты из отчёта сканера - изменение не публикуется', () => {
+    const report = JSON.stringify([{ RuleID: 'github-pat', StartLine: 1, Secret: 'REDACTED' }]);
+    const v = guardPatch(diff('a.ts'), 0, DEFAULT_GUARD, CONFIG, report);
+    expect(v.state).toBe('blocked');
+    expect(v.findings.at(-1)?.message).toBe('в изменении найдены секреты (Gitleaks): github-pat');
+    expect(guardPatch(diff('a.ts'), 0, DEFAULT_GUARD, CONFIG, '[]').state).toBe('success');
+  });
+
   it('файлы блокировки зависимостей в размер патча не входят', () => {
     const lock = diff('api/package-lock.json') + 'x'.repeat(DEFAULT_GUARD.maxBytes);
     expect(guardPatch(diff('api/package.json') + lock, 0, DEFAULT_GUARD, CONFIG).state).toBe('success');
