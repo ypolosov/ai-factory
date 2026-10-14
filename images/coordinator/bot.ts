@@ -16,12 +16,16 @@ export interface BotDeps {
   refreshKnowledge(): Promise<void>;
   librarian: Librarian;
   agentLabel: string;
+  // Выпуск: черновик заметок и подтверждение выкладки человеком.
+  release?: { draft(): Promise<string>; confirm(tag: string, by: string): Promise<string> };
   log(message: string): void;
 }
 
 export const HELP = `Я бот фабрики. Спросите меня (упоминанием) о проекте - отвечу со ссылками на правила, решения и задачи.
 !дейли - что делает фабрика: задачи агентов, PR, решения, выкладка
-!задача <название>. <описание> - задача агенту фабрики`;
+!задача <название>. <описание> - задача агенту фабрики
+!выпуск - что войдёт в следующий выпуск
+!выкладка vX.Y.Z - подтвердить выкладку выпуска на стенд`;
 
 const STATES: [string, string][] = [
   ['agent-running', 'агент работает'],
@@ -53,6 +57,9 @@ export async function answer(d: BotDeps, m: ChatMessage): Promise<string | undef
   const text = m.text.replace(/<@!?\d+>/g, '').trim();
   if (/^!(дейли|daily)(\s|$)/i.test(text)) return daily(d);
   if (/^!(помощь|help)(\s|$)/i.test(text)) return HELP;
+  if (d.release && /^!(выпуск|release)(\s|$)/i.test(text)) return d.release.draft();
+  const deployTag = /^!(выкладка|deploy)\s+(v\d+\.\d+\.\d+)\s*$/i.exec(text)?.[2];
+  if (d.release && deployTag) return d.release.confirm(deployTag, m.author);
   const task = /^!(задача|task)\s+([\s\S]+)$/i.exec(text)?.[2];
   if (task) {
     const [title = task, ...rest] = task.split(/(?<=\.)\s+/);

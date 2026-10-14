@@ -5,6 +5,10 @@
 # этого коммита и поднимает систему в Docker выкладки стенда. Итог - статус factory/deploy
 # на коммите.
 #
+# Что выкладывать: ветка по умолчанию (main) или тег выпуска из /control/pin - его пишет
+# координатор после подтверждения выкладки человеком. Образы ветки - с тегом коммита,
+# выпуска - с тегом выпуска.
+#
 # Окружение: CD_IMAGES - имена образов в ghcr.io/<владелец>/ ("prize-draw-api prize-draw-web");
 # CD_PROJECT - имя проекта compose; CD_ENV - переменные для compose ("WEB_PORT=8082");
 # CD_INTERVAL - пауза опроса, с; CD_REPO - владелец/имя (по умолчанию GITHUB_TARGET_REPO);
@@ -43,37 +47,51 @@ images_ready() {
 	done
 }
 
-# deploy SHA - compose.yaml коммита, образы с тегом коммита, ожидание проверок здоровья.
+# deploy SHA ТЕГ - compose.yaml коммита, образы с тегом, ожидание проверок здоровья.
 deploy() {
 	_dir=/state/$1
 	mkdir -p "$_dir"
 	gh "/contents/compose.yaml?ref=$1" application/vnd.github.raw+json >"$_dir/compose.yaml"
 	# shellcheck disable=SC2086 # CD_ENV - список ИМЯ=значение через пробел
-	env TAG="$1" $CD_ENV docker compose -p "$CD_PROJECT" -f "$_dir/compose.yaml" pull -q &&
-		env TAG="$1" $CD_ENV docker compose -p "$CD_PROJECT" -f "$_dir/compose.yaml" up -d --no-build --wait --remove-orphans
+	env TAG="$2" $CD_ENV docker compose -p "$CD_PROJECT" -f "$_dir/compose.yaml" pull -q &&
+		env TAG="$2" $CD_ENV docker compose -p "$CD_PROJECT" -f "$_dir/compose.yaml" up -d --no-build --wait --remove-orphans
+}
+
+# desired - что выкладывать: "ССЫЛКА ТЕГ_ОБРАЗОВ".
+desired() {
+	_pin=$(cat /control/pin 2>/dev/null || true)
+	case $_pin in
+	v[0-9]*.[0-9]*.[0-9]*) printf '%s %s' "$_pin" "$_pin" ;;
+	*) printf 'main -' ;;
+	esac
 }
 
 log "слежу за $CD_REPO (main)"
 waiting=""
 while :; do
-	sha=$(gh /commits/main | jq -r .sha) || sha=""
-	if [ -n "$sha" ] && [ "$sha" != "$(cat /state/deployed 2>/dev/null)" ] && [ "$sha" != "$(cat /state/failed 2>/dev/null)" ]; then
-		if images_ready "$sha"; then
-			log "выкладываю $sha"
-			if deploy "$sha" >/state/last.log 2>&1; then
-				echo "$sha" >/state/deployed
-				status "$sha" success "выложено на стенд"
-				log "выложено $sha"
+	want=$(desired)
+	ref=${want%% *}
+	tag=${want#* }
+	sha=$(gh "/commits/$ref" | jq -r .sha) || sha=""
+	[ "$tag" != - ] || tag=$sha
+	key="$ref $sha"
+	if [ -n "$sha" ] && [ "$key" != "$(cat /state/deployed 2>/dev/null)" ] && [ "$key" != "$(cat /state/failed 2>/dev/null)" ]; then
+		if images_ready "$tag"; then
+			log "выкладываю $ref ($sha)"
+			if deploy "$sha" "$tag" >/state/last.log 2>&1; then
+				echo "$key" >/state/deployed
+				status "$sha" success "выложено на стенд ($ref)"
+				log "выложено $ref ($sha)"
 			else
-				# Неудачный коммит не повторяется: следующая попытка - со следующим коммитом.
-				echo "$sha" >/state/failed
-				status "$sha" failure "выкладка на стенд не удалась"
-				log "выкладка $sha не удалась:"
+				# Неудачная выкладка не повторяется: следующая попытка - со следующим коммитом или тегом.
+				echo "$key" >/state/failed
+				status "$sha" failure "выкладка на стенд не удалась ($ref)"
+				log "выкладка $ref ($sha) не удалась:"
 				tail -20 /state/last.log
 			fi
-		elif [ "$waiting" != "$sha" ]; then
-			waiting=$sha
-			log "жду образы $sha в GHCR (их публикует CI цели после зелёных проверок)"
+		elif [ "$waiting" != "$key" ]; then
+			waiting=$key
+			log "жду образы $tag в GHCR (их публикует CI цели после зелёных проверок)"
 		fi
 	fi
 	sleep "$CD_INTERVAL"

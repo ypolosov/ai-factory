@@ -12,7 +12,8 @@ COPY ports/*.ts /app/ports/
 COPY coordinator/*.ts ./
 
 # Каталог данных принадлежит node: именованный том при первом подключении берёт его владельца.
-RUN mkdir -p /data && chown node:node /data
+# Общий том со службой выкладки: координатор пишет, что выкладывать (pin - тег выпуска).
+RUN mkdir -p /data /cd-control && chown node:node /data /cd-control
 ENV NODE_ENV=production \
 	MASTRA_TELEMETRY_DISABLED=1 \
 	COORDINATOR_DATA=/data

@@ -1,10 +1,19 @@
 // Служба координатора демо: задача трекера с меткой-триггером -> задание агента у исполнителя
 // заданий -> страж -> PR в цели. Запуск: node main.ts (Node 24 стирает типы, сборки нет).
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Mastra } from '@mastra/core/mastra';
 import { LibSQLStore } from '@mastra/libsql';
-import { selectChat, selectForge, selectJobs, selectKnowledge, selectNotifier, selectTracker } from '../ports/select.ts';
+import {
+  selectChat,
+  selectForge,
+  selectJobs,
+  selectKnowledge,
+  selectNotifier,
+  selectRegistry,
+  selectTracker,
+  selectWiki,
+} from '../ports/select.ts';
 import { compositeKnowledge, trackerKnowledge } from '../ports/tracker-knowledge.ts';
 import type { Deps } from './actions.ts';
 import { chatBot, gatewayLibrarian } from './bot.ts';
@@ -16,6 +25,9 @@ import { DEFAULT_GUARD } from './guard.ts';
 import { gatewayJudge } from './judge.ts';
 import { mcpHttp } from './mcp.ts';
 import { pullGuard } from './pull-guard.ts';
+import { missingImages, notes, type ReleaseDeps } from './release.ts';
+import { releaseLoop } from './release-loop.ts';
+import { releaseWorkflow } from './release-workflow.ts';
 import { runStore } from './runs.ts';
 import type { StoryDeps } from './story.ts';
 import { storyLoop } from './story-loop.ts';
@@ -56,8 +68,25 @@ const stories: StoryDeps = {
   notifier: chat ? { post: (text) => chat.post(cfg.productChannel, text) } : selectNotifier(cfg.notifier),
   labels: cfg.storyLabels,
 };
+// Выпуск: что выкладывать на стенд, служба выкладки читает из общего тома (pin - тег выпуска).
+const releases: ReleaseDeps = {
+  forge: deps.forge,
+  tracker: deps.tracker,
+  wiki: selectWiki(cfg.wiki),
+  registry: selectRegistry({ kind: 'ghcr', owner: cfg.targetOwner }),
+  images: cfg.releaseImages,
+  post: async (text) => {
+    if (chat) await chat.post(cfg.releaseChannel, text);
+    else log(text);
+  },
+  pin: async (tag) => {
+    const pin = join(cfg.cdControl, 'pin');
+    if (tag) writeFileSync(pin, `${tag}\n`);
+    else rmSync(pin, { force: true });
+  },
+};
 const mastra = new Mastra({
-  workflows: { agentTask: agentTaskWorkflow(deps), storyCheck: storyCheckWorkflow(stories) },
+  workflows: { agentTask: agentTaskWorkflow(deps), storyCheck: storyCheckWorkflow(stories), release: releaseWorkflow(releases) },
   storage: new LibSQLStore({ id: 'coordinator', url: `file:${join(cfg.data, 'mastra.db')}` }),
   logger: false,
 });
@@ -96,6 +125,14 @@ const mcp = mcpHttp({
   token: cfg.mcpToken,
 });
 mcp.listen(cfg.mcpPort, '0.0.0.0', () => log(`MCP фабрики: :${cfg.mcpPort}/mcp`));
+const releaseChecks = releaseLoop({
+  workflow: mastra.getWorkflow('release'),
+  forge: deps.forge,
+  seenFile: join(cfg.data, 'release-tags.json'),
+  missing: (tag) => missingImages(releases, tag),
+  post: releases.post,
+  log,
+});
 const bot = chat
   ? chatBot({
       chat,
@@ -105,6 +142,7 @@ const bot = chat
       refreshKnowledge: stories.refreshKnowledge,
       librarian: gatewayLibrarian(cfg.judge),
       agentLabel: cfg.labels.trigger,
+      release: { draft: async () => (await notes(releases)).text, confirm: releaseChecks.confirm },
       log,
     })
   : undefined;
@@ -112,6 +150,7 @@ const tick = async () => {
   await loop.tick();
   await storyChecks.tick();
   await pulls.tick();
+  await releaseChecks.tick();
 };
 
 const server = broker({

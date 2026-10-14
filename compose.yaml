@@ -404,6 +404,7 @@ services:
     volumes:
       - ./.state/coordinator:/run/coordinator:ro
       - coordinator-data:/data
+      - cd-control:/cd-control
 
   # Выкладка цели демо (порт выкладки, носитель - docker compose): main цели на GitHub ->
   # образы коммита в GHCR (CI цели публикует их после зелёных проверок) -> Docker выкладки
@@ -423,6 +424,8 @@ services:
       - deploy-dind-sock:/var/run/dind
       - ./.state/cd:/secrets:ro
       - cd-state:/state
+      # Что выкладывать: pin - тег выпуска (пишет координатор после подтверждения человека).
+      - cd-control:/control:ro
     networks: [factory]
 
 volumes:
@@ -445,6 +448,7 @@ volumes:
   bb-registry:
   coordinator-data:
   cd-state:
+  cd-control:
 
 networks:
   factory: {}

@@ -3,7 +3,7 @@
 // в момент выдачи посредником и в окружение процесса не попадают.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ChatConfig, ForgeConfig, JobsConfig, NotifierConfig, TrackerConfig } from '../ports/select.ts';
+import type { ChatConfig, ForgeConfig, JobsConfig, NotifierConfig, TrackerConfig, WikiConfig } from '../ports/select.ts';
 import type { Labels } from './actions.ts';
 import type { GitConfig } from './git.ts';
 import type { GatewayJudgeConfig } from './judge.ts';
@@ -27,6 +27,12 @@ export interface Config {
   chat?: ChatConfig;
   productChannel: string;
   storyLabels: StoryLabels & { failed: string };
+  // Выпуск: вики заметок, образы цели в GHCR, канал выпусков, управление выкладкой.
+  wiki: WikiConfig;
+  targetOwner: string;
+  releaseImages: string[];
+  releaseChannel: string;
+  cdControl: string;
   mcpPort: number;
   mcpToken(): string;
   // Переменные шага без ключей и с ключами.
@@ -121,6 +127,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       decision: 'decision',
       failed: 'story-failed',
     },
+    wiki: {
+      kind: 'confluence',
+      site: need(atl, 'ATLASSIAN_SITE', 'atlassian.env'),
+      email: need(atl, 'ATLASSIAN_EMAIL', 'atlassian.env'),
+      token: need(atl, 'CONFLUENCE_API_TOKEN', 'atlassian.env'),
+      space: need(atl, 'CONFLUENCE_SPACE', 'atlassian.env'),
+    },
+    targetOwner: target.split('/')[0] ?? '',
+    releaseImages: (env.RELEASE_IMAGES ?? 'prize-draw-api prize-draw-web').split(/\s+/).filter(Boolean),
+    releaseChannel: env.RELEASE_CHANNEL ?? 'релизы',
+    cdControl: env.CD_CONTROL ?? '/cd-control',
     mcpPort: Number(env.MCP_PORT ?? 8091),
     mcpToken: () => file('mcp.token').trim(),
     stepEnv: {

@@ -2,6 +2,7 @@
 // ждут решения, возобновляются, когда закрыты все задачи, от которых они зависят. Истина о
 // решении - в трекере, поэтому цикл переживает перезапуск координатора.
 import type { Tracker } from '../ports/ports.ts';
+import { message } from './errors.ts';
 import type { StoryLabels } from './story.ts';
 import { DECISION_STEP, type StoryCheckWorkflow } from './story-workflow.ts';
 
@@ -13,8 +14,6 @@ export interface StoryLoopDeps {
 }
 
 type Result = { status: string; error?: unknown; result?: unknown };
-
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function storyLoop(d: StoryLoopDeps) {
   let busy = false;

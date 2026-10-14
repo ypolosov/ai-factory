@@ -180,3 +180,8 @@ export interface Wiki {
   upsertPage(title: string, body: string): Promise<{ id: string; url: string }>;
   getPage(title: string): Promise<{ id: string; url: string; body: string } | undefined>;
 }
+
+// Реестр образов цели: есть ли образ с тегом.
+export interface Registry {
+  exists(image: string, tag: string): Promise<boolean>;
+}

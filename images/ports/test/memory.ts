@@ -30,7 +30,8 @@ const matches = (text: string, query: string) => {
     .every((q) => (q.endsWith('*') ? ws.some((w) => w.startsWith(q.slice(0, -1))) : ws.includes(q)));
 };
 
-export function memoryTracker(user = 'factory-bot'): Tracker {
+// keyPrefix - ключи задач как у Jira ("DRAW-"); по умолчанию - номера, как у Forgejo.
+export function memoryTracker(user = 'factory-bot', keyPrefix = ''): Tracker {
   let seq = 0;
   const issues = new Map<string, Issue>();
   const comments = new Map<string, Comment[]>();
@@ -60,7 +61,7 @@ export function memoryTracker(user = 'factory-bot'): Tracker {
         .map((i) => ({ ...i, labels: [...i.labels] }));
     },
     async createIssue({ title, body, labels = [] }) {
-      const key = String(++seq);
+      const key = `${keyPrefix}${++seq}`;
       const i: Issue = { key, title, body, state: 'open', labels: [], url: `http://memory/issues/${key}` };
       issues.set(key, i);
       for (const l of labels) label(key, l, 'added');

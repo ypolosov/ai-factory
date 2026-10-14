@@ -3,6 +3,7 @@
 // заданий, поэтому цикл переживает перезапуск координатора.
 import type { JobRunner, Tracker } from '../ports/ports.ts';
 import { crash, type Labels } from './actions.ts';
+import { message } from './errors.ts';
 import type { RunStore } from './runs.ts';
 import { type AgentTaskWorkflow, AWAIT_STEP } from './workflow.ts';
 
@@ -16,8 +17,6 @@ export interface CoordinatorDeps {
 }
 
 type Result = { status: string; error?: unknown; result?: unknown };
-
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function coordinator(d: CoordinatorDeps) {
   let busy = false;
