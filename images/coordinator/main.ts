@@ -1,5 +1,6 @@
 // Служба координатора демо: задача трекера с меткой-триггером -> задание агента у исполнителя
 // заданий -> страж -> PR в цели. Запуск: node main.ts (Node 24 стирает типы, сборки нет).
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Mastra } from '@mastra/core/mastra';
 import { LibSQLStore } from '@mastra/libsql';
@@ -11,6 +12,7 @@ import { coordinator } from './coordinator.ts';
 import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
 import { gatewayJudge } from './judge.ts';
+import { pullGuard } from './pull-guard.ts';
 import { runStore } from './runs.ts';
 import type { StoryDeps } from './story.ts';
 import { storyLoop } from './story-loop.ts';
@@ -58,9 +60,20 @@ const loop = coordinator({
   log,
 });
 const storyChecks = storyLoop({ workflow: mastra.getWorkflow('storyCheck'), tracker: deps.tracker, labels: cfg.storyLabels, log });
+const configPath = join(knowledgeDir, '.factory', 'config.yml');
+const pulls = pullGuard({
+  forge: deps.forge,
+  guard: DEFAULT_GUARD,
+  targetConfig: async () => {
+    await stories.refreshKnowledge();
+    return existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined;
+  },
+  log,
+});
 const tick = async () => {
   await loop.tick();
   await storyChecks.tick();
+  await pulls.tick();
 };
 
 const server = broker({
