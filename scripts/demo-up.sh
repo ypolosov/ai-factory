@@ -16,6 +16,8 @@ for f in atlassian.env bitbucket.env github-target.env claude-oauth.token gw-age
 	}
 	cmp -s "$state/$f" "$dst/$f" || (umask 077 && cp "$state/$f" "$dst/$f")
 done
+# Ключ MCP фабрики для экзокортексов (Authorization: Bearer).
+[ -s "$dst/mcp.token" ] || (umask 077 && od -An -tx1 -N24 /dev/urandom | tr -d ' \n' >"$dst/mcp.token")
 mkdir -p "$state/cd"
 chmod 700 "$state/cd"
 cmp -s "$state/github-target.env" "$state/cd/github-target.env" || (umask 077 && cp "$state/github-target.env" "$state/cd/")

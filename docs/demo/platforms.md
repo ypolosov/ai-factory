@@ -120,6 +120,8 @@ docker compose --profile bitbucket logs -f coordinator
 - Страж требует от цели объявленных команд линтера и форматирования (`checks.lint`, `checks.format` в `.factory/config.yml`); файлы блокировки зависимостей в размер патча не входят.
 - Выкладка цели (служба `cd`): CI цели после зелёных проверок публикует образы коммита main в GHCR, служба забирает их и `compose.yaml` этого коммита и поднимает систему в Docker выкладки стенда - http://127.0.0.1:8082; итог - статус `factory/deploy` на коммите.
 - Сверка требований (UC1): задача DRAW с меткой `story` -> поиск по знанию цели (README, AGENTS.md, `docs/**/*.md` ветки по умолчанию; ссылки - на коммит) -> судья через шлюз (`kb-claude-cli`, подписка) -> противоречие: комментарий с цитатами и ссылками, задача на решение с меткой `decision` (стори зависит от неё), сообщение в Discord, метка `needs-decision`; закрытие задачи запускает повторную сверку с обновлённым знанием -> `story-ok` или "противоречие осталось". Без противоречий - сразу `story-ok`.
+- Страж всех PR цели: PR из любого экзокортекса без вердикта фабрики на голове получает тот же `factory/verdict` и комментарий.
+- MCP фабрики для экзокортексов (Claude Code, Codex): `http://127.0.0.1:4100/mcp`, инструменты `kb_search`, `check_requirement`, `factory_rules`, `submit_task`. Подключение Claude Code: `claude mcp add --transport http ai-factory http://127.0.0.1:4100/mcp --header "Authorization: Bearer $(cat .state/coordinator/mcp.token)"`.
 - Источник `bitbucket-pipelines.yml` - `config/bitbucket/`; в Bitbucket его кладёт `scripts/bb-commit.sh`.
 
 ## Проверка

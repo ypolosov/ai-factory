@@ -12,6 +12,7 @@ import { coordinator } from './coordinator.ts';
 import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
 import { gatewayJudge } from './judge.ts';
+import { mcpHttp } from './mcp.ts';
 import { pullGuard } from './pull-guard.ts';
 import { runStore } from './runs.ts';
 import type { StoryDeps } from './story.ts';
@@ -70,6 +71,22 @@ const pulls = pullGuard({
   },
   log,
 });
+// MCP фабрики для экзокортексов; на хосте - только 127.0.0.1 (compose.yaml).
+const mcp = mcpHttp({
+  knowledge: stories.knowledge,
+  refreshKnowledge: stories.refreshKnowledge,
+  judge: stories.judge,
+  tracker: deps.tracker,
+  targetFile: async (path) => {
+    await stories.refreshKnowledge();
+    const p = join(knowledgeDir, path);
+    return existsSync(p) ? readFileSync(p, 'utf8') : undefined;
+  },
+  guard: DEFAULT_GUARD,
+  agentLabel: cfg.labels.trigger,
+  token: cfg.mcpToken,
+});
+mcp.listen(cfg.mcpPort, '0.0.0.0', () => log(`MCP фабрики: :${cfg.mcpPort}/mcp`));
 const tick = async () => {
   await loop.tick();
   await storyChecks.tick();
@@ -91,6 +108,7 @@ void tick();
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.on(sig, () => {
     clearInterval(timer);
+    mcp.close();
     server.close(() => process.exit(0));
   });
 }

@@ -394,6 +394,9 @@ services:
       JOB_GATEWAY_URL: http://172.31.250.30:4000
       JOB_PROXY: http://172.31.250.10:3128
       COORDINATOR_SECRETS: /run/coordinator
+    # MCP фабрики для экзокортексов владельца: http://127.0.0.1:4100/mcp, ключ - .state/coordinator/mcp.token.
+    ports:
+      - "127.0.0.1:${MCP_PORT:-4100}:8091"
     networks:
       factory: {}
       bb-jobs:

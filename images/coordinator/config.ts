@@ -24,6 +24,8 @@ export interface Config {
   judge: GatewayJudgeConfig;
   notifier: NotifierConfig;
   storyLabels: StoryLabels & { failed: string };
+  mcpPort: number;
+  mcpToken(): string;
   // Переменные шага без ключей и с ключами.
   stepEnv: Record<string, string>;
   stepSecrets(): Record<string, string>;
@@ -112,6 +114,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       decision: 'decision',
       failed: 'story-failed',
     },
+    mcpPort: Number(env.MCP_PORT ?? 8091),
+    mcpToken: () => file('mcp.token').trim(),
     stepEnv: {
       FACTORY_ROLE: 'dev',
       FACTORY_EXECUTOR: env.AGENT_EXECUTOR ?? 'claude',
