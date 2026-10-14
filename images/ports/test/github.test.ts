@@ -2,7 +2,7 @@
 // Запуск - scripts/port-contract-saas.sh; без GITHUB_TEST_REPO и GITHUB_TEST_TOKEN - пропуск.
 // Песочница не удаляется (у токена нет прав администратора): тесты закрывают свои PR
 // и удаляют свои ветки.
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { githubForge } from '../github.ts';
 import { forgeContract } from './contract.ts';
 
@@ -10,7 +10,7 @@ const repo = process.env.GITHUB_TEST_REPO;
 const token = process.env.GITHUB_TEST_TOKEN;
 
 if (!repo || !token) {
-  test('контракт GitHub: нет GITHUB_TEST_REPO и GITHUB_TEST_TOKEN', { skip: true }, () => {});
+  test.skip('контракт GitHub: нет GITHUB_TEST_REPO и GITHUB_TEST_TOKEN', () => {});
 } else {
   const call = async (method: string, path: string, body?: unknown) => {
     const r = await fetch(`https://api.github.com/repos/${repo}${path}`, {

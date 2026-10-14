@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { isIndexed, loop, repoDocs, splitFile, syncRepo, type Config, type Fetch } from '../kbsync.ts';
 

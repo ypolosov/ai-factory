@@ -1,7 +1,7 @@
 // Контрактные тесты портов: один набор для всех адаптеров. Адаптер считается
 // заменяемым, только если проходит его целиком (заменяемость доказывает второй
 // носитель, а не публичный API).
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert/strict';
 import { PortError, type Forge, type Tracker } from '../ports.ts';
 
@@ -27,11 +27,11 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
   describe(`трекер ${name}`, () => {
     let fx: TrackerFixture;
     let t: Tracker;
-    before(async () => {
+    beforeAll(async () => {
       fx = await setup();
       t = fx.tracker;
     });
-    after(async () => fx?.cleanup());
+    afterAll(async () => fx?.cleanup());
 
     it('созданная задача открыта и читается по ключу', async () => {
       const title = `задача ${uniq()}`;
@@ -109,12 +109,12 @@ export function forgeContract(name: string, setup: () => Promise<ForgeFixture>) 
     let fx: ForgeFixture;
     let f: Forge;
     let pr: { n: number; branch: string; file: string };
-    before(async () => {
+    beforeAll(async () => {
       fx = await setup();
       f = fx.forge;
       pr = await fx.openPull();
     });
-    after(async () => fx?.cleanup());
+    afterAll(async () => fx?.cleanup());
 
     it('репозиторий: адрес и ветка по умолчанию', async () => {
       const r = await f.repo();

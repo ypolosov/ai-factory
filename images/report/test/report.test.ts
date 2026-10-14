@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { agentMinutes, dora, executorOf, median, minutes, models, render, rowCost, taskRows, type LogRow, type Task } from '../report.ts';
 

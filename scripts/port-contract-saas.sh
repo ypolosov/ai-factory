@@ -42,6 +42,5 @@ if [ "$only" = all ] || [ "$only" = github ]; then
 fi
 rm -f "$tmp/env"
 
-# shellcheck disable=SC2086
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp --env-file "$tmp/test.env" \
-	-v "$PWD":/w -w /w "$NODE_IMAGE" node --test $files
+	-v "$PWD":/w -w /w "$NODE_IMAGE" sh -c "npm ci --no-audit --no-fund --silent && npx vitest run$files"

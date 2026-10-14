@@ -1,6 +1,6 @@
 // Контракт на живом Forgejo: запускает scripts/port-contract.sh в одноразовом
 // контейнере. Без FORGEJO_TEST_URL и FORGEJO_TEST_TOKEN (обычный make test) - пропуск.
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { forgejoForge, forgejoTracker, type ForgejoConfig } from '../forgejo.ts';
 import { forgeContract, trackerContract } from './contract.ts';
 
@@ -8,7 +8,7 @@ const url = process.env.FORGEJO_TEST_URL;
 const token = process.env.FORGEJO_TEST_TOKEN;
 
 if (!url || !token) {
-  test('контракт Forgejo: нет FORGEJO_TEST_URL и FORGEJO_TEST_TOKEN', { skip: true }, () => {});
+  test.skip('контракт Forgejo: нет FORGEJO_TEST_URL и FORGEJO_TEST_TOKEN', () => {});
 } else {
   const call = async (method: string, path: string, body?: unknown) => {
     const r = await fetch(`${url}/api/v1${path}`, {

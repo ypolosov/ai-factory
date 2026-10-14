@@ -47,4 +47,4 @@ umask 077
 } >"$tmp/env"
 
 docker run --rm --network "$name" -u "$(id -u):$(id -g)" -e HOME=/tmp --env-file "$tmp/env" \
-	-v "$PWD":/w -w /w "$NODE_IMAGE" node --test images/ports/test/forgejo.test.ts
+	-v "$PWD":/w -w /w "$NODE_IMAGE" sh -c 'npm ci --no-audit --no-fund --silent && npx vitest run images/ports/test/forgejo.test.ts'
