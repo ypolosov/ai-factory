@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { afterAll, beforeAll, describe, it } from 'vitest';
-import { type Forge, PortError, type Tracker } from '../ports.ts';
+import { type Forge, type JobRunner, type JobState, PortError, type Tracker } from '../ports.ts';
 
 export interface TrackerFixture {
   tracker: Tracker;
@@ -17,6 +17,14 @@ export interface ForgeFixture {
   openPull(): Promise<{ n: number; branch: string; file: string }>;
   // Ветка с одним изменённым файлом без PR.
   pushBranch(): Promise<{ branch: string; file: string }>;
+  cleanup(): Promise<void>;
+}
+
+export interface JobsFixture {
+  jobs: JobRunner;
+  quick: string; // задание, которое быстро завершается успехом
+  slow: string; // задание, которое идёт дольше теста и останавливается
+  poll: { everyMs: number; forMs: number };
   cleanup(): Promise<void>;
 }
 
@@ -191,6 +199,62 @@ export function forgeContract(name: string, setup: () => Promise<ForgeFixture>) 
 
     it('обязательные проверки ветки - список', async () => {
       assert.ok(Array.isArray(await f.requiredChecks((await f.repo()).defaultBranch)));
+    });
+  });
+}
+
+export function jobsContract(name: string, setup: () => Promise<JobsFixture>) {
+  describe(`исполнитель заданий ${name}`, () => {
+    let fx: JobsFixture;
+    let j: JobRunner;
+    beforeAll(async () => {
+      fx = await setup();
+      j = fx.jobs;
+    });
+    afterAll(async () => fx?.cleanup());
+
+    const until = async (id: string, want: JobState) => {
+      const end = Date.now() + fx.poll.forMs;
+      let state: JobState = 'pending';
+      while (Date.now() < end) {
+        state = (await j.get(id)).state;
+        if (state === want) return;
+        await new Promise((r) => setTimeout(r, fx.poll.everyMs));
+      }
+      assert.fail(`задание ${id}: ждали ${want}, сейчас ${state}`);
+    };
+
+    // Живой исполнитель ждёт раннер и образ шага: тесту - до пяти минут.
+    const LONG = 300_000;
+
+    it(
+      'задание с переменными и секретами доходит до успеха',
+      async () => {
+        const job = await j.start({ job: fx.quick, variables: { FACTORY_CONTRACT: uniq() }, secrets: { FACTORY_SECRET: uniq() } });
+        assert.ok(job.id);
+        assert.ok(job.url);
+        assert.ok(['pending', 'running'].includes(job.state));
+        await until(job.id, 'success');
+        assert.equal((await j.get(job.id)).url, job.url);
+      },
+      LONG,
+    );
+
+    // Остановка идущего задания. Задание, остановленное до старта шага, Bitbucket
+    // завершает ошибкой, а не остановкой, - это вне контракта.
+    it(
+      'остановленное идущее задание - stopped',
+      async () => {
+        const job = await j.start({ job: fx.slow });
+        await until(job.id, 'running');
+        await j.stop(job.id);
+        await until(job.id, 'stopped');
+      },
+      LONG,
+    );
+
+    it('нет задания - ошибка not_found', async () => {
+      await rejectsNotFound(j.get('{00000000-0000-4000-8000-000000000000}'));
     });
   });
 }

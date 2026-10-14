@@ -9,5 +9,7 @@ export default defineConfig({
     // Контракты на живых носителях ходят в сеть: отдельный запрос - до нескольких секунд.
     testTimeout: 60_000,
     hookTimeout: 120_000,
+    // Координатор на Mastra core: телеметрия выключена и в тестах.
+    env: { MASTRA_TELEMETRY_DISABLED: '1' },
   },
 });

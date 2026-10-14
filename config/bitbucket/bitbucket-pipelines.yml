@@ -1,0 +1,35 @@
+# Задания фабрики ПО на ИИ (экземпляр демо на Bitbucket + Pipelines). Источник истины -
+# этот файл в ai-factory; в репозиторий фабрики на Bitbucket его кладёт
+# scripts/bb-commit.sh "сообщение" config/bitbucket/bitbucket-pipelines.yml bitbucket-pipelines.yml
+# Все шаги - только на своём раннере стенда фабрики (метка factory). Шаги идут во внутренней
+# сети bb-jobs: наружу - только через прокси egress (172.31.250.10).
+pipelines:
+  custom:
+    # Проверка платформы и контракт порта исполнителя: короткий шаг.
+    hello:
+      - step:
+          name: hello
+          runs-on: [self.hosted, linux, factory]
+          image: 172.31.250.20:5000/alpine:3.24
+          script:
+            - echo "hello from the factory runner"
+            - uname -sr
+    # Контракт порта исполнителя: шаг, который останавливают.
+    contract-sleep:
+      - step:
+          name: sleep
+          runs-on: [self.hosted, linux, factory]
+          image: 172.31.250.20:5000/alpine:3.24
+          script:
+            - sleep 600
+    # Задание агента. Bitbucket знает только адрес посредника координатора и разовый
+    # ключ запуска RUN_TOKEN (скрытая переменная); задачу, рабочую копию и ключи шага
+    # factory-job получает у посредника и туда же сдаёт итог.
+    agent-task:
+      - step:
+          name: agent
+          runs-on: [self.hosted, linux, factory]
+          image: 172.31.250.20:5000/factory/agent:stand
+          max-time: 60
+          script:
+            - factory-job

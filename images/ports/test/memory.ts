@@ -1,6 +1,17 @@
 // Эталонные адаптеры в памяти: проверяют набор контрактных тестов и служат
 // заменой носителя в модульных тестах потребителей.
-import { type Comment, type CommitStatus, type Forge, type Issue, type LabelEvent, PortError, type Pull, type Tracker } from '../ports.ts';
+import {
+  type Comment,
+  type CommitStatus,
+  type Forge,
+  type Issue,
+  type Job,
+  type JobRunner,
+  type LabelEvent,
+  PortError,
+  type Pull,
+  type Tracker,
+} from '../ports.ts';
 
 const now = () => new Date().toISOString();
 
@@ -175,10 +186,53 @@ export function memoryForge(user = 'factory-bot') {
   return {
     forge,
     pushBranch,
+    // Ветка, отправленная мимо адаптера (например, git push потребителя в тесте).
+    setHead(branch: string, sha: string, file = 'README.md') {
+      commits.set(sha, { author: user, date: now(), file });
+      heads.set(branch, sha);
+    },
     async openPull() {
       const b = pushBranch();
       const p = await forge.openPull({ title: `PR ${b.branch}`, body: '', head: b.branch, base: defaultBranch });
       return { n: p.number, ...b };
+    },
+  };
+}
+
+// Задание в памяти - функция от переменных и секретов; её итог становится состоянием задания.
+export type MemoryJob = (env: Record<string, string>) => Promise<'success' | 'failed'>;
+
+export function memoryJobs(handlers: Record<string, MemoryJob>): JobRunner {
+  const jobs = new Map<string, Job>();
+  let seq = 0;
+  const job = (id: string) => {
+    const j = jobs.get(id);
+    if (!j) throw new PortError('not_found', `задание ${id} не найдено`);
+    return j;
+  };
+  return {
+    async start({ job: name, variables = {}, secrets = {} }) {
+      const handler = handlers[name];
+      if (!handler) throw new PortError('invalid', `нет задания ${name}`);
+      const id = `job-${++seq}`;
+      const j: Job = { id, state: 'running', url: `http://memory/jobs/${id}` };
+      jobs.set(id, j);
+      handler({ ...variables, ...secrets }).then(
+        (r) => {
+          if (j.state === 'running') j.state = r;
+        },
+        () => {
+          if (j.state === 'running') j.state = 'failed';
+        },
+      );
+      return { ...j, state: 'pending' };
+    },
+    async get(id) {
+      return { ...job(id) };
+    },
+    async stop(id) {
+      const j = job(id);
+      if (j.state === 'running' || j.state === 'pending') j.state = 'stopped';
     },
   };
 }

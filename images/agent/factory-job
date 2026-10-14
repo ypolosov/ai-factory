@@ -1,0 +1,36 @@
+#!/bin/sh
+# Шаг задания агента на любом исполнителе заданий (Bitbucket Pipelines и др.): берёт у
+# посредника координатора задачу, рабочую копию и ключи, запускает factory-agent и сдаёт итог.
+#
+# Вход:  BROKER_URL, RUN_TOKEN - разовый ключ запуска (у исполнителя - скрытая переменная).
+# Выход: agent.patch, run.json, agent.log и код агента - у посредника; код шага = код агента.
+# Ключи шага (подписка, шлюз) приходят только от посредника, не печатаются и живут в окружении
+# этого процесса; недоверенный код получает их через factory-agent и factory-untrusted.
+set -eu
+: "${BROKER_URL:?}" "${RUN_TOKEN:?}"
+
+umask 077
+work=$(mktemp -d)
+# Рабочую копию правит пользователь node: каталог проходим, но не читаем.
+chmod 711 "$work"
+printf 'Authorization: Bearer %s\n' "$RUN_TOKEN" >"$work/auth"
+unset RUN_TOKEN
+broker() { curl -fsS --noproxy '*' -H @"$work/auth" "$@"; }
+
+broker -o "$work/env.json" "$BROKER_URL/v1/env"
+broker -o "$work/task.md" "$BROKER_URL/v1/task"
+broker -o "$work/repo.bundle" "$BROKER_URL/v1/repo"
+eval "$(jq -r 'to_entries[] | select(.key | test("^[A-Z][A-Z0-9_]*$")) | "export \(.key)=\(.value | @sh)"' "$work/env.json")"
+rm -f "$work/env.json"
+git clone -q "$work/repo.bundle" "$work/repo"
+
+set +e
+(cd "$work/repo" && factory-agent --task "$work/task.md" --out "$work/out")
+rc=$?
+set -e
+for f in agent.patch run.json agent.log; do
+	[ ! -f "$work/out/$f" ] || broker -X PUT --data-binary @"$work/out/$f" "$BROKER_URL/v1/files/$f"
+done
+broker -X POST -H 'content-type: application/json' --data "{\"exit_code\":$rc}" "$BROKER_URL/v1/done"
+echo "агент закончил с кодом $rc"
+exit "$rc"

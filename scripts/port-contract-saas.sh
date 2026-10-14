@@ -1,8 +1,10 @@
 #!/bin/sh
 # Контрактные тесты портов на облачных носителях - песочницах Jira (проект FCT) и GitHub
-# (ypolosov/factory-contract-tests). Учётки - из .state/atlassian.env и .state/github-target.env;
-# токены попадают в Node только через файл окружения, не через аргументы команд.
-# Запуск из корня репозитория: scripts/port-contract-saas.sh [jira|github]
+# (ypolosov/factory-contract-tests) и на Bitbucket Pipelines репозитория фабрики (свой раннер
+# стенда должен работать: docker compose --profile bitbucket up -d). Учётки - из
+# .state/atlassian.env, .state/github-target.env и .state/bitbucket.env; токены попадают
+# в Node только через файл окружения, не через аргументы команд.
+# Запуск из корня репозитория: scripts/port-contract-saas.sh [jira|github|bitbucket]
 set -eu
 
 NODE_IMAGE=docker.io/library/node:24.21.0-alpine3.24
@@ -39,6 +41,17 @@ if [ "$only" = all ] || [ "$only" = github ]; then
 		printf 'GITHUB_TEST_TOKEN=%s\n' "$GITHUB_PUBLISH_TOKEN"
 	} >>"$tmp/test.env"
 	files="$files images/ports/test/github.test.ts"
+fi
+if [ "$only" = all ] || [ "$only" = bitbucket ]; then
+	sed 's/\r$//' "$state/bitbucket.env" >"$tmp/env"
+	# shellcheck disable=SC1091
+	. "$tmp/env"
+	{
+		printf 'BITBUCKET_TEST_WORKSPACE=%s\n' "$BITBUCKET_WORKSPACE"
+		printf 'BITBUCKET_TEST_REPO=%s\n' "$BITBUCKET_REPO"
+		printf 'BITBUCKET_TEST_TOKEN=%s\n' "$BITBUCKET_TOKEN"
+	} >>"$tmp/test.env"
+	files="$files images/ports/test/bitbucket.test.ts"
 fi
 rm -f "$tmp/env"
 

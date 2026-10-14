@@ -1,0 +1,106 @@
+// Настройка координатора: обычные значения - из окружения (compose.yaml), учётки - из файлов
+// каталога секретов (.state/coordinator, монтируется только для чтения). Ключи шага читаются
+// в момент выдачи посредником и в окружение процесса не попадают.
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ForgeConfig, JobsConfig, TrackerConfig } from '../ports/select.ts';
+import type { Labels } from './actions.ts';
+import type { GitConfig } from './git.ts';
+
+export interface Config {
+  data: string;
+  pollMs: number;
+  broker: { host: string; port: number; url: string };
+  tracker: TrackerConfig;
+  forge: ForgeConfig;
+  jobs: JobsConfig;
+  git: GitConfig;
+  job: string;
+  labels: Labels;
+  // Переменные шага без ключей и с ключами.
+  stepEnv: Record<string, string>;
+  stepSecrets(): Record<string, string>;
+}
+
+// Файл вида ИМЯ=значение (как читает sh): комментарии и пустые строки пропускаются.
+export function parseEnvFile(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+    if (!m?.[1]) continue;
+    const v = m[2] ?? '';
+    out[m[1]] = /^(['"]).*\1$/.test(v) ? v.slice(1, -1) : v;
+  }
+  return out;
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const secrets = env.COORDINATOR_SECRETS ?? '/run/coordinator';
+  const file = (name: string) => {
+    const p = join(secrets, name);
+    if (!existsSync(p)) throw new Error(`нет файла секретов ${name} в ${secrets}`);
+    return readFileSync(p, 'utf8');
+  };
+  const envFile = (name: string) => parseEnvFile(file(name));
+  const need = (vars: Record<string, string>, name: string, from: string) => {
+    const v = vars[name];
+    if (!v) throw new Error(`нет ${name} в ${from}`);
+    return v;
+  };
+  const atl = envFile('atlassian.env');
+  const bb = envFile('bitbucket.env');
+  const gh = envFile('github-target.env');
+  const target = need(gh, 'GITHUB_TARGET_REPO', 'github-target.env');
+  const publish = need(gh, 'GITHUB_PUBLISH_TOKEN', 'github-target.env');
+  const [host = '0.0.0.0', port = '8080'] = (env.BROKER_LISTEN ?? '0.0.0.0:8080').split(':');
+  const gateway = env.JOB_GATEWAY_URL ?? 'http://172.31.250.30:4000';
+  const proxy = env.JOB_PROXY ?? 'http://172.31.250.10:3128';
+  const brokerUrl = env.BROKER_URL ?? `http://${host}:${port}`;
+  return {
+    data: env.COORDINATOR_DATA ?? '/data',
+    pollMs: Number(env.POLL_SECONDS ?? 20) * 1000,
+    broker: { host, port: Number(port), url: brokerUrl },
+    tracker: {
+      kind: 'jira',
+      site: need(atl, 'ATLASSIAN_SITE', 'atlassian.env'),
+      email: need(atl, 'ATLASSIAN_EMAIL', 'atlassian.env'),
+      token: need(atl, 'JIRA_API_TOKEN', 'atlassian.env'),
+      project: need(atl, 'JIRA_PROJECT', 'atlassian.env'),
+    },
+    forge: { kind: 'github', repo: target, token: publish },
+    jobs: {
+      kind: 'bitbucket',
+      workspace: need(bb, 'BITBUCKET_WORKSPACE', 'bitbucket.env'),
+      repo: need(bb, 'BITBUCKET_REPO', 'bitbucket.env'),
+      token: need(bb, 'BITBUCKET_TOKEN', 'bitbucket.env'),
+    },
+    git: {
+      url: `https://github.com/${target}.git`,
+      ...(gh.GITHUB_READ_TOKEN ? { read: { user: 'x-access-token', token: gh.GITHUB_READ_TOKEN } } : {}),
+      write: { user: 'x-access-token', token: publish },
+      author: { name: env.FACTORY_GIT_NAME ?? 'factory-agent', email: env.FACTORY_GIT_EMAIL ?? 'factory-agent@users.noreply.github.com' },
+    },
+    job: env.AGENT_JOB ?? 'agent-task',
+    labels: {
+      trigger: env.LABEL_TRIGGER ?? 'agent',
+      running: env.LABEL_RUNNING ?? 'agent-running',
+      review: env.LABEL_REVIEW ?? 'agent-review',
+      failed: env.LABEL_FAILED ?? 'agent-failed',
+    },
+    stepEnv: {
+      FACTORY_ROLE: 'dev',
+      FACTORY_EXECUTOR: env.AGENT_EXECUTOR ?? 'claude',
+      FACTORY_MODEL: env.AGENT_MODEL ?? 'sonnet',
+      GATEWAY_URL: gateway,
+      HTTP_PROXY: proxy,
+      HTTPS_PROXY: proxy,
+      NO_PROXY: [new URL(gateway).hostname, new URL(brokerUrl).hostname].join(','),
+    },
+    stepSecrets: () => ({
+      GATEWAY_KEY_SUB: file('gw-agent-sub.key').trim(),
+      CLAUDE_CODE_OAUTH_TOKEN: file('claude-oauth.token').trim(),
+    }),
+  };
+}

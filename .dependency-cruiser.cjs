@@ -58,6 +58,7 @@ module.exports = {
     parser: 'swc',
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.json' },
-    enhancedResolveOptions: { extensions: ['.ts', '.js'] },
+    // Подпути пакетов (@mastra/core/workflows) - через поле exports.
+    enhancedResolveOptions: { extensions: ['.ts', '.js'], exportsFields: ['exports'], conditionNames: ['import', 'node', 'default'] },
   },
 };

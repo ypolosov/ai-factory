@@ -304,7 +304,12 @@ services:
       - ./.state/gateway-db:/db
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-4000}:4000"
-    networks: [factory, jobs]
+    # В сети шагов Bitbucket - по адресу: имена сети фабрики там не разрешаются.
+    networks:
+      factory: {}
+      jobs: {}
+      bb-jobs:
+        ipv4_address: 172.31.250.30
 
   # Прокси выхода заданий: Squid со списком разрешённых адресов (images/egress/allowlist.txt).
   egress:
@@ -372,6 +377,31 @@ services:
       - bb-work:/bb-work
       - bb-dind-lib:/var/lib/docker:ro
 
+  # Координатор демо (Mastra core): задачи Jira с меткой agent -> задание agent-task на своём
+  # раннере -> страж -> PR в цели на GitHub. Посредник шагов слушает только адрес в сети шагов:
+  # Bitbucket получает лишь его адрес и разовый ключ запуска. Учётки - .state/coordinator
+  # (scripts/coordinator-up.sh), состояние сценариев и запусков - том coordinator-data.
+  coordinator:
+    build:
+      context: images
+      dockerfile: coordinator/Dockerfile
+    image: factory/coordinator:stand
+    profiles: [bitbucket]
+    restart: unless-stopped
+    environment:
+      BROKER_LISTEN: 172.31.250.40:8080
+      BROKER_URL: http://172.31.250.40:8080
+      JOB_GATEWAY_URL: http://172.31.250.30:4000
+      JOB_PROXY: http://172.31.250.10:3128
+      COORDINATOR_SECRETS: /run/coordinator
+    networks:
+      factory: {}
+      bb-jobs:
+        ipv4_address: 172.31.250.40
+    volumes:
+      - ./.state/coordinator:/run/coordinator:ro
+      - coordinator-data:/data
+
 volumes:
   forgejo-data:
   agent-dind-sock:
@@ -390,6 +420,7 @@ volumes:
   bb-dind-lib:
   bb-work:
   bb-registry:
+  coordinator-data:
 
 networks:
   factory: {}

@@ -1,5 +1,6 @@
-// Порты фабрики: трекер задач и git-хостинг. Потребители (агенты, мосты, отчёты)
-// знают только эти контракты; носитель (Forgejo, Bitbucket, Jira) - адаптер за ними.
+// Порты фабрики: трекер задач, git-хостинг и исполнитель заданий. Потребители (агенты,
+// мосты, отчёты, координатор) знают только эти контракты; носитель (Forgejo, Bitbucket,
+// Jira, GitHub) - адаптер за ними.
 // Семантика выровнена по harness: задача - ключ строкой, метки по имени, статусы PR
 // и коммитов без меток PR (у Bitbucket их нет).
 
@@ -116,4 +117,20 @@ export interface Forge {
   setStatus(sha: string, s: CommitStatus): Promise<void>;
   statuses(sha: string): Promise<CommitStatus[]>;
   requiredChecks(branch: string): Promise<string[]>;
+}
+
+export type JobState = 'pending' | 'running' | 'success' | 'failed' | 'stopped';
+
+export interface Job {
+  id: string;
+  state: JobState;
+  url: string;
+}
+
+// Исполнитель заданий (CI) репозитория фабрики: запуск названного задания с переменными.
+// Секреты исполнитель скрывает в журналах; данные задания туда не кладутся.
+export interface JobRunner {
+  start(p: { job: string; variables?: Record<string, string>; secrets?: Record<string, string> }): Promise<Job>;
+  get(id: string): Promise<Job>;
+  stop(id: string): Promise<void>;
 }
