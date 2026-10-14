@@ -165,7 +165,7 @@ export function githubForge(cfg: GithubConfig): Forge {
     async commits(base, head) {
       const list = base
         ? ((await api.json('GET', `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`)).commits as Json[])
-        : await api.json<Json[]>('GET', `/commits?sha=${encodeURIComponent(head)}&per_page=100`);
+        : (await api.json<Json[]>('GET', `/commits?sha=${encodeURIComponent(head)}&per_page=100`)).reverse();
       return list.map((c) => ({ sha: String(c.sha), message: String((c.commit as Json).message) }));
     },
     async requiredChecks(branch) {

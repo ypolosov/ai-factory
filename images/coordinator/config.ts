@@ -3,7 +3,7 @@
 // в момент выдачи посредником и в окружение процесса не попадают.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ChatConfig, ForgeConfig, JobsConfig, NotifierConfig, TrackerConfig, WikiConfig } from '../ports/select.ts';
+import type { ChatConfig, ForgeConfig, IncidentsConfig, JobsConfig, NotifierConfig, TrackerConfig, WikiConfig } from '../ports/select.ts';
 import type { Labels } from './actions.ts';
 import type { GitConfig } from './git.ts';
 import type { GatewayJudgeConfig } from './judge.ts';
@@ -33,6 +33,9 @@ export interface Config {
   releaseImages: string[];
   releaseChannel: string;
   cdControl: string;
+  // Сбор ошибок стенда (нет токена - сбои не опрашиваются) и канал эксплуатации.
+  incidents?: IncidentsConfig;
+  opsChannel: string;
   mcpPort: number;
   mcpToken(): string;
   // Переменные шага без ключей и с ключами.
@@ -138,6 +141,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     releaseImages: (env.RELEASE_IMAGES ?? 'prize-draw-api prize-draw-web').split(/\s+/).filter(Boolean),
     releaseChannel: env.RELEASE_CHANNEL ?? 'релизы',
     cdControl: env.CD_CONTROL ?? '/cd-control',
+    ...(existsSync(join(secrets, 'glitchtip.token'))
+      ? {
+          incidents: {
+            kind: 'glitchtip' as const,
+            url: env.GLITCHTIP_URL ?? 'http://glitchtip:8000',
+            publicUrl: env.GLITCHTIP_PUBLIC_URL ?? 'http://127.0.0.1:8200',
+            org: env.GLITCHTIP_ORG ?? 'factory',
+            project: env.GLITCHTIP_PROJECT ?? 'prize-draw',
+            token: () => file('glitchtip.token').trim(),
+          },
+        }
+      : {}),
+    opsChannel: env.OPS_CHANNEL ?? 'эксплуатация',
     mcpPort: Number(env.MCP_PORT ?? 8091),
     mcpToken: () => file('mcp.token').trim(),
     stepEnv: {

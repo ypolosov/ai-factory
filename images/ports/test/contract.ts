@@ -211,6 +211,7 @@ export function forgeContract(name: string, setup: () => Promise<ForgeFixture>) 
       assert.match(between[0]?.message ?? '', new RegExp(b.file.replace(/[.]/g, '[.]')));
       const all = (await f.commits(undefined, head)).map((c) => c.sha);
       assert.ok(all.includes(head) && all.includes(base));
+      assert.equal(all.at(-1), head, 'коммиты - от старых к новым');
     });
 
     it('PR открывается из ветки', async () => {

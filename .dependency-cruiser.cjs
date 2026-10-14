@@ -14,10 +14,10 @@ module.exports = {
       name: 'ports-only-through-composition-root',
       severity: 'error',
       comment:
-        'Адаптеры носителей (Forgejo, Jira, GitHub, Bitbucket, документы в git, Discord, Confluence, GHCR) подключают только тесты портов и место сборки ' +
+        'Адаптеры носителей (Forgejo, Jira, GitHub, Bitbucket, документы в git, Discord, Confluence, GHCR, GlitchTip) подключают только тесты портов и место сборки ' +
         'images/ports/select.ts; остальной код знает только контракты из ports.ts.',
       from: { pathNot: ['^images/ports/test/', '^images/ports/select[.]ts$'] },
-      to: { path: '^images/ports/(forgejo|jira|github|bitbucket|gitdocs|discord|confluence|ghcr)[.]ts$' },
+      to: { path: '^images/ports/(forgejo|jira|github|bitbucket|gitdocs|discord|confluence|ghcr|glitchtip)[.]ts$' },
     },
     {
       name: 'images-are-independent',

@@ -49,12 +49,16 @@ images_ready() {
 
 # deploy SHA ТЕГ - compose.yaml коммита, образы с тегом, ожидание проверок здоровья.
 deploy() {
+	_tag=$2
 	_dir=/state/$1
 	mkdir -p "$_dir"
 	gh "/contents/compose.yaml?ref=$1" application/vnd.github.raw+json >"$_dir/compose.yaml"
+	# Секреты приложения (DSN сбора ошибок) - файлом переменных compose, не окружением службы.
+	set -- -p "$CD_PROJECT" -f "$_dir/compose.yaml"
+	[ ! -s /secrets/app.env ] || set -- "$@" --env-file /secrets/app.env
 	# shellcheck disable=SC2086 # CD_ENV - список ИМЯ=значение через пробел
-	env TAG="$2" $CD_ENV docker compose -p "$CD_PROJECT" -f "$_dir/compose.yaml" pull -q &&
-		env TAG="$2" $CD_ENV docker compose -p "$CD_PROJECT" -f "$_dir/compose.yaml" up -d --no-build --wait --remove-orphans
+	env TAG="$_tag" $CD_ENV docker compose "$@" pull -q &&
+		env TAG="$_tag" $CD_ENV docker compose "$@" up -d --no-build --wait --remove-orphans
 }
 
 # desired - что выкладывать: "ССЫЛКА ТЕГ_ОБРАЗОВ".

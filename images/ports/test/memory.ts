@@ -6,6 +6,8 @@ import {
   type Comment,
   type CommitStatus,
   type Forge,
+  type Incident,
+  type Incidents,
   type Issue,
   type Job,
   type JobRunner,
@@ -327,6 +329,44 @@ export function memoryWiki(): Wiki & { pages: Map<string, { id: string; body: st
     async getPage(title) {
       const p = pages.get(title);
       return p ? { ...p, url: `http://memory/wiki/${p.id}` } : undefined;
+    },
+  };
+}
+
+// Сбор ошибок в памяти: тест заводит ошибку и повторяет её событиями.
+export function memoryIncidents() {
+  const list = new Map<string, Incident & { resolved: boolean }>();
+  let seq = 0;
+  const incidents: Incidents = {
+    async open() {
+      return [...list.values()].filter((i) => !i.resolved).map(({ resolved: _, ...i }) => ({ ...i }));
+    },
+    async resolve(id) {
+      const i = list.get(id);
+      if (i) i.resolved = true;
+    },
+  };
+  return {
+    incidents,
+    // Событие ошибки: новая ошибка или повтор той же (count растёт, решённая открывается снова).
+    event(title: string, culprit = 'POST /api/draws/:id/entries') {
+      const old = [...list.values()].find((i) => i.title === title);
+      if (old) {
+        old.count++;
+        old.resolved = false;
+        return old.id;
+      }
+      const id = String(++seq);
+      list.set(id, {
+        id,
+        title,
+        culprit,
+        count: 1,
+        lastSeen: new Date().toISOString(),
+        url: `http://memory/issues/${id}`,
+        resolved: false,
+      });
+      return id;
     },
   };
 }

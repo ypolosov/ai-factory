@@ -7,6 +7,7 @@ import { LibSQLStore } from '@mastra/libsql';
 import {
   selectChat,
   selectForge,
+  selectIncidents,
   selectJobs,
   selectKnowledge,
   selectNotifier,
@@ -22,6 +23,7 @@ import { loadConfig } from './config.ts';
 import { coordinator } from './coordinator.ts';
 import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
+import { incidentLoop } from './incidents.ts';
 import { gatewayJudge } from './judge.ts';
 import { mcpHttp } from './mcp.ts';
 import { pullGuard } from './pull-guard.ts';
@@ -133,6 +135,19 @@ const releaseChecks = releaseLoop({
   post: releases.post,
   log,
 });
+const incidents = cfg.incidents
+  ? incidentLoop({
+      incidents: selectIncidents(cfg.incidents),
+      tracker: deps.tracker,
+      forge: deps.forge,
+      post: async (text) => {
+        if (chat) await chat.post(cfg.opsChannel, text);
+        else log(text);
+      },
+      stateFile: join(cfg.data, 'incidents.json'),
+      log,
+    })
+  : undefined;
 const bot = chat
   ? chatBot({
       chat,
@@ -151,6 +166,7 @@ const tick = async () => {
   await storyChecks.tick();
   await pulls.tick();
   await releaseChecks.tick();
+  await incidents?.tick();
 };
 
 const server = broker({

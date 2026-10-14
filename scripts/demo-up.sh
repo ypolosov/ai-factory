@@ -16,11 +16,26 @@ for f in atlassian.env bitbucket.env github-target.env claude-oauth.token gw-age
 	}
 	cmp -s "$state/$f" "$dst/$f" || (umask 077 && cp "$state/$f" "$dst/$f")
 done
-# Ключ MCP фабрики для экзокортексов (Authorization: Bearer).
-[ -s "$dst/mcp.token" ] || (umask 077 && od -An -tx1 -N24 /dev/urandom | tr -d ' \n' >"$dst/mcp.token")
 mkdir -p "$state/cd"
 chmod 700 "$state/cd"
+# Ключ MCP фабрики для экзокортексов (Authorization: Bearer).
+[ -s "$dst/mcp.token" ] || (umask 077 && od -An -tx1 -N24 /dev/urandom | tr -d ' \n' >"$dst/mcp.token")
 cmp -s "$state/github-target.env" "$state/cd/github-target.env" || (umask 077 && cp "$state/github-target.env" "$state/cd/")
+
+# GlitchTip: проект цели и токен координатора; DSN - приложению на стенде (через службу выкладки).
+{
+	printf 'APP = "prize-draw"\n'
+	cat config/glitchtip/demo-setup.py
+} | docker compose exec -T glitchtip python manage.py shell 2>/dev/null | while read -r kind a b; do
+	case $kind in
+	dsn) (umask 077 && printf 'SENTRY_DSN=http://%s@glitchtip:8000/%s\n' "$a" "$b" >"$state/cd/app.env") ;;
+	token) (umask 077 && printf '%s\n' "$a" >"$dst/glitchtip.token") ;;
+	esac
+done
+[ -s "$dst/glitchtip.token" ] || {
+	echo "GlitchTip: нет токена координатора (стенд поднят? scripts/stand-up.sh)" >&2
+	exit 1
+}
 
 docker compose --profile bitbucket up -d bb-dind bb-registry bb-runner egress
 # Шаг агента берёт образ из реестра шагов: Docker заданий в интернет не ходит.

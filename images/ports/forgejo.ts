@@ -246,7 +246,7 @@ export function forgejoForge(cfg: ForgejoConfig): Forge {
     async commits(base, head) {
       const list = base
         ? ((await api.json('GET', `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`)).commits as Json[])
-        : await api.json<Json[]>('GET', `/commits?sha=${encodeURIComponent(head)}&limit=50&stat=false`);
+        : (await api.json<Json[]>('GET', `/commits?sha=${encodeURIComponent(head)}&limit=50&stat=false`)).reverse();
       return list.map((c) => ({ sha: String(c.sha), message: String((c.commit as Json).message) }));
     },
     async requiredChecks(branch) {

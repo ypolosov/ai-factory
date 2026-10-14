@@ -120,7 +120,8 @@ export interface Forge {
   requiredChecks(branch: string): Promise<string[]>;
   // Теги репозитория с коммитами; новые - первыми.
   tags(): Promise<{ name: string; sha: string }[]>;
-  // Коммиты, достижимые из head и недостижимые из base (base не задан - последние из head).
+  // Коммиты, достижимые из head и недостижимые из base (base не задан - последние из head),
+  // от старых к новым: последний - head.
   commits(base: string | undefined, head: string): Promise<{ sha: string; message: string }[]>;
 }
 
@@ -184,4 +185,20 @@ export interface Wiki {
 // Реестр образов цели: есть ли образ с тегом.
 export interface Registry {
   exists(image: string, tag: string): Promise<boolean>;
+}
+
+// Сбой на стенде: одна ошибка носителя (GlitchTip, Sentry) - много событий с одним отпечатком.
+export interface Incident {
+  id: string;
+  title: string;
+  culprit: string;
+  count: number;
+  lastSeen: string;
+  url: string;
+}
+
+// Сбор ошибок стенда: открытые ошибки и их закрытие после исправления.
+export interface Incidents {
+  open(): Promise<Incident[]>;
+  resolve(id: string): Promise<void>;
 }
