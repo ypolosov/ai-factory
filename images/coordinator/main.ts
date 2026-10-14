@@ -34,6 +34,7 @@ import { releaseLoop } from './release-loop.ts';
 import { releaseWorkflow } from './release-workflow.ts';
 import { proposeRule } from './rule-candidates.ts';
 import { runStore } from './runs.ts';
+import { slicer, sliceWorkflow } from './slice.ts';
 import type { StoryDeps } from './story.ts';
 import { storyLoop } from './story-loop.ts';
 import { storyCheckWorkflow } from './story-workflow.ts';
@@ -91,7 +92,18 @@ const releases: ReleaseDeps = {
   },
 };
 const mastra = new Mastra({
-  workflows: { agentTask: agentTaskWorkflow(deps), storyCheck: storyCheckWorkflow(stories), release: releaseWorkflow(releases) },
+  workflows: {
+    agentTask: agentTaskWorkflow(deps),
+    storyCheck: storyCheckWorkflow(stories),
+    release: releaseWorkflow(releases),
+    slice: sliceWorkflow({
+      tracker: deps.tracker,
+      knowledge: stories.knowledge,
+      refreshKnowledge: stories.refreshKnowledge,
+      ask: gatewayAsk(cfg.judge),
+      agentLabel: cfg.labels.trigger,
+    }),
+  },
   storage: new LibSQLStore({ id: 'coordinator', url: `file:${join(cfg.data, 'mastra.db')}` }),
   logger: false,
 });
@@ -162,6 +174,7 @@ const bot = chat
       agentLabel: cfg.labels.trigger,
       release: { draft: async () => (await notes(releases)).text, confirm: releaseChecks.confirm },
       account: async () => accountText(await account({ runs, forge: deps.forge, usage: gatewayUsage(cfg.gatewayLog) })),
+      slice: slicer(mastra.getWorkflow('slice')),
       proposeRule: () =>
         proposeRule({
           forge: deps.forge,

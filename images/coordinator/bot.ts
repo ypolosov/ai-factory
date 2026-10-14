@@ -21,6 +21,7 @@ export interface BotDeps {
   release?: { draft(): Promise<string>; confirm(tag: string, by: string): Promise<string> };
   account?(): Promise<string>; // учёт фабрики
   proposeRule?(): Promise<string>; // правило-кандидат из повторяющихся замечаний
+  slice?: { propose(story: string): Promise<string>; approve(story: string, by: string, agent: boolean): Promise<string> };
   log(message: string): void;
 }
 
@@ -30,7 +31,8 @@ export const HELP = `Я бот фабрики. Спросите меня (упо
 !выпуск - что войдёт в следующий выпуск
 !выкладка vX.Y.Z - подтвердить выкладку выпуска на стенд
 !учёт - попытки, время и цена работы агентов по задачам
-!правила - сверщик ищет повторяющиеся замечания к PR и предлагает правило`;
+!правила - сверщик ищет повторяющиеся замечания к PR и предлагает правило
+!нарезка DRAW-N - предложить задачи по стори; !утвердить DRAW-N [agent] - завести их`;
 
 const STATES: [string, string][] = [
   ['agent-running', 'агент работает'],
@@ -65,6 +67,10 @@ export async function answer(d: BotDeps, m: ChatMessage): Promise<string | undef
   if (d.release && /^!(выпуск|release)(\s|$)/i.test(text)) return d.release.draft();
   if (d.account && /^!(учёт|учет|account)(\s|$)/i.test(text)) return d.account();
   if (d.proposeRule && /^!(правила|rules)(\s|$)/i.test(text)) return d.proposeRule();
+  const slice = /^!(нарезка|slice)\s+([A-Z][A-Z0-9]*-\d+)\s*$/i.exec(text)?.[2];
+  if (d.slice && slice) return d.slice.propose(slice.toUpperCase());
+  const approve = /^!(утвердить|approve)\s+([A-Z][A-Z0-9]*-\d+)(\s+agent)?\s*$/i.exec(text);
+  if (d.slice && approve?.[2]) return d.slice.approve(approve[2].toUpperCase(), m.author, !!approve[3]);
   const deployTag = /^!(выкладка|deploy)\s+(v\d+\.\d+\.\d+)\s*$/i.exec(text)?.[2];
   if (d.release && deployTag) return d.release.confirm(deployTag, m.author);
   const task = /^!(задача|task)\s+([\s\S]+)$/i.exec(text)?.[2];
