@@ -22,6 +22,7 @@ export type RunFile = 'task.md' | 'repo.bundle' | 'agent.patch' | 'run.json' | '
 export interface RunStore {
   create(runId: string, issue: string): { meta: RunMeta; token: string };
   meta(runId: string): RunMeta | undefined;
+  list(): RunMeta[]; // все запуски, старые первыми
   update(runId: string, patch: Partial<RunMeta>): RunMeta;
   byToken(token: string, now?: Date): RunMeta | undefined;
   dir(runId: string): string;
@@ -52,6 +53,12 @@ export function runStore(root: string, ttlMs = 3 * 60 * 60 * 1000): RunStore {
       return { meta: m, token };
     },
     meta,
+    list() {
+      return readdirSync(root)
+        .map((id) => meta(id))
+        .filter((m): m is RunMeta => !!m)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
     update(runId, patch) {
       const m = meta(runId);
       if (!m) throw new Error(`нет запуска ${runId}`);

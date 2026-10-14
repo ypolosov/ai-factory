@@ -16,6 +16,7 @@ import {
   selectWiki,
 } from '../ports/select.ts';
 import { compositeKnowledge, trackerKnowledge } from '../ports/tracker-knowledge.ts';
+import { account, accountText, gatewayUsage } from './accounting.ts';
 import type { Deps } from './actions.ts';
 import { chatBot, gatewayLibrarian } from './bot.ts';
 import { broker } from './broker.ts';
@@ -158,6 +159,7 @@ const bot = chat
       librarian: gatewayLibrarian(cfg.judge),
       agentLabel: cfg.labels.trigger,
       release: { draft: async () => (await notes(releases)).text, confirm: releaseChecks.confirm },
+      account: async () => accountText(await account({ runs, forge: deps.forge, usage: gatewayUsage(cfg.gatewayLog) })),
       log,
     })
   : undefined;

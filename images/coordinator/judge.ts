@@ -80,7 +80,8 @@ export function gatewayJudge(cfg: GatewayJudgeConfig): Judge {
     async check(s, passages) {
       const r = await fetch(`${cfg.url.replace(/\/$/, '')}/v1/chat/completions`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-gateway-key': cfg.key() },
+        // Номер задачи - в журнал шлюза для учёта.
+        headers: { 'content-type': 'application/json', 'x-gateway-key': cfg.key(), 'x-task-id': `${s.issue}-check` },
         body: JSON.stringify({ model: cfg.model, temperature: 0, messages: [{ role: 'user', content: prompt(s, passages) }] }),
       });
       if (!r.ok) throw new Error(`шлюз моделей: ${r.status} ${(await r.text()).slice(0, 200)}`);

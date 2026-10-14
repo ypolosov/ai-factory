@@ -36,6 +36,7 @@ export interface Config {
   // Сбор ошибок стенда (нет токена - сбои не опрашиваются) и канал эксплуатации.
   incidents?: IncidentsConfig;
   opsChannel: string;
+  gatewayLog: string; // журнал запросов шлюза (SQLite) - для учёта
   mcpPort: number;
   mcpToken(): string;
   // Переменные шага без ключей и с ключами.
@@ -154,6 +155,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         }
       : {}),
     opsChannel: env.OPS_CHANNEL ?? 'эксплуатация',
+    gatewayLog: env.GATEWAY_LOG ?? '/gateway-db/gateway.sqlite',
     mcpPort: Number(env.MCP_PORT ?? 8091),
     mcpToken: () => file('mcp.token').trim(),
     stepEnv: {

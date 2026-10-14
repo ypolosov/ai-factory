@@ -405,6 +405,8 @@ services:
       - ./.state/coordinator:/run/coordinator:ro
       - coordinator-data:/data
       - cd-control:/cd-control
+      # Журнал запросов шлюза - для учёта цены по номеру запуска (только чтение из кода).
+      - ./.state/gateway-db:/gateway-db
 
   # Выкладка цели демо (порт выкладки, носитель - docker compose): main цели на GitHub ->
   # образы коммита в GHCR (CI цели публикует их после зелёных проверок) -> Docker выкладки
