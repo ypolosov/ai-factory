@@ -1,0 +1,43 @@
+# CI самой фабрики (не целевых систем): проверки скриптов, типы и модульные тесты,
+# контракты портов на одноразовом Forgejo. Логика - в Makefile и scripts/, этот файл -
+# тонкая обёртка: тот же набор пойдёт и в Bitbucket Pipelines.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Версии линтеров - как у владельца: другой shfmt иначе форматирует и роняет проверку.
+      # Сумма shfmt сверена с файлом сумм релиза, shellcheck - посчитана при закреплении.
+      - name: shellcheck 0.9.0, shfmt 3.8.0
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          curl -fsSLo shfmt https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64
+          echo "27b3c6f9d9592fc5b4856c341d1ff2c88856709b9e76469313642a1d7b558fe0  shfmt" | sha256sum -c -
+          curl -fsSLo sc.tar.xz https://github.com/koalaman/shellcheck/releases/download/v0.9.0/shellcheck-v0.9.0.linux.x86_64.tar.xz
+          echo "700324c6dd0ebea0117591c6cc9d7350d9c7c5c287acbad7630fa17b1d4d9e2f  sc.tar.xz" | sha256sum -c -
+          tar -xJf sc.tar.xz
+          sudo install -m 755 shfmt shellcheck-v0.9.0/shellcheck /usr/local/bin/
+      - run: make check
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make test
+
+  contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make contract
