@@ -311,7 +311,66 @@ services:
     build: images/egress
     image: factory/egress:stand
     restart: unless-stopped
-    networks: [factory, jobs]
+    networks:
+      factory: {}
+      jobs: {}
+      bb-jobs:
+        ipv4_address: 172.31.250.10
+
+  # Свой раннер Bitbucket Pipelines (демо: экземпляр фабрики на Bitbucket + Pipelines).
+  # Шаги идут в отдельном Docker (bb-dind) во внутренней сети bb-jobs; наружу - только через
+  # egress. Внутри Docker заданий имена сети фабрики не разрешаются, поэтому прокси - по адресу.
+  # Раннеру нужны сокет Docker как /var/run/docker.sock, общий рабочий каталог и логи
+  # контейнеров по тем же путям, что у его Docker. Рабочий каталог - не под /tmp: скрипт
+  # dind монтирует на /tmp свой tmpfs и закрывает им общий том.
+  bb-dind:
+    <<: *dind
+    profiles: [bitbucket]
+    command: ["dockerd", "--host=unix:///var/run/dind/docker.sock", "--insecure-registry=172.31.250.20:5000"]
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+      HTTP_PROXY: http://172.31.250.10:3128
+      HTTPS_PROXY: http://172.31.250.10:3128
+      NO_PROXY: 172.31.250.20
+    networks: [bb-jobs]
+    volumes:
+      - bb-dind-sock:/var/run/dind
+      - bb-dind-lib:/var/lib/docker
+      - bb-work:/bb-work
+
+  # Реестр образов шагов Bitbucket: раннер всегда скачивает образ шага, а Docker заданий
+  # в интернет не ходит. Образы кладёт стенд (scripts/bb-images.sh), шаги берут их отсюда.
+  bb-registry:
+    image: docker.io/library/registry:3.1.2
+    profiles: [bitbucket]
+    restart: unless-stopped
+    networks:
+      bb-jobs:
+        ipv4_address: 172.31.250.20
+    volumes:
+      - bb-registry:/var/lib/registry
+
+  bb-runner:
+    image: docker-public.packages.atlassian.com/sox/atlassian/bitbucket-pipelines-runner:6.0.8
+    profiles: [bitbucket]
+    restart: unless-stopped
+    depends_on: [bb-dind, egress]
+    # ACCOUNT_UUID, REPOSITORY_UUID, RUNNER_UUID, OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET.
+    env_file: [.state/bitbucket-runner.env]
+    environment:
+      RUNTIME_PREREQUISITES_ENABLED: "true"
+      WORKING_DIRECTORY: /bb-work
+      DOCKER_HOST: unix:///var/run/docker.sock
+      HTTP_PROXY: http://172.31.250.10:3128
+      HTTPS_PROXY: http://172.31.250.10:3128
+    # Часть клиентов раннера (обновление входа на auth.atlassian.com) сама разрешает имена и
+    # идёт напрямую, мимо прокси, - поэтому сам раннер ещё и в сети фабрики. Шаги остаются
+    # в bb-dind внутри bb-jobs и наружу выходят только через egress.
+    networks: [factory, bb-jobs]
+    volumes:
+      - bb-dind-sock:/var/run
+      - bb-work:/bb-work
+      - bb-dind-lib:/var/lib/docker:ro
 
 volumes:
   forgejo-data:
@@ -327,6 +386,10 @@ volumes:
   deployer-state:
   deployer-cache:
   glitchtip-db:
+  bb-dind-sock:
+  bb-dind-lib:
+  bb-work:
+  bb-registry:
 
 networks:
   factory: {}
@@ -336,3 +399,9 @@ networks:
   # Внутренняя сеть без выхода в интернет: Docker заданий агента и проверок.
   jobs:
     internal: true
+  # То же для Docker заданий Bitbucket; подсеть постоянная - прокси egress там по адресу.
+  bb-jobs:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24

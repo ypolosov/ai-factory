@@ -47,6 +47,17 @@ OAUTH_CLIENT_ID=...
 OAUTH_CLIENT_SECRET=...
 ```
 
+Запуск раннера на стенде и проверка (сделано 14.10.2026, пустой шаг `hello` прошёл за 7 с):
+
+```sh
+docker compose --profile bitbucket up -d          # bb-dind, bb-registry, bb-runner
+scripts/bb-images.sh docker.io/library/alpine:3.24  # образы шагов - в свой реестр
+scripts/bb-commit.sh "сообщение" ФАЙЛ bitbucket-pipelines.yml
+scripts/bb-api.sh POST /pipelines/ ТЕЛО.json        # запуск задания
+```
+
+Устройство: шаги идут в отдельном Docker (`bb-dind`) во внутренней сети `bb-jobs`, наружу - только через прокси egress по адресу 172.31.250.10 (в allowlist - домены Bitbucket и Atlassian и реестр служебных образов раннера). Раннер всегда скачивает образ шага, поэтому образы шагов лежат в своём реестре `172.31.250.20:5000`. Рабочий каталог раннера - `/bb-work`, не под `/tmp`: скрипт dind монтирует на `/tmp` свой tmpfs. Сам раннер ещё и в сети фабрики: его клиент входа ходит на auth.atlassian.com мимо прокси.
+
 ## GitHub (платформа цели)
 
 Репозиторий цели: https://github.com/ypolosov/prize-draw, открытый - Actions без лимита минут, образы GHCR открытые, выкладке не нужен токен реестра.

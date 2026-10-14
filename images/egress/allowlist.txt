@@ -10,3 +10,8 @@ api.deps.dev
 osv-vulnerabilities.storage.googleapis.com
 # Обновление входа Codex по подписке
 auth.openai.com
+# Свой раннер Bitbucket Pipelines (демо): API, клон репозитория фабрики, вход раннера
+.bitbucket.org
+.atlassian.com
+# Служебные образы раннера Bitbucket (Docker заданий Bitbucket скачивает их сам)
+public.ecr.aws
