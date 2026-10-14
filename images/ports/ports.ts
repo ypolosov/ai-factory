@@ -41,7 +41,7 @@ export interface LabelEvent {
 export interface IssueQuery {
   state?: IssueState | 'all';
   label?: string;
-  text?: string; // поиск по названию и описанию
+  text?: string; // поиск по названию и описанию; "слово*" - по началу слова
   limit?: number;
 }
 
@@ -153,4 +153,19 @@ export interface Knowledge {
 // Канал команды: сообщение людям.
 export interface Notifier {
   post(text: string): Promise<void>;
+}
+
+export interface ChatMessage {
+  id: string;
+  channel: string; // имя канала
+  text: string;
+  author: string;
+  mentionsMe: boolean; // сообщение обращено к боту фабрики
+}
+
+// Чат команды: входящие сообщения, ответы и сообщения в канал по имени.
+export interface Chat {
+  listen(onMessage: (m: ChatMessage) => Promise<void>): { close(): void };
+  reply(to: ChatMessage, text: string): Promise<void>;
+  post(channel: string, text: string): Promise<void>;
 }

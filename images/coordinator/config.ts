@@ -3,7 +3,7 @@
 // в момент выдачи посредником и в окружение процесса не попадают.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ForgeConfig, JobsConfig, NotifierConfig, TrackerConfig } from '../ports/select.ts';
+import type { ChatConfig, ForgeConfig, JobsConfig, NotifierConfig, TrackerConfig } from '../ports/select.ts';
 import type { Labels } from './actions.ts';
 import type { GitConfig } from './git.ts';
 import type { GatewayJudgeConfig } from './judge.ts';
@@ -23,6 +23,9 @@ export interface Config {
   knowledgeWeb: string;
   judge: GatewayJudgeConfig;
   notifier: NotifierConfig;
+  // Бот фабрики в чате команды; уведомления сверщика - в канал productChannel.
+  chat?: ChatConfig;
+  productChannel: string;
   storyLabels: StoryLabels & { failed: string };
   mcpPort: number;
   mcpToken(): string;
@@ -106,6 +109,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       key: () => file('gw-kb.key').trim(),
     },
     notifier: discord.DISCORD_DRAW_WEBHOOK_URL ? { kind: 'discord', webhook: discord.DISCORD_DRAW_WEBHOOK_URL } : { kind: 'none' },
+    ...(discord.DISCORD_BOT_TOKEN && discord.DISCORD_GUILD_ID
+      ? { chat: { kind: 'discord' as const, token: discord.DISCORD_BOT_TOKEN, guild: discord.DISCORD_GUILD_ID } }
+      : {}),
+    productChannel: env.PRODUCT_CHANNEL ?? 'продукт',
     storyLabels: {
       trigger: env.LABEL_STORY ?? 'story',
       checking: 'story-checking',

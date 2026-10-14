@@ -68,6 +68,10 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
         if (!found) await new Promise((r) => setTimeout(r, 500));
       }
       assert.ok(found, `задача ${i.key} не найдена по слову ${word}`);
+      assert.ok(
+        (await t.listIssues({ text: `${word.slice(0, 6)}*`, state: 'all' })).some((x) => x.key === i.key),
+        'нет поиска по началу слова',
+      );
       assert.equal((await t.listIssues({ text: `zx${uniq()}`, state: 'all' })).length, 0);
     });
 

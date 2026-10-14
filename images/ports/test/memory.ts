@@ -1,6 +1,8 @@
 // Эталонные адаптеры в памяти: проверяют набор контрактных тестов и служат
 // заменой носителя в модульных тестах потребителей.
 import {
+  type Chat,
+  type ChatMessage,
   type Comment,
   type CommitStatus,
   type Forge,
@@ -13,8 +15,19 @@ import {
   type Pull,
   type Tracker,
 } from '../ports.ts';
+import { stems } from '../text.ts';
 
 const now = () => new Date().toISOString();
+
+// Поиск по тексту: каждое слово запроса - в тексте; "слово*" - начало слова.
+const matches = (text: string, query: string) => {
+  const ws: string[] = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((q) => (q.endsWith('*') ? ws.some((w) => w.startsWith(q.slice(0, -1))) : ws.includes(q)));
+};
 
 export function memoryTracker(user = 'factory-bot'): Tracker {
   let seq = 0;
@@ -41,7 +54,7 @@ export function memoryTracker(user = 'factory-bot'): Tracker {
       return [...issues.values()]
         .filter((i) => state === 'all' || i.state === state)
         .filter((i) => !q.label || i.labels.includes(q.label))
-        .filter((i) => !q.text || `${i.title}\n${i.body}`.toLowerCase().includes((q.text ?? '').toLowerCase()))
+        .filter((i) => !q.text || matches(`${i.title}\n${i.body}`, q.text))
         .slice(0, q.limit ?? 50)
         .map((i) => ({ ...i, labels: [...i.labels] }));
     },
@@ -241,7 +254,6 @@ export function memoryJobs(handlers: Record<string, MemoryJob>): JobRunner {
 
 // База знаний в памяти: отрывок - документ целиком, совпадение - по основам слов.
 export function memoryKnowledge(docs: { path: string; text: string }[]): Knowledge {
-  const stems = (t: string) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).map((w) => w.slice(0, 6)));
   return {
     async search(query, limit = 8) {
       const q = stems(query);
@@ -256,6 +268,32 @@ export function memoryKnowledge(docs: { path: string; text: string }[]): Knowled
           text: d.text,
           url: `http://memory/${d.path}`,
         }));
+    },
+  };
+}
+
+// Чат в памяти: тест говорит в канал через say, ответы и сообщения бота - в sent.
+export function memoryChat() {
+  const sent: { channel: string; text: string; replyTo?: string }[] = [];
+  let handler: ((m: ChatMessage) => Promise<void>) | undefined;
+  let seq = 0;
+  const chat: Chat = {
+    listen(onMessage) {
+      handler = onMessage;
+      return { close: () => (handler = undefined) };
+    },
+    async reply(to, text) {
+      sent.push({ channel: to.channel, text, replyTo: to.id });
+    },
+    async post(channel, text) {
+      sent.push({ channel, text });
+    },
+  };
+  return {
+    chat,
+    sent,
+    async say(channel: string, text: string, mentionsMe = false) {
+      await handler?.({ id: `m-${++seq}`, channel, text, author: 'человек', mentionsMe });
     },
   };
 }

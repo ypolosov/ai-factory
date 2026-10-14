@@ -103,7 +103,8 @@ export function forgejoTracker(cfg: ForgejoConfig): Tracker {
     async listIssues(q = {}) {
       const params = new URLSearchParams({ type: 'issues', state: q.state ?? 'open', limit: String(q.limit ?? 50) });
       if (q.label) params.set('labels', q.label);
-      if (q.text) params.set('q', q.text);
+      // Поиск Forgejo ищет подстроку: "слово*" - то же без звёздочки.
+      if (q.text) params.set('q', q.text.replace(/\*/g, ''));
       return (await api.json<Json[]>('GET', `/issues?${params}`)).map(toIssue);
     },
     async createIssue({ title, body, labels = [] }) {

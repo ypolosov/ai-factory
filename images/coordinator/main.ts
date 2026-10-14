@@ -4,9 +4,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Mastra } from '@mastra/core/mastra';
 import { LibSQLStore } from '@mastra/libsql';
-import { selectForge, selectJobs, selectKnowledge, selectNotifier, selectTracker } from '../ports/select.ts';
+import { selectChat, selectForge, selectJobs, selectKnowledge, selectNotifier, selectTracker } from '../ports/select.ts';
 import { compositeKnowledge, trackerKnowledge } from '../ports/tracker-knowledge.ts';
 import type { Deps } from './actions.ts';
+import { chatBot, gatewayLibrarian } from './bot.ts';
 import { broker } from './broker.ts';
 import { loadConfig } from './config.ts';
 import { coordinator } from './coordinator.ts';
@@ -37,6 +38,8 @@ const deps: Deps = {
 };
 // Знание для сверки - рабочая копия ветки по умолчанию цели; ссылки - на её коммит.
 const knowledgeDir = join(cfg.data, 'knowledge');
+// Чат команды: бот фабрики и уведомления; без бота - вебхук или ничего.
+const chat = cfg.chat ? selectChat({ ...cfg.chat, log }) : undefined;
 let knowledgeSha = 'HEAD';
 const stories: StoryDeps = {
   tracker: deps.tracker,
@@ -50,7 +53,7 @@ const stories: StoryDeps = {
     knowledgeSha = (await deps.git.sync(knowledgeDir, (await deps.forge.repo()).defaultBranch)).sha;
   },
   judge: gatewayJudge(cfg.judge),
-  notifier: selectNotifier(cfg.notifier),
+  notifier: chat ? { post: (text) => chat.post(cfg.productChannel, text) } : selectNotifier(cfg.notifier),
   labels: cfg.storyLabels,
 };
 const mastra = new Mastra({
@@ -93,6 +96,18 @@ const mcp = mcpHttp({
   token: cfg.mcpToken,
 });
 mcp.listen(cfg.mcpPort, '0.0.0.0', () => log(`MCP фабрики: :${cfg.mcpPort}/mcp`));
+const bot = chat
+  ? chatBot({
+      chat,
+      tracker: deps.tracker,
+      forge: deps.forge,
+      knowledge: stories.knowledge,
+      refreshKnowledge: stories.refreshKnowledge,
+      librarian: gatewayLibrarian(cfg.judge),
+      agentLabel: cfg.labels.trigger,
+      log,
+    })
+  : undefined;
 const tick = async () => {
   await loop.tick();
   await storyChecks.tick();
@@ -115,6 +130,7 @@ for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.on(sig, () => {
     clearInterval(timer);
     mcp.close();
+    bot?.close();
     server.close(() => process.exit(0));
   });
 }

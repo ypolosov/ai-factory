@@ -1,18 +1,17 @@
 // Адаптер базы знаний на документах в git: README.md, AGENTS.md и docs/**/*.md рабочей копии
 // репозитория. Отрывок - раздел под заголовком; ссылка - на файл в коммите и якорь раздела.
-// Поиск - по совпадению основ слов (первые 6 букв); носитель для малого корпуса правил и
+// Поиск - по совпадению основ слов (text.ts); носитель для малого корпуса правил и
 // решений, пока нет ядра базы знаний.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { Knowledge, Passage } from './ports.ts';
+import { stems } from './text.ts';
 
 export interface GitDocsConfig {
   dir: string; // рабочая копия
   web: string; // https://github.com/<владелец>/<имя>
   ref(): string | Promise<string>; // коммит для ссылок
 }
-
-const stems = (text: string) => new Set((text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).map((w) => w.slice(0, 6)));
 
 // Якорь заголовка, как его строит GitHub.
 export const anchor = (heading: string) =>
