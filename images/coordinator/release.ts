@@ -96,6 +96,8 @@ export async function publish(d: ReleaseDeps, n: Notes, by: string): Promise<str
     await d.tracker.addLabel(k, `release-${n.tag}`);
     await d.tracker.addComment(k, `Вошло в выпуск ${n.tag}: ${page.url}`);
   }
+  // Стенд снова следует за веткой по умолчанию: следующие слияния выкладываются сами.
+  await d.pin(undefined);
   await d.post(`Выпуск ${n.tag} на стенде. Заметки: ${page.url}`);
   return page.url;
 }

@@ -92,5 +92,6 @@ describe('выпуск цели', () => {
     expect(page?.body).toContain('Мелочь (#3)');
     expect(page?.body).toContain('Подтвердил: devops');
     expect(posts.at(-1)).toContain('Выпуск v1.2.0 на стенде');
+    expect(pins.at(-1)).toBeUndefined();
   });
 });

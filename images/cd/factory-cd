@@ -77,9 +77,12 @@ while :; do
 	key="$ref $sha"
 	# Неудачная выкладка повторяется до трёх раз (сбой сети при скачивании образов), потом -
 	# только со следующим коммитом или тегом.
+	# Ветка на том же коммите, что уже выложенный выпуск, заново не выкладывается.
+	deployed=$(cat /state/deployed 2>/dev/null || true)
+	[ "$ref" != main ] || [ "$sha" != "${deployed#* }" ] || deployed=$key
 	tries=0
 	[ "$key" != "$(head -n 1 /state/failed 2>/dev/null)" ] || tries=$(sed -n 2p /state/failed)
-	if [ -n "$sha" ] && [ "$key" != "$(cat /state/deployed 2>/dev/null)" ] && [ "${tries:-0}" -lt 3 ]; then
+	if [ -n "$sha" ] && [ "$key" != "$deployed" ] && [ "${tries:-0}" -lt 3 ]; then
 		if images_ready "$tag"; then
 			log "выкладываю $ref ($sha)"
 			if deploy "$sha" "$tag" >/state/last.log 2>&1; then
