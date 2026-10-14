@@ -1,9 +1,9 @@
-.PHONY: check test contract diagrams up smoke gateway-check down
+.PHONY: check test contract diagrams platforms-check up smoke gateway-check down
 
 SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
 	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
 	images/agent/factory-publish images/agent/factory-untrusted images/agent/factory-role images/agent/factory-feedback images/agent/factory-tasks images/agent/factory-acceptance images/agent/factory-mutation images/agent/factory-npm-ci images/agent/factory-pr-comment images/agent/factory-gate images/agent/factory-judge images/agent/factory-deps images/agent/factory-reconcile images/portal/portal.sh images/deployer/deployer \
-	scripts/deploy.sh scripts/rollback.sh scripts/rework.sh scripts/task-report.sh scripts/kb-up.sh scripts/kb-setup.sh scripts/kb-model.sh scripts/kb-ask.sh scripts/factory-report.sh scripts/demo.sh scripts/port-contract.sh
+	scripts/deploy.sh scripts/rollback.sh scripts/rework.sh scripts/task-report.sh scripts/kb-up.sh scripts/kb-setup.sh scripts/kb-model.sh scripts/kb-ask.sh scripts/factory-report.sh scripts/demo.sh scripts/port-contract.sh scripts/platforms-check.sh
 
 check:
 	shellcheck -x -P . $(SCRIPTS)
@@ -24,6 +24,10 @@ DIAGRAMS := $(notdir $(filter-out %/common.puml %/common-uml.puml,$(wildcard doc
 diagrams:
 	docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD/docs/demo/diagrams":/data -w /data \
 		docker.io/plantuml/plantuml:1.2026.8 -tpng -charset UTF-8 $(DIAGRAMS)
+
+# Учётки и токены платформ демо (docs/demo/platforms.md): наличие и чтение, без печати значений.
+platforms-check:
+	./scripts/platforms-check.sh
 
 up:
 	./scripts/stand-up.sh
