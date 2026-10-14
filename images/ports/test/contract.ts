@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { afterAll, beforeAll, describe, it } from 'vitest';
-import { type Forge, type JobRunner, type JobState, PortError, type Tracker } from '../ports.ts';
+import { type Forge, type JobRunner, type JobState, type Knowledge, PortError, type Tracker } from '../ports.ts';
 
 export interface TrackerFixture {
   tracker: Tracker;
@@ -25,6 +25,20 @@ export interface JobsFixture {
   quick: string; // задание, которое быстро завершается успехом
   slow: string; // задание, которое идёт дольше теста и останавливается
   poll: { everyMs: number; forMs: number };
+  cleanup(): Promise<void>;
+}
+
+// Корпус знаний, который фикстура кладёт в носитель до тестов.
+export const KNOWLEDGE_DOCS: { path: string; text: string }[] = [
+  {
+    path: 'docs/adr/ADR-3-reproducible-draw.md',
+    text: '# ADR-3. Результат воспроизводим из зерна\n\nЗерно фиксируется заранее, победителей выбирают детерминированно.\n\n## Последствия\n\nПовторный розыгрыш заново среди всех противоречит решению.\n',
+  },
+  { path: 'README.md', text: '# Розыгрыш призов\n\n## Правила\n\n- R1. Одна заявка от участника на розыгрыш.\n' },
+];
+
+export interface KnowledgeFixture {
+  knowledge: Knowledge;
   cleanup(): Promise<void>;
 }
 
@@ -255,6 +269,35 @@ export function jobsContract(name: string, setup: () => Promise<JobsFixture>) {
 
     it('нет задания - ошибка not_found', async () => {
       await rejectsNotFound(j.get('{00000000-0000-4000-8000-000000000000}'));
+    });
+  });
+}
+
+export function knowledgeContract(name: string, setup: () => Promise<KnowledgeFixture>) {
+  describe(`база знаний ${name}`, () => {
+    let fx: KnowledgeFixture;
+    let k: Knowledge;
+    beforeAll(async () => {
+      fx = await setup();
+      k = fx.knowledge;
+    });
+    afterAll(async () => fx?.cleanup());
+
+    it('находит отрывок с источником и ссылкой', async () => {
+      const [p] = await k.search('повторный розыгрыш заново');
+      assert.ok(p, 'нет отрывка');
+      assert.equal(p.source, 'docs/adr/ADR-3-reproducible-draw.md');
+      assert.match(p.text, /заново среди всех/);
+      assert.ok(p.title);
+      assert.match(p.url, /^https?:\/\//);
+    });
+
+    it('без совпадений - пусто', async () => {
+      assert.deepEqual(await k.search('квантовая гравитация'), []);
+    });
+
+    it('предел числа отрывков соблюдается', async () => {
+      assert.equal((await k.search('розыгрыш зерно заявка', 1)).length, 1);
     });
   });
 }

@@ -3,9 +3,11 @@
 // в момент выдачи посредником и в окружение процесса не попадают.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ForgeConfig, JobsConfig, TrackerConfig } from '../ports/select.ts';
+import type { ForgeConfig, JobsConfig, NotifierConfig, TrackerConfig } from '../ports/select.ts';
 import type { Labels } from './actions.ts';
 import type { GitConfig } from './git.ts';
+import type { GatewayJudgeConfig } from './judge.ts';
+import type { StoryLabels } from './story.ts';
 
 export interface Config {
   data: string;
@@ -17,6 +19,11 @@ export interface Config {
   git: GitConfig;
   job: string;
   labels: Labels;
+  // Сверка требований: знание - документы цели в git, судья - модель через шлюз.
+  knowledgeWeb: string;
+  judge: GatewayJudgeConfig;
+  notifier: NotifierConfig;
+  storyLabels: StoryLabels & { failed: string };
   // Переменные шага без ключей и с ключами.
   stepEnv: Record<string, string>;
   stepSecrets(): Record<string, string>;
@@ -49,6 +56,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (!v) throw new Error(`нет ${name} в ${from}`);
     return v;
   };
+  const discord = existsSync(join(secrets, 'discord.env')) ? envFile('discord.env') : {};
   const atl = envFile('atlassian.env');
   const bb = envFile('bitbucket.env');
   const gh = envFile('github-target.env');
@@ -88,6 +96,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       running: env.LABEL_RUNNING ?? 'agent-running',
       review: env.LABEL_REVIEW ?? 'agent-review',
       failed: env.LABEL_FAILED ?? 'agent-failed',
+    },
+    knowledgeWeb: `https://github.com/${target}`,
+    judge: {
+      url: env.JUDGE_GATEWAY_URL ?? 'http://gateway:4000',
+      model: env.JUDGE_MODEL ?? 'kb-claude-cli',
+      key: () => file('gw-kb.key').trim(),
+    },
+    notifier: discord.DISCORD_DRAW_WEBHOOK_URL ? { kind: 'discord', webhook: discord.DISCORD_DRAW_WEBHOOK_URL } : { kind: 'none' },
+    storyLabels: {
+      trigger: env.LABEL_STORY ?? 'story',
+      checking: 'story-checking',
+      ok: 'story-ok',
+      conflict: 'needs-decision',
+      decision: 'decision',
+      failed: 'story-failed',
     },
     stepEnv: {
       FACTORY_ROLE: 'dev',

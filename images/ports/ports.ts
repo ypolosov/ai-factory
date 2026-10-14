@@ -1,6 +1,6 @@
-// Порты фабрики: трекер задач, git-хостинг и исполнитель заданий. Потребители (агенты,
-// мосты, отчёты, координатор) знают только эти контракты; носитель (Forgejo, Bitbucket,
-// Jira, GitHub) - адаптер за ними.
+// Порты фабрики: трекер задач, git-хостинг, исполнитель заданий, база знаний и канал команды.
+// Потребители (агенты, мосты, отчёты, координатор) знают только эти контракты; носитель
+// (Forgejo, Bitbucket, Jira, GitHub, Discord, документы в git) - адаптер за ними.
 // Семантика выровнена по harness: задача - ключ строкой, метки по имени, статусы PR
 // и коммитов без меток PR (у Bitbucket их нет).
 
@@ -133,4 +133,23 @@ export interface JobRunner {
   start(p: { job: string; variables?: Record<string, string>; secrets?: Record<string, string> }): Promise<Job>;
   get(id: string): Promise<Job>;
   stop(id: string): Promise<void>;
+}
+
+// Отрывок знания с источником: по ссылке человек проверяет, откуда взято.
+export interface Passage {
+  source: string; // путь или ключ источника
+  title: string; // заголовок раздела
+  text: string;
+  url: string;
+}
+
+// База знаний: поиск отрывков по вопросу. Носители - документы в git (сейчас), ядро на
+// PostgreSQL (решение 14.10).
+export interface Knowledge {
+  search(query: string, limit?: number): Promise<Passage[]>;
+}
+
+// Канал команды: сообщение людям.
+export interface Notifier {
+  post(text: string): Promise<void>;
 }

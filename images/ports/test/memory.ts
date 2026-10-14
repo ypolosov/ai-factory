@@ -7,6 +7,7 @@ import {
   type Issue,
   type Job,
   type JobRunner,
+  type Knowledge,
   type LabelEvent,
   PortError,
   type Pull,
@@ -233,6 +234,27 @@ export function memoryJobs(handlers: Record<string, MemoryJob>): JobRunner {
     async stop(id) {
       const j = job(id);
       if (j.state === 'running' || j.state === 'pending') j.state = 'stopped';
+    },
+  };
+}
+
+// База знаний в памяти: отрывок - документ целиком, совпадение - по основам слов.
+export function memoryKnowledge(docs: { path: string; text: string }[]): Knowledge {
+  const stems = (t: string) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).map((w) => w.slice(0, 6)));
+  return {
+    async search(query, limit = 8) {
+      const q = stems(query);
+      return docs
+        .map((d) => ({ d, score: [...stems(d.text)].filter((w) => q.has(w)).length }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map(({ d }) => ({
+          source: d.path,
+          title: d.text.split('\n')[0]?.replace(/^#+\s*/, '') ?? d.path,
+          text: d.text,
+          url: `http://memory/${d.path}`,
+        }));
     },
   };
 }

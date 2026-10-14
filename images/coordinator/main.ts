@@ -3,14 +3,18 @@
 import { join } from 'node:path';
 import { Mastra } from '@mastra/core/mastra';
 import { LibSQLStore } from '@mastra/libsql';
-import { selectForge, selectJobs, selectTracker } from '../ports/select.ts';
+import { selectForge, selectJobs, selectKnowledge, selectNotifier, selectTracker } from '../ports/select.ts';
 import type { Deps } from './actions.ts';
 import { broker } from './broker.ts';
 import { loadConfig } from './config.ts';
 import { coordinator } from './coordinator.ts';
 import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
+import { gatewayJudge } from './judge.ts';
 import { runStore } from './runs.ts';
+import type { StoryDeps } from './story.ts';
+import { storyLoop } from './story-loop.ts';
+import { storyCheckWorkflow } from './story-workflow.ts';
 import { agentTaskWorkflow } from './workflow.ts';
 
 const log = (m: string) => console.log(`${new Date().toISOString()} ${m}`);
@@ -27,8 +31,21 @@ const deps: Deps = {
   labels: cfg.labels,
   guard: DEFAULT_GUARD,
 };
+// Знание для сверки - рабочая копия ветки по умолчанию цели; ссылки - на её коммит.
+const knowledgeDir = join(cfg.data, 'knowledge');
+let knowledgeSha = 'HEAD';
+const stories: StoryDeps = {
+  tracker: deps.tracker,
+  knowledge: selectKnowledge({ kind: 'gitdocs', dir: knowledgeDir, web: cfg.knowledgeWeb, ref: () => knowledgeSha }),
+  refreshKnowledge: async () => {
+    knowledgeSha = (await deps.git.sync(knowledgeDir, (await deps.forge.repo()).defaultBranch)).sha;
+  },
+  judge: gatewayJudge(cfg.judge),
+  notifier: selectNotifier(cfg.notifier),
+  labels: cfg.storyLabels,
+};
 const mastra = new Mastra({
-  workflows: { agentTask: agentTaskWorkflow(deps) },
+  workflows: { agentTask: agentTaskWorkflow(deps), storyCheck: storyCheckWorkflow(stories) },
   storage: new LibSQLStore({ id: 'coordinator', url: `file:${join(cfg.data, 'mastra.db')}` }),
   logger: false,
 });
@@ -40,6 +57,11 @@ const loop = coordinator({
   labels: cfg.labels,
   log,
 });
+const storyChecks = storyLoop({ workflow: mastra.getWorkflow('storyCheck'), tracker: deps.tracker, labels: cfg.storyLabels, log });
+const tick = async () => {
+  await loop.tick();
+  await storyChecks.tick();
+};
 
 const server = broker({
   runs,
@@ -50,8 +72,8 @@ const server = broker({
   },
 });
 server.listen(cfg.broker.port, cfg.broker.host, () => log(`посредник шагов: ${cfg.broker.host}:${cfg.broker.port}`));
-const timer = setInterval(() => void loop.tick(), cfg.pollMs);
-void loop.tick();
+const timer = setInterval(() => void tick(), cfg.pollMs);
+void tick();
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.on(sig, () => {

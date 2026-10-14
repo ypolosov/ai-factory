@@ -2,7 +2,8 @@
 // Ключ записи передаётся git только окружением процесса (http.<адрес>.extraHeader), не
 // аргументами команды, и только для адреса цели.
 import { execFile } from 'node:child_process';
-import { join } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
@@ -17,6 +18,8 @@ export interface Git {
   prepare(dir: string, branch: string): Promise<{ baseSha: string }>;
   // Патч КАТАЛОГ/agent.patch -> коммит в новой ветке поверх базы -> push. Возвращает голову ветки.
   publish(dir: string, p: { branch: string; message: string }): Promise<{ headSha: string }>;
+  // Рабочая копия ветки в КАТАЛОГЕ - клон или обновление до вершины ветки.
+  sync(dir: string, branch: string): Promise<{ sha: string }>;
 }
 
 export interface GitConfig {
@@ -62,6 +65,16 @@ export function git(cfg: GitConfig): Git {
       await g(repo, [...who, 'commit', '--quiet', '-m', message]);
       await g(repo, ['push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`], cfg.write);
       return { headSha: await g(repo, ['rev-parse', 'HEAD']) };
+    },
+    async sync(dir, branch) {
+      if (!existsSync(join(dir, '.git'))) {
+        mkdirSync(dirname(dir), { recursive: true });
+        await g(dirname(dir), ['clone', '--quiet', '--single-branch', '--branch', branch, cfg.url, dir], cfg.read);
+      } else {
+        await g(dir, ['fetch', '--quiet', 'origin', branch], cfg.read);
+        await g(dir, ['reset', '--quiet', '--hard', 'FETCH_HEAD']);
+      }
+      return { sha: await g(dir, ['rev-parse', 'HEAD']) };
     },
   };
 }

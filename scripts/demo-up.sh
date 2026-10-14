@@ -9,7 +9,7 @@ state=${STATE_DIR:-.state}
 dst=$state/coordinator
 mkdir -p "$dst"
 chmod 700 "$dst"
-for f in atlassian.env bitbucket.env github-target.env claude-oauth.token gw-agent-sub.key; do
+for f in atlassian.env bitbucket.env github-target.env claude-oauth.token gw-agent-sub.key gw-kb.key discord.env; do
 	[ -s "$state/$f" ] || {
 		echo "нет $state/$f: см. docs/demo/platforms.md" >&2
 		exit 1
