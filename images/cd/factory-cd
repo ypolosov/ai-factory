@@ -75,7 +75,11 @@ while :; do
 	sha=$(gh "/commits/$ref" | jq -r .sha) || sha=""
 	[ "$tag" != - ] || tag=$sha
 	key="$ref $sha"
-	if [ -n "$sha" ] && [ "$key" != "$(cat /state/deployed 2>/dev/null)" ] && [ "$key" != "$(cat /state/failed 2>/dev/null)" ]; then
+	# Неудачная выкладка повторяется до трёх раз (сбой сети при скачивании образов), потом -
+	# только со следующим коммитом или тегом.
+	tries=0
+	[ "$key" != "$(head -n 1 /state/failed 2>/dev/null)" ] || tries=$(sed -n 2p /state/failed)
+	if [ -n "$sha" ] && [ "$key" != "$(cat /state/deployed 2>/dev/null)" ] && [ "${tries:-0}" -lt 3 ]; then
 		if images_ready "$tag"; then
 			log "выкладываю $ref ($sha)"
 			if deploy "$sha" "$tag" >/state/last.log 2>&1; then
@@ -83,10 +87,9 @@ while :; do
 				status "$sha" success "выложено на стенд ($ref)"
 				log "выложено $ref ($sha)"
 			else
-				# Неудачная выкладка не повторяется: следующая попытка - со следующим коммитом или тегом.
-				echo "$key" >/state/failed
-				status "$sha" failure "выкладка на стенд не удалась ($ref)"
-				log "выкладка $ref ($sha) не удалась:"
+				printf '%s\n%s\n' "$key" "$((tries + 1))" >/state/failed
+				[ "$((tries + 1))" -lt 3 ] || status "$sha" failure "выкладка на стенд не удалась ($ref)"
+				log "выкладка $ref ($sha) не удалась, попытка $((tries + 1)) из 3:"
 				tail -20 /state/last.log
 			fi
 		elif [ "$waiting" != "$key" ]; then
