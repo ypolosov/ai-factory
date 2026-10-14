@@ -173,3 +173,10 @@ export interface Chat {
   reply(to: ChatMessage, text: string): Promise<void>;
   post(channel: string, text: string): Promise<void>;
 }
+
+// Вики команды (Confluence): страницы по названию в одном пространстве. Тело - простой текст
+// с разметкой "## заголовок" и "- пункт"; адаптер переводит её в формат носителя.
+export interface Wiki {
+  upsertPage(title: string, body: string): Promise<{ id: string; url: string }>;
+  getPage(title: string): Promise<{ id: string; url: string; body: string } | undefined>;
+}

@@ -14,6 +14,7 @@ import {
   PortError,
   type Pull,
   type Tracker,
+  type Wiki,
 } from '../ports.ts';
 import { stems } from '../text.ts';
 
@@ -308,6 +309,23 @@ export function memoryChat() {
     sent,
     async say(channel: string, text: string, mentionsMe = false) {
       await handler?.({ id: `m-${++seq}`, channel, text, author: 'человек', mentionsMe });
+    },
+  };
+}
+
+export function memoryWiki(): Wiki & { pages: Map<string, { id: string; body: string }> } {
+  const pages = new Map<string, { id: string; body: string }>();
+  let seq = 0;
+  return {
+    pages,
+    async upsertPage(title, body) {
+      const id = pages.get(title)?.id ?? String(++seq);
+      pages.set(title, { id, body });
+      return { id, url: `http://memory/wiki/${id}` };
+    },
+    async getPage(title) {
+      const p = pages.get(title);
+      return p ? { ...p, url: `http://memory/wiki/${p.id}` } : undefined;
     },
   };
 }

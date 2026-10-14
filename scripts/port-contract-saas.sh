@@ -4,7 +4,7 @@
 # стенда должен работать: docker compose --profile bitbucket up -d). Учётки - из
 # .state/atlassian.env, .state/github-target.env и .state/bitbucket.env; токены попадают
 # в Node только через файл окружения, не через аргументы команд.
-# Запуск из корня репозитория: scripts/port-contract-saas.sh [jira|github|bitbucket]
+# Запуск из корня репозитория: scripts/port-contract-saas.sh [jira|github|confluence|bitbucket]
 set -eu
 
 NODE_IMAGE=docker.io/library/node:24.21.0-alpine3.24
@@ -41,6 +41,18 @@ if [ "$only" = all ] || [ "$only" = github ]; then
 		printf 'GITHUB_TEST_TOKEN=%s\n' "$GITHUB_PUBLISH_TOKEN"
 	} >>"$tmp/test.env"
 	files="$files images/ports/test/github.test.ts"
+fi
+if [ "$only" = all ] || [ "$only" = confluence ]; then
+	sed 's/\r$//' "$state/atlassian.env" >"$tmp/env"
+	# shellcheck disable=SC1091
+	. "$tmp/env"
+	{
+		printf 'CONFLUENCE_TEST_SITE=%s\n' "$ATLASSIAN_SITE"
+		printf 'CONFLUENCE_TEST_EMAIL=%s\n' "$ATLASSIAN_EMAIL"
+		printf 'CONFLUENCE_TEST_TOKEN=%s\n' "$CONFLUENCE_API_TOKEN"
+		printf 'CONFLUENCE_TEST_SPACE=%s\n' "$CONFLUENCE_SPACE"
+	} >>"$tmp/test.env"
+	files="$files images/ports/test/confluence.test.ts"
 fi
 if [ "$only" = all ] || [ "$only" = bitbucket ]; then
 	sed 's/\r$//' "$state/bitbucket.env" >"$tmp/env"

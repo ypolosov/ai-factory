@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { afterAll, beforeAll, describe, it } from 'vitest';
-import { type Forge, type JobRunner, type JobState, type Knowledge, PortError, type Tracker } from '../ports.ts';
+import { type Forge, type JobRunner, type JobState, type Knowledge, PortError, type Tracker, type Wiki } from '../ports.ts';
 
 export interface TrackerFixture {
   tracker: Tracker;
@@ -341,6 +341,36 @@ export function knowledgeContract(name: string, setup: () => Promise<KnowledgeFi
 
     it('предел числа отрывков соблюдается', async () => {
       assert.equal((await k.search('розыгрыш зерно заявка', 1)).length, 1);
+    });
+  });
+}
+
+export interface WikiFixture {
+  wiki: Wiki;
+  cleanup(): Promise<void>; // удаляет страницы, созданные тестами
+}
+
+export function wikiContract(name: string, setup: () => Promise<WikiFixture>) {
+  describe(`вики ${name}`, () => {
+    let fx: WikiFixture;
+    let w: Wiki;
+    beforeAll(async () => {
+      fx = await setup();
+      w = fx.wiki;
+    });
+    afterAll(async () => fx?.cleanup());
+
+    it('страница создаётся и обновляется по названию', async () => {
+      const title = `Проверка фабрики ${uniq()}`;
+      assert.equal(await w.getPage(title), undefined);
+      const a = await w.upsertPage(title, '## Изменения\n- первое https://example.com/1\nабзац');
+      assert.match(a.url, /^https?:\/\//);
+      const b = await w.upsertPage(title, '## Изменения\n- второе');
+      assert.equal(b.id, a.id);
+      const p = await w.getPage(title);
+      assert.equal(p?.id, a.id);
+      assert.match(p?.body ?? '', /второе/);
+      assert.doesNotMatch(p?.body ?? '', /первое/);
     });
   });
 }
