@@ -1,0 +1,80 @@
+#!/bin/sh
+# Выкладка цели на стенд из GHCR (порт выкладки, носитель - docker compose). Модель "забирает
+# сама", как Argo CD и Flux: следит за main репозитория цели на GitHub; когда CI цели
+# опубликовал образы коммита (он делает это только после зелёных проверок), берёт compose.yaml
+# этого коммита и поднимает систему в Docker выкладки стенда. Итог - статус factory/deploy
+# на коммите.
+#
+# Окружение: CD_IMAGES - имена образов в ghcr.io/<владелец>/ ("prize-draw-api prize-draw-web");
+# CD_PROJECT - имя проекта compose; CD_ENV - переменные для compose ("WEB_PORT=8082");
+# CD_INTERVAL - пауза опроса, с; CD_REPO - владелец/имя (по умолчанию GITHUB_TARGET_REPO);
+# DOCKER_HOST - Docker выкладки. Токены - /secrets/github-target.env: чтение - запросы к API,
+# публикация - статус коммита. Состояние - /state.
+set -eu
+
+: "${CD_IMAGES:?}" "${CD_PROJECT:?}" "${CD_ENV:=}" "${CD_INTERVAL:=30}"
+log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+
+umask 077
+# Токены - в файлы заголовков: в аргументы curl и в журнал они не попадают.
+sed 's/\r$//' /secrets/github-target.env >/tmp/gh.env
+# shellcheck disable=SC1091
+. /tmp/gh.env
+rm -f /tmp/gh.env
+: "${CD_REPO:=${GITHUB_TARGET_REPO:?}}"
+printf 'Authorization: Bearer %s\n' "${GITHUB_READ_TOKEN:?}" >/tmp/read.h
+printf 'Authorization: Bearer %s\n' "${GITHUB_PUBLISH_TOKEN:?}" >/tmp/publish.h
+unset GITHUB_READ_TOKEN GITHUB_PUBLISH_TOKEN
+owner=${CD_REPO%%/*}
+api=https://api.github.com/repos/$CD_REPO
+
+gh() { curl -fsS -H @/tmp/read.h -H "Accept: ${2:-application/vnd.github+json}" "$api$1"; }
+
+# status SHA СОСТОЯНИЕ ОПИСАНИЕ - статус factory/deploy на коммите цели.
+status() {
+	jq -n --arg s "$2" --arg d "$3" '{state: $s, context: "factory/deploy", description: $d}' |
+		curl -fsS -o /dev/null -H @/tmp/publish.h -H 'Accept: application/vnd.github+json' --data @- "$api/statuses/$1" ||
+		log "статус коммита $1 не записан"
+}
+
+images_ready() {
+	for _i in $CD_IMAGES; do
+		docker manifest inspect "ghcr.io/$owner/$_i:$1" >/dev/null 2>&1 || return 1
+	done
+}
+
+# deploy SHA - compose.yaml коммита, образы с тегом коммита, ожидание проверок здоровья.
+deploy() {
+	_dir=/state/$1
+	mkdir -p "$_dir"
+	gh "/contents/compose.yaml?ref=$1" application/vnd.github.raw+json >"$_dir/compose.yaml"
+	# shellcheck disable=SC2086 # CD_ENV - список ИМЯ=значение через пробел
+	env TAG="$1" $CD_ENV docker compose -p "$CD_PROJECT" -f "$_dir/compose.yaml" pull -q &&
+		env TAG="$1" $CD_ENV docker compose -p "$CD_PROJECT" -f "$_dir/compose.yaml" up -d --no-build --wait --remove-orphans
+}
+
+log "слежу за $CD_REPO (main)"
+waiting=""
+while :; do
+	sha=$(gh /commits/main | jq -r .sha) || sha=""
+	if [ -n "$sha" ] && [ "$sha" != "$(cat /state/deployed 2>/dev/null)" ] && [ "$sha" != "$(cat /state/failed 2>/dev/null)" ]; then
+		if images_ready "$sha"; then
+			log "выкладываю $sha"
+			if deploy "$sha" >/state/last.log 2>&1; then
+				echo "$sha" >/state/deployed
+				status "$sha" success "выложено на стенд"
+				log "выложено $sha"
+			else
+				# Неудачный коммит не повторяется: следующая попытка - со следующим коммитом.
+				echo "$sha" >/state/failed
+				status "$sha" failure "выкладка на стенд не удалась"
+				log "выкладка $sha не удалась:"
+				tail -20 /state/last.log
+			fi
+		elif [ "$waiting" != "$sha" ]; then
+			waiting=$sha
+			log "жду образы $sha в GHCR (их публикует CI цели после зелёных проверок)"
+		fi
+	fi
+	sleep "$CD_INTERVAL"
+done

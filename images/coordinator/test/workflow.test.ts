@@ -110,6 +110,8 @@ describe('координатор: задача -> агент -> страж -> PR
     const seed = join(root, 'seed');
     git(root, 'init', '-q', seed);
     writeFileSync(join(seed, 'README.md'), '# Розыгрыш призов\n');
+    mkdirSync(join(seed, '.factory'));
+    writeFileSync(join(seed, '.factory', 'config.yml'), 'checks:\n  lint: npm run lint\n  format: npm run format:check\n');
     git(seed, 'add', '-A');
     git(seed, 'commit', '-q', '-m', 'init');
     git(seed, 'push', '-q', origin, 'HEAD:refs/heads/main');

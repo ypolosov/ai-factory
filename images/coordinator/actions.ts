@@ -1,6 +1,8 @@
 // Действия координатора над портами: взять задачу, отдать её агенту на исполнителе заданий,
 // проверить итог стражем и опубликовать PR. Движок сценария (Mastra) только связывает их
 // в шаги и хранит состояние между ними - его замена не трогает этот код.
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Forge, JobRunner, JobState, Tracker } from '../ports/ports.ts';
 import type { Git } from './git.ts';
 import { type GuardOptions, guardPatch, type Verdict } from './guard.ts';
@@ -84,7 +86,9 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
   const exitCode = Number(
     (JSON.parse(d.runs.read(runId, 'done.json')?.toString('utf8') ?? '{}') as { exit_code?: number }).exit_code ?? -1,
   );
-  const v = guardPatch(patch, exitCode, d.guard);
+  // Настройки цели - из базы, а не из патча: агент их не меняет (защищённый путь).
+  const configPath = join(d.runs.dir(runId), 'repo', '.factory', 'config.yml');
+  const v = guardPatch(patch, exitCode, d.guard, existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined);
   if (v.state === 'blocked') {
     await d.tracker.addComment(t.issue, `Страж фабрики не пропустил изменение агента:\n${verdictText(v)}\nЖурнал: ${t.jobUrl}`);
     await relabel(d, t.issue, [d.labels.running], d.labels.failed);

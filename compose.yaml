@@ -380,7 +380,7 @@ services:
   # Координатор демо (Mastra core): задачи Jira с меткой agent -> задание agent-task на своём
   # раннере -> страж -> PR в цели на GitHub. Посредник шагов слушает только адрес в сети шагов:
   # Bitbucket получает лишь его адрес и разовый ключ запуска. Учётки - .state/coordinator
-  # (scripts/coordinator-up.sh), состояние сценариев и запусков - том coordinator-data.
+  # (scripts/demo-up.sh), состояние сценариев и запусков - том coordinator-data.
   coordinator:
     build:
       context: images
@@ -402,6 +402,26 @@ services:
       - ./.state/coordinator:/run/coordinator:ro
       - coordinator-data:/data
 
+  # Выкладка цели демо (порт выкладки, носитель - docker compose): main цели на GitHub ->
+  # образы коммита в GHCR (CI цели публикует их после зелёных проверок) -> Docker выкладки
+  # стенда; статус factory/deploy на коммите. Розыгрыш призов - http://127.0.0.1:8082.
+  cd:
+    build: images/cd
+    image: factory/cd:stand
+    profiles: [bitbucket]
+    restart: unless-stopped
+    depends_on: [deploy-dind]
+    environment:
+      DOCKER_HOST: unix:///var/run/dind/docker.sock
+      CD_IMAGES: prize-draw-api prize-draw-web
+      CD_PROJECT: prize-draw
+      CD_ENV: WEB_PORT=8082 WEB_BIND=0.0.0.0
+    volumes:
+      - deploy-dind-sock:/var/run/dind
+      - ./.state/cd:/secrets:ro
+      - cd-state:/state
+    networks: [factory]
+
 volumes:
   forgejo-data:
   agent-dind-sock:
@@ -421,6 +441,7 @@ volumes:
   bb-work:
   bb-registry:
   coordinator-data:
+  cd-state:
 
 networks:
   factory: {}
