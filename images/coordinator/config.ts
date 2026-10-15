@@ -92,7 +92,7 @@ export function stepEnvFor(cfg: Config, m: RunMeta): Record<string, string> {
       CODEX_AUTH_JSON: cfg.codexAuth(),
     };
   }
-  return { ...cfg.stepEnv, ...id, ...cfg.stepSecrets() };
+  return { ...cfg.stepEnv, ...id, FACTORY_ROLE: m.role ?? 'dev', ...cfg.stepSecrets() };
 }
 
 // Файл вида ИМЯ=значение (как читает sh): комментарии и пустые строки пропускаются.
@@ -163,6 +163,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       running: env.LABEL_RUNNING ?? 'agent-running',
       review: env.LABEL_REVIEW ?? 'agent-review',
       failed: env.LABEL_FAILED ?? 'agent-failed',
+      roles: { 'agent:frontend': 'frontend', 'agent:backend': 'backend' },
     },
     knowledgeWeb: `https://github.com/${target}`,
     judge: {

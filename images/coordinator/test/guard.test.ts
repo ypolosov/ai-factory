@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GUARD, guardPatch, patchFiles, targetChecks, testFindings } from '../guard.ts';
+import { DEFAULT_GUARD, guardPatch, patchFiles, roleAllowed, targetChecks, testFindings } from '../guard.ts';
 
 const diff = (path: string, extra = '') => `diff --git a/${path} b/${path}\n${extra}--- a/${path}\n+++ b/${path}\n@@ -0,0 +1 @@\n+x\n`;
 
@@ -119,5 +119,19 @@ describe('тест до кода', () => {
       'тест до кода не проверен: npm ci не прошёл',
     );
     expect(guardPatch(diff('api/src/a.ts'), 0, DEFAULT_GUARD, CONFIG, undefined, report({ code })).state).toBe('failure');
+  });
+});
+
+describe('пути роли агента', () => {
+  it('пути роли - из .factory/config.yml; нет раздела - весь репозиторий', () => {
+    const cfg = `${CONFIG}roles:\n  frontend:\n    paths:\n      allowed: [web/, e2e/]\n`;
+    expect(roleAllowed(cfg, 'frontend')).toEqual(['web/', 'e2e/']);
+    expect(roleAllowed(cfg, 'backend')).toBeUndefined();
+    expect(roleAllowed('roles: [', 'frontend')).toBeUndefined();
+    const o = { ...DEFAULT_GUARD, role: 'frontend', allowed: ['web/', 'e2e/'] };
+    expect(guardPatch(diff('web/src/App.tsx'), 0, o, CONFIG).state).toBe('success');
+    const v = guardPatch(diff('api/src/draw.ts'), 0, o, CONFIG);
+    expect(v.state).toBe('blocked');
+    expect(v.findings[0]?.message).toBe('роль frontend меняет только web/, e2e/: api/src/draw.ts - вне её путей');
   });
 });

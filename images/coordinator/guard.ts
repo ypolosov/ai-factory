@@ -7,6 +7,19 @@ export interface GuardOptions {
   protectedPaths: string[];
   maxBytes: number;
   maxFiles: number;
+  role?: string; // роль агента
+  allowed?: string[]; // пути роли из .factory/config.yml цели; нет - весь репозиторий
+}
+
+// Пути роли агента: roles.<роль>.paths.allowed в .factory/config.yml (как в шаблоне фабрики).
+export function roleAllowed(config: string | undefined, role: string): string[] | undefined {
+  try {
+    const roles = (parse(config ?? '') as { roles?: Record<string, { paths?: { allowed?: unknown } }> } | null)?.roles;
+    const allowed = roles?.[role]?.paths?.allowed;
+    return Array.isArray(allowed) && allowed.length ? allowed.map(String) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface Finding {
@@ -184,6 +197,8 @@ export function guardPatch(
   for (const f of files) {
     const hit = o.protectedPaths.find((p) => (p.endsWith('/') ? f.startsWith(p) : f === p));
     if (hit) findings.push({ level: 'block', message: `изменён защищённый путь ${f}: агенту нельзя, человеку - решение владельца` });
+    if (o.allowed && !o.allowed.some((p) => (p.endsWith('/') ? f.startsWith(p) : f === p)))
+      findings.push({ level: 'block', message: `роль ${o.role ?? 'агента'} меняет только ${o.allowed.join(', ')}: ${f} - вне её путей` });
   }
   if (/^(new file mode|new mode) 120000$/m.test(patch)) findings.push({ level: 'block', message: 'патч добавляет символическую ссылку' });
   const bytes = reviewBytes(patch);

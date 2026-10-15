@@ -1,0 +1,10 @@
+{
+  "name": "factory-camera",
+  "private": true,
+  "type": "module",
+  "description": "Камера видео-демо: Playwright без окна снимает экраны участников",
+  "dependencies": {
+    "playwright": "1.63.0",
+    "yaml": "2.9.1"
+  }
+}

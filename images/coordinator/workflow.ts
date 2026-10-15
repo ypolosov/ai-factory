@@ -7,8 +7,8 @@ import { claim, type Deps, dispatch, finish } from './actions.ts';
 export const AWAIT_STEP = 'await-job';
 
 const jobState = z.enum(['pending', 'running', 'success', 'failed', 'stopped']);
-const start = z.object({ issue: z.string() });
-const task = z.object({ issue: z.string(), title: z.string(), body: z.string() });
+const start = z.object({ issue: z.string(), label: z.string().optional(), role: z.string().optional() });
+const task = z.object({ issue: z.string(), title: z.string(), body: z.string(), role: z.string().optional() });
 const dispatched = z.object({ issue: z.string(), title: z.string(), jobId: z.string(), jobUrl: z.string() });
 const finished = dispatched.extend({ jobState });
 const outcome = z.object({ result: z.enum(['pull', 'blocked', 'failed']), detail: z.string(), url: z.string().optional() });
@@ -18,7 +18,7 @@ export function agentTaskWorkflow(d: Deps) {
     id: 'claim',
     inputSchema: start,
     outputSchema: task,
-    execute: async ({ inputData }) => claim(d, inputData.issue),
+    execute: async ({ inputData }) => claim(d, inputData.issue, inputData.label, inputData.role),
   });
   const dispatchStep = createStep({
     id: 'dispatch',
