@@ -118,4 +118,36 @@ describe('права в точках решения', () => {
     ]);
     expect(approved).toEqual(['DRAW-1:Павел:false']);
   });
+
+  it('ИИ-персонаж с учёткой бота решает только в своей роли', async () => {
+    const PERSONA = `
+holders:
+  pm-bot: { kind: ai, name: "PM (ИИ)", accounts: { discord: "b-pm" } }
+roles:
+  project-manager: [pm-bot]
+decisions:
+  slice: [project-manager]
+  deploy: [devops]
+`;
+    const c = memoryChat();
+    chatBot({
+      chat: c.chat,
+      tracker: memoryTracker(),
+      forge: memoryForge().forge,
+      knowledge: memoryKnowledge([]),
+      refreshKnowledge: async () => {},
+      librarian: { answer: async () => '' },
+      agentLabel: 'agent',
+      roles: async () => parseRoles(PERSONA),
+      slice: { propose: async (story) => `предложение ${story}`, approve: async () => '' },
+      release: { draft: async () => '', confirm: async () => 'подтверждено' },
+      log: () => {},
+    });
+    await c.say('продукт', '!нарезка DRAW-12', false, 'b-pm');
+    await c.say('релизы', '!выкладка v1.1.0', false, 'b-pm');
+    expect(c.sent.map((s) => s.text)).toEqual([
+      'предложение DRAW-12',
+      'Нельзя подтвердить выкладку: это решение ролей devops, а здесь PM (ИИ) (роли: project-manager). Реестр ролей - .factory/roles.yml цели.',
+    ]);
+  });
 });

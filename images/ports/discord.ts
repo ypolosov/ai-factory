@@ -27,7 +27,26 @@ export function discordNotifier(cfg: DiscordConfig): Notifier {
 export interface DiscordBotConfig {
   token: string;
   guild: string;
+  // Чужие боты, которых бот фабрики слушает: ИИ-персонажи с учёткой бота в реестре ролей.
+  allowBot?(id: string): boolean | Promise<boolean>;
   log?(message: string): void;
+}
+
+// Кого слышит бот фабрики: себя - нет; людей и вебхуки - всех (права проверит реестр ролей);
+// чужих ботов - только разрешённых, сбой проверки разрешения - не слышит.
+export async function heard(
+  author: { id: string; bot?: boolean },
+  webhook: boolean,
+  me: string,
+  allowBot?: (id: string) => boolean | Promise<boolean>,
+): Promise<boolean> {
+  if (author.id === me) return false;
+  if (!author.bot || webhook) return true;
+  try {
+    return allowBot ? (await allowBot(author.id)) === true : false;
+  } catch {
+    return false;
+  }
 }
 
 type Json = Record<string, unknown>;
@@ -122,10 +141,10 @@ export function discordChat(cfg: DiscordBotConfig): Chat {
           } else if (p.op === 0 && p.t === 'MESSAGE_CREATE' && p.d) {
             const d = p.d;
             const author = (d.author as Json | undefined) ?? {};
-            // Свои сообщения и чужие боты - мимо; вебхуки (объявления, проверки) - читаются.
-            if (String(author.id) === me || (author.bot && !d.webhook_id)) return;
             const mentions = ((d.mentions as Json[] | undefined) ?? []).map((u) => String(u.id));
             void (async () => {
+              // Свои сообщения и чужие боты, кроме разрешённых, - мимо; вебхуки (объявления, проверки) - читаются.
+              if (!(await heard({ id: String(author.id), bot: author.bot === true }, !!d.webhook_id, me, cfg.allowBot))) return;
               const ch =
                 (await channels()).get(String(d.channel_id)) ?? (await channels(true)).get(String(d.channel_id)) ?? String(d.channel_id);
               ids.set(String(d.id), String(d.channel_id));
