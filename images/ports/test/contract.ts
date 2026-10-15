@@ -143,6 +143,9 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
       const added = ev.find((e) => e.label === 'agent' && e.action === 'added');
       assert.ok(added);
       assert.ok(!Number.isNaN(Date.parse(added.at)));
+      // Кто поставил и кто завёл - учётка носителя: по ней реестр ролей узнаёт роль.
+      assert.ok(added.author, 'нет автора метки');
+      assert.equal((await t.getIssue(i.key)).author, added.author);
     });
 
     it('задачу можно закрыть и открыть снова', async () => {

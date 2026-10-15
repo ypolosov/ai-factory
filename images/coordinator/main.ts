@@ -38,6 +38,7 @@ import { pullGuard } from './pull-guard.ts';
 import { missingImages, notes, type ReleaseDeps } from './release.ts';
 import { releaseLoop } from './release-loop.ts';
 import { releaseWorkflow } from './release-workflow.ts';
+import { parseRoles } from './roles.ts';
 import { proposeRule } from './rule-candidates.ts';
 import { runStore } from './runs.ts';
 import { slicer, sliceWorkflow } from './slice.ts';
@@ -116,15 +117,30 @@ const mastra = new Mastra({
   storage: new LibSQLStore({ id: 'coordinator', url: `file:${join(cfg.data, 'mastra.db')}` }),
   logger: false,
 });
+// Реестр ролей цели (.factory/roles.yml ветки по умолчанию): права в точках решения.
+const roles = async () => {
+  await stories.refreshKnowledge();
+  const p = join(knowledgeDir, '.factory', 'roles.yml');
+  return parseRoles(existsSync(p) ? readFileSync(p, 'utf8') : undefined);
+};
 const loop = coordinator({
   workflow: mastra.getWorkflow('agentTask'),
   tracker: deps.tracker,
   jobs: deps.jobs,
   runs,
   labels: cfg.labels,
+  roles,
+  trackerTool: cfg.tracker.kind,
   log,
 });
-const storyChecks = storyLoop({ workflow: mastra.getWorkflow('storyCheck'), tracker: deps.tracker, labels: cfg.storyLabels, log });
+const storyChecks = storyLoop({
+  workflow: mastra.getWorkflow('storyCheck'),
+  tracker: deps.tracker,
+  labels: cfg.storyLabels,
+  roles,
+  trackerTool: cfg.tracker.kind,
+  log,
+});
 const configPath = join(knowledgeDir, '.factory', 'config.yml');
 const pulls = pullGuard({
   forge: deps.forge,
@@ -201,6 +217,8 @@ const bot = chat
       refreshKnowledge: stories.refreshKnowledge,
       librarian: gatewayLibrarian(gatewayAsk(cfg.judge)),
       agentLabel: cfg.labels.trigger,
+      roles,
+      chatTool: cfg.chat?.kind ?? 'discord',
       release: { draft: async () => (await notes(releases)).text, confirm: releaseChecks.confirm },
       account: async () => accountText(await account({ runs, forge: deps.forge, usage: gatewayUsage(cfg.gatewayLog) })),
       slice: slicer(mastra.getWorkflow('slice')),

@@ -4,6 +4,7 @@
 import type { Chat, ChatMessage, Forge, Knowledge, Passage, Tracker } from '../ports/ports.ts';
 import { VERDICT_KEY } from './actions.ts';
 import type { Ask } from './llm.ts';
+import { type Decision, type RoleRegistry, refusal } from './roles.ts';
 
 export interface Librarian {
   answer(question: string, passages: Passage[]): Promise<string>;
@@ -20,6 +21,8 @@ export interface BotDeps {
   // Выпуск: черновик заметок и подтверждение выкладки человеком.
   release?: { draft(): Promise<string>; confirm(tag: string, by: string): Promise<string> };
   account?(): Promise<string>; // учёт фабрики
+  roles?(): Promise<RoleRegistry>; // реестр ролей цели: права в точках решения
+  chatTool?: string; // имя носителя чата в реестре ролей (по умолчанию discord)
   proposeRule?(): Promise<string>; // правило-кандидат из повторяющихся замечаний
   slice?: { propose(story: string): Promise<string>; approve(story: string, by: string, agent: boolean): Promise<string> };
   e2e?(channel: string): Promise<string>; // сквозные проверки цели на стенде
@@ -68,24 +71,35 @@ export async function daily(d: BotDeps): Promise<string> {
 
 export async function answer(d: BotDeps, m: ChatMessage): Promise<string | undefined> {
   const text = m.text.replace(/<@!?\d+>/g, '').trim();
+  const tool = d.chatTool ?? 'discord';
+  // Точка решения: отказ, если у учётки нет нужной роли; иначе - undefined.
+  const gate = async (decision: Decision): Promise<string | undefined> => {
+    const r = await d.roles?.();
+    if (!r) return undefined;
+    const c = r.check(decision, tool, m.authorId);
+    return c.ok ? undefined : refusal(decision, c, m.viaWebhook);
+  };
+  const by = async () => (await d.roles?.())?.holder(tool, m.authorId)?.name ?? m.author;
   if (/^!(дейли|daily)(\s|$)/i.test(text)) return daily(d);
   if (/^!(помощь|help)(\s|$)/i.test(text)) return HELP;
   if (d.release && /^!(выпуск|release)(\s|$)/i.test(text)) return d.release.draft();
   if (d.account && /^!(учёт|учет|account)(\s|$)/i.test(text)) return d.account();
-  if (d.proposeRule && /^!(правила|rules)(\s|$)/i.test(text)) return d.proposeRule();
-  if (d.e2e && /^!e2e(\s|$)/i.test(text)) return d.e2e(m.channel);
+  if (d.proposeRule && /^!(правила|rules)(\s|$)/i.test(text)) return (await gate('propose-rule')) ?? d.proposeRule();
+  if (d.e2e && /^!e2e(\s|$)/i.test(text)) return (await gate('rerun-checks')) ?? d.e2e(m.channel);
   const ci = /^!ci(?:\s+#?(\d+))?\s*$/i.exec(text);
-  if (d.ci && ci) return d.ci(m.channel, ci[1] ? Number(ci[1]) : undefined);
+  if (d.ci && ci) return (await gate('rerun-checks')) ?? d.ci(m.channel, ci[1] ? Number(ci[1]) : undefined);
   const design = /^!(макет|design)\s+([A-Z][A-Z0-9]*-\d+)/i.exec(text)?.[2];
-  if (d.design && design) return d.design(design.toUpperCase(), m);
+  if (d.design && design) return (await gate('design-check')) ?? d.design(design.toUpperCase(), m);
   const slice = /^!(нарезка|slice)\s+([A-Z][A-Z0-9]*-\d+)\s*$/i.exec(text)?.[2];
-  if (d.slice && slice) return d.slice.propose(slice.toUpperCase());
+  if (d.slice && slice) return (await gate('slice')) ?? d.slice.propose(slice.toUpperCase());
   const approve = /^!(утвердить|approve)\s+([A-Z][A-Z0-9]*-\d+)(\s+agent)?\s*$/i.exec(text);
-  if (d.slice && approve?.[2]) return d.slice.approve(approve[2].toUpperCase(), m.author, !!approve[3]);
+  if (d.slice && approve?.[2]) return (await gate('approve-slice')) ?? d.slice.approve(approve[2].toUpperCase(), await by(), !!approve[3]);
   const deployTag = /^!(выкладка|deploy)\s+(v\d+\.\d+\.\d+)\s*$/i.exec(text)?.[2];
-  if (d.release && deployTag) return d.release.confirm(deployTag, m.author);
+  if (d.release && deployTag) return (await gate('deploy')) ?? d.release.confirm(deployTag, await by());
   const task = /^!(задача|task)\s+([\s\S]+)$/i.exec(text)?.[2];
   if (task) {
+    const denied = await gate('submit-task');
+    if (denied) return denied;
     const [title = task, ...rest] = task.split(/(?<=\.)\s+/);
     const i = await d.tracker.createIssue({
       title: title.replace(/\.$/, '').slice(0, 200),

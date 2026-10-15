@@ -47,7 +47,7 @@ export function memoryTracker(user = 'factory-bot', keyPrefix = ''): Tracker {
   const label = (key: string, l: string, action: LabelEvent['action']) => {
     const i = get(key);
     i.labels = action === 'added' ? [...new Set([...i.labels, l])] : i.labels.filter((x) => x !== l);
-    events.set(key, [...(events.get(key) ?? []), { label: l, action, at: now() }]);
+    events.set(key, [...(events.get(key) ?? []), { label: l, action, at: now(), author: user }]);
   };
   return {
     async getIssue(key) {
@@ -64,7 +64,7 @@ export function memoryTracker(user = 'factory-bot', keyPrefix = ''): Tracker {
     },
     async createIssue({ title, body, labels = [] }) {
       const key = `${keyPrefix}${++seq}`;
-      const i: Issue = { key, title, body, state: 'open', labels: [], url: `http://memory/issues/${key}` };
+      const i: Issue = { key, title, body, state: 'open', labels: [], url: `http://memory/issues/${key}`, author: user };
       issues.set(key, i);
       for (const l of labels) label(key, l, 'added');
       return { ...i, labels: [...i.labels] };
@@ -315,8 +315,9 @@ export function memoryChat() {
   return {
     chat,
     sent,
-    async say(channel: string, text: string, mentionsMe = false) {
-      await handler?.({ id: `m-${++seq}`, channel, text, author: 'человек', mentionsMe });
+    // authorId - учётка в чате; вебхук - сообщение без учётки.
+    async say(channel: string, text: string, mentionsMe = false, authorId = 'u-1', viaWebhook = false) {
+      await handler?.({ id: `m-${++seq}`, channel, text, author: 'человек', authorId, mentionsMe, ...(viaWebhook ? { viaWebhook } : {}) });
     },
   };
 }

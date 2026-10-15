@@ -84,6 +84,7 @@ export function forgejoTracker(cfg: ForgejoConfig): Tracker {
     state: i.state === 'closed' ? 'closed' : 'open',
     labels: ((i.labels as Json[] | null) ?? []).map((l) => String(l.name)),
     url: publicLink(cfg, String(i.html_url ?? '')),
+    ...((i.user as Json | undefined)?.login ? { author: String((i.user as Json).login) } : {}),
   });
   // Метки у Forgejo - по номеру; порт работает с именами и заводит недостающие.
   async function labelId(name: string, create: boolean): Promise<number | undefined> {
@@ -150,6 +151,7 @@ export function forgejoTracker(cfg: ForgejoConfig): Tracker {
           // Forgejo пишет в тело "1", когда метку ставят, и пустую строку, когда снимают.
           action: e.body === '1' ? ('added' as const) : ('removed' as const),
           at: String(e.created_at),
+          ...((e.user as Json | undefined)?.login ? { author: String((e.user as Json).login) } : {}),
         }));
     },
   };

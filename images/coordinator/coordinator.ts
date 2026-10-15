@@ -4,10 +4,13 @@
 import type { JobRunner, Tracker } from '../ports/ports.ts';
 import { crash, type Labels } from './actions.ts';
 import { message } from './errors.ts';
+import { admitIssue, type RoleRegistry } from './roles.ts';
 import type { RunStore } from './runs.ts';
 import { type AgentTaskWorkflow, AWAIT_STEP } from './workflow.ts';
 
 export interface CoordinatorDeps {
+  roles?: () => Promise<RoleRegistry>; // реестр ролей цели: кто может отдать задачу агенту
+  trackerTool?: string; // имя носителя трекера в реестре ролей
   workflow: AgentTaskWorkflow;
   tracker: Tracker;
   jobs: JobRunner;
@@ -28,6 +31,7 @@ export function coordinator(d: CoordinatorDeps) {
 
   async function startNew() {
     for (const i of await d.tracker.listIssues({ label: d.labels.trigger, state: 'open' })) {
+      if (!(await admitIssue(d, i.key, d.labels.trigger, 'submit-task'))) continue;
       const runId = `${i.key}-${Date.now().toString(36)}`;
       const run = await d.workflow.createRun({ runId, resourceId: i.key });
       await settle(i.key, runId, (await run.start({ inputData: { issue: i.key } })) as Result);

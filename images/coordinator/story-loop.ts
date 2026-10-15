@@ -3,10 +3,13 @@
 // решении - в трекере, поэтому цикл переживает перезапуск координатора.
 import type { Tracker } from '../ports/ports.ts';
 import { message } from './errors.ts';
+import { admitIssue, type RoleRegistry } from './roles.ts';
 import type { StoryLabels } from './story.ts';
 import { DECISION_STEP, type StoryCheckWorkflow } from './story-workflow.ts';
 
 export interface StoryLoopDeps {
+  roles?: () => Promise<RoleRegistry>; // реестр ролей цели: кто может отдать стори на сверку
+  trackerTool?: string;
   workflow: StoryCheckWorkflow;
   tracker: Tracker;
   labels: StoryLabels & { failed: string };
@@ -28,6 +31,7 @@ export function storyLoop(d: StoryLoopDeps) {
 
   async function startNew() {
     for (const i of await d.tracker.listIssues({ label: d.labels.trigger, state: 'open' })) {
+      if (!(await admitIssue(d, i.key, d.labels.trigger, 'story'))) continue;
       const runId = `${i.key}-${Date.now().toString(36)}`;
       const run = await d.workflow.createRun({ runId, resourceId: i.key });
       await settle(i.key, runId, (await run.start({ inputData: { issue: i.key } })) as Result);

@@ -1,0 +1,71 @@
+@startuml roles-modules
+!include ../../demo/diagrams/common-uml.puml
+
+title Устройство: люди-персонажи и фабрика встречаются в одних инструментах
+
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #4B5563
+}
+skinparam component<<poly>> {
+  BackgroundColor #FEFCE8
+  BorderColor #A16207
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF7ED
+  BorderColor #C2410C
+}
+skinparam component<<tool>> {
+  BackgroundColor #F0F9FF
+  BorderColor #0369A1
+}
+skinparam component<<saas>> {
+  BackgroundColor #F8FAFC
+  BorderColor #94A3B8
+}
+hide stereotype
+
+package "Полигон (новое)" as Poly {
+  component "Описания составов:\nроль -> держатель -> учётки" as Comps <<poly>>
+  component "Прогонщик\nсценариев" as Runner <<poly>>
+  component "Сценарии нагрузки:\nстори, баг, выпуск" as Loads <<poly>>
+  component "Персонажи-агенты:\nпромпт роли, манера,\nсвоя учётка" as Personas <<poly>>
+  component "Отчёт сравнения\nсоставов (РП 26)" as Report <<poly>>
+}
+
+package "Инструменты команды" as Tools {
+  package "Полигон: свой стенд" as Own {
+    component "Forgejo:\ngit, трекер, CI" as Forgejo <<tool>>
+    component "Mailpit:\nпочта-ловушка" as Mail <<tool>>
+    component "Mattermost или Zulip:\nчат" as Chat <<tool>>
+  }
+  package "Показ: SaaS" as Show {
+    component "GitHub, Bitbucket, Jira,\nConfluence, Discord" as Saas <<saas>>
+  }
+}
+
+package "Фабрика (тот же код)" as Fac {
+  component "Порты: трекер, git,\nчат, вики, CI" as Ports
+  component "Координатор (Mastra),\nбот, стражи, судьи,\nсверщик, агент" as Coord
+  component "Реестр ролей\nи права" as Registry <<new>>
+  component "Учёт по\nназначениям" as Acc <<new>>
+}
+
+Comps -right-> Runner
+Loads -left-> Runner
+Runner -down-> Personas : запуск с нагрузкой
+Runner -down-> Forgejo : API админа:\nстереть, учётки
+Runner -down-> Chat : API админа
+Forgejo -right-> Mail : письма
+Chat -left-> Mail : письма
+Personas -down-> Forgejo : как люди,\nсвоими ключами
+Personas -down-> Chat : вопросы\nи команды боту
+Ports -up-> Forgejo : адаптеры Forgejo
+Ports -up-> Chat : адаптер чата\n(новый)
+Ports .up.> Saas : адаптеры демо\n(уже есть)
+Coord -left-> Ports
+Coord -right-> Registry : права в точках\nрешения
+Coord -down-> Acc
+Runner .down.> Registry : назначить роли\nпо составу
+Acc .up.> Report : время, цена,\nвмешательства
+@enduml

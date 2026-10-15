@@ -24,6 +24,7 @@ export interface Issue {
   state: IssueState;
   labels: string[];
   url: string;
+  author?: string; // кто завёл: учётка носителя (accountId Jira, логин Forgejo)
 }
 
 export interface Comment {
@@ -36,6 +37,7 @@ export interface LabelEvent {
   label: string;
   action: 'added' | 'removed';
   at: string;
+  author?: string; // кто поставил или снял: учётка носителя
 }
 
 export interface IssueQuery {
@@ -165,7 +167,9 @@ export interface ChatMessage {
   id: string;
   channel: string; // имя канала
   text: string;
-  author: string;
+  author: string; // имя для людей
+  authorId: string; // учётка носителя: по ней реестр ролей узнаёт роль
+  viaWebhook?: boolean; // прислано вебхуком: имя может быть любым, учётки нет
   mentionsMe: boolean; // сообщение обращено к боту фабрики
   attachments?: { url: string; name: string; contentType?: string }[];
 }

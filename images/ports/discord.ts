@@ -139,6 +139,9 @@ export function discordChat(cfg: DiscordBotConfig): Chat {
                 channel: ch,
                 text: String(d.content ?? ''),
                 author: String(author.username ?? ''),
+                // У вебхука нет учётки: id автора - id вебхука, имя может быть любым.
+                authorId: String(author.id ?? ''),
+                ...(d.webhook_id ? { viaWebhook: true } : {}),
                 mentionsMe: mentions.includes(me),
                 ...(attachments.length ? { attachments } : {}),
               });

@@ -30,11 +30,15 @@ contract:
 contract-saas:
 	./scripts/port-contract-saas.sh
 
-# Диаграммы демо: PlantUML и C4-PlantUML -> PNG рядом с исходниками.
-DIAGRAMS := $(notdir $(filter-out %/common.puml %/common-uml.puml,$(wildcard docs/demo/diagrams/*.puml)))
+# Диаграммы: PlantUML и C4-PlantUML -> PNG рядом с исходниками (docs/*/diagrams). Монтируется
+# весь docs/: диаграммы разделов подключают общий стиль из docs/demo/diagrams.
+DIAGRAM_DIRS := $(patsubst docs/%,%,$(wildcard docs/*/diagrams))
 diagrams:
-	docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD/docs/demo/diagrams":/data -w /data \
-		docker.io/plantuml/plantuml:1.2026.8 -tpng -charset UTF-8 $(DIAGRAMS)
+	for d in $(DIAGRAM_DIRS); do \
+		docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD/docs":/data -w "/data/$$d" \
+			docker.io/plantuml/plantuml:1.2026.8 -tpng -charset UTF-8 \
+			$$(cd "docs/$$d" && ls *.puml | grep -v '^common') || exit 1; \
+	done
 
 # Учётки и токены платформ демо (docs/demo/platforms.md): наличие и чтение, без печати значений.
 platforms-check:

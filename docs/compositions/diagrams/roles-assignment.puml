@@ -1,0 +1,74 @@
+@startuml roles-assignment
+!include ../../demo/diagrams/common-uml.puml
+
+title Назначение роли, учётка и права: как фабрика узнаёт роль за действием
+
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #4B5563
+  ArrowColor #4B5563
+}
+skinparam class<<новое в фабрике>> {
+  BackgroundColor #FFF7ED
+  BorderColor #C2410C
+}
+skinparam note {
+  BackgroundColor #F8FAFC
+  BorderColor #94A3B8
+}
+hide empty methods
+hide circle
+skinparam wrapWidth 470
+
+class "Вид роли" as Role {
+  Product Owner, архитектор,
+  разработчик, QA, DevOps, ...
+}
+class "Держатель" as Holder {
+  вид: человек | человек с ИИ-агентами | ИИ-агент
+  манера работы (для персонажа)
+}
+class "Учётка" as Identity {
+  инструмент: трекер, git, чат, вики
+  логин и ключ - свои у каждого
+}
+class "Состав" as Composition <<новое в фабрике>> {
+  название: традиционный, соло, ...
+  нагрузка: стори, баги, выпуск
+}
+class "Назначение" as Assignment <<новое в фабрике>> {
+  кто держит какую роль
+  в этом составе и прогоне
+}
+class "Точка решения" as Decision <<новое в фабрике>> {
+  слить PR, подтвердить выкладку,
+  решить противоречие, утвердить нарезку
+}
+class "Работа" as Work {
+  что сделано, когда,
+  время, цена, попытки
+}
+
+Composition "1" *-- "1..*" Assignment
+Assignment "*" --> "1" Role : роль
+Assignment "*" --> "1" Holder : держатель
+Holder "1" *-- "1..*" Identity : по учётке\nв каждом инструменте
+Decision "*" --> "1..*" Role : разрешено ролям
+Work "*" --> "1" Identity : видна в инструменте\nкак действие учётки
+Work "*" ..> "1" Assignment : отнесена к назначению\n(FPF F.6)
+
+note bottom of Identity
+  Фабрика видит в инструменте только учётку.
+  Цепочка учётка -> держатель -> назначение -> роль
+  отвечает, можно ли этому действию случиться
+  в точке решения и кому записать работу в учёт.
+end note
+
+note right of Decision
+  Сейчас в демо все люди - одна учётка владельца:
+  цепочка обрывается на первом шаге, роли
+  неразличимы, "!выкладка" может написать кто угодно,
+  а PR агента от учётки владельца
+  сам владелец не может одобрить в GitHub.
+end note
+@enduml

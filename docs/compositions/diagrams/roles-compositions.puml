@@ -1,0 +1,38 @@
+@startuml roles-compositions
+!include ../../demo/diagrams/common-uml.puml
+
+title Распределение ролей: кто держит каждую роль в каждом составе
+
+skinparam rectangle {
+  RoundCorner 8
+  BorderColor #94A3B8
+  BackgroundColor #FFFFFF
+}
+hide stereotype
+skinparam wrapWidth 600
+
+rectangle matrix [
+|= Роль |= 1 Традиционный |= 2 ai-driven |= 3 ai-native |= Соло + тёмная\nфабрика |= Команда из 5\n(смесь) |= Демо сейчас |
+| Product Owner |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#FED7AA> **Ч1** |<#DBEAFE> Ч+ИИ: Аня |<#FECACA> владелец |
+| Project Manager |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#FFEDD5> Ч: Борис |<#FECACA> владелец |
+| Архитектор |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#FED7AA> **Ч1** |<#DBEAFE> Ч+ИИ: Вера |<#FECACA> владелец |
+| Дизайнер |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#FFEDD5> Ч: Борис |<#FECACA> владелец |
+| Разработчик BE |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#DBEAFE> Ч+ИИ: Глеб |<#DCFCE7> агент фабрики |
+| Разработчик FE |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#DBEAFE> Ч+ИИ: Дина |<#DCFCE7> агент фабрики |
+| QA |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#FECACA> владелец |
+| DevOps |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#DBEAFE> Ч+ИИ: Глеб |<#FECACA> владелец |
+| Эксплуатация |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#DCFCE7> ИИ |<#FECACA> владелец |
+| Релиз-менеджер |<#FFEDD5> Ч |<#DBEAFE> Ч+ИИ |<#DCFCE7> ИИ |<#FED7AA> **Ч1** |<#FFEDD5> Ч: Аня |<#FECACA> владелец |
+|= Точки решения:\nслить PR, выложить,\nрешить противоречие |<#FFEDD5> люди по ролям |<#DBEAFE> люди по ролям,\nИИ готовит |<#DCFCE7> ИИ-роли:\n**нужно решение**\n**о передаче прав** |<#FED7AA> Ч1 решает всё,\nИИ готовит |<#F1F5F9> по реестру ролей:\nсливает Вера,\nвыкладывает Глеб |<#FECACA> любой, кто\nнапишет команду |
+|= Учётки\nв инструментах | 10 людей | 10 людей\n(агенты работают\nот их имени) | 10 агентов\n(боты, приложения) | 1 человек\n+ 7 агентов | 5 людей\n+ 2 агента | 1 на всех людей\n+ бот фабрики |
+]
+
+rectangle legend [
+**Обозначения**
+<back:#FFEDD5> Ч </back> человек делает сам    <back:#DBEAFE> Ч+ИИ </back> человек со своими ИИ-агентами    <back:#DCFCE7> ИИ </back> ИИ-агент держит роль
+<back:#FED7AA> **Ч1** </back> один и тот же человек на нескольких ролях (способ 4)    <back:#FECACA> владелец </back> в демо все роли людей - одна учётка
+Имена в команде из 5 - персонажи полигона: каждый со своей учёткой и своей манерой работы.
+]
+
+matrix -[hidden]down- legend
+@enduml

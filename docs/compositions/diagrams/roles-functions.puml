@@ -1,0 +1,65 @@
+@startuml roles-functions
+!include ../../demo/diagrams/common-uml.puml
+
+title Функции полигона составов ролей и что меняется в фабрике
+
+skinparam rectangle {
+  RoundCorner 8
+}
+skinparam rectangle<<poly>> {
+  BackgroundColor #FEFCE8
+  BorderColor #A16207
+}
+skinparam rectangle<<factory>> {
+  BackgroundColor #F3F4F6
+  BorderColor #6B7280
+}
+skinparam rectangle<<new>> {
+  BackgroundColor #FFF7ED
+  BorderColor #C2410C
+}
+hide stereotype
+
+package "Полигон: готовит прогон и играет людей" as P {
+  rectangle "П1 Поднять чистый стенд:\ngit и трекер, чат, почта" as P1 <<poly>>
+  rectangle "П2 Завести учётки\nперсонажей (API админа;\nписьма ловит почта стенда)" as P2 <<poly>>
+  rectangle "П3 Назначить роли\nпо составу" as P3 <<poly>>
+  rectangle "П4 Подать нагрузку:\nстори, баг, выпуск" as P4 <<poly>>
+  rectangle "П5 Играть роли персонажами:\nсам / со своими ИИ / ИИ" as P5 <<poly>>
+}
+
+package "Фабрика: тот же код, что в демо" as F {
+  rectangle "Ф1 Реестр ролей:\nучётка -> держатель -> роль" as N1 <<new>>
+  rectangle "Ф2 Проверять права\nв точках решения" as N2 <<new>>
+  rectangle "Сверка требований,\nнарезка стори" as F1 <<factory>>
+  rectangle "Агент, стражи,\nсудьи PR и макета" as F2 <<factory>>
+  rectangle "Выкладка, выпуск,\nсбой -> баг" as F3 <<factory>>
+  rectangle "Ф3 Учитывать работу\nпо назначениям" as N3 <<new>>
+}
+
+package "Полигон: итог прогона" as R {
+  rectangle "П6 Сравнить составы:\nбыло / стало (РП 26)" as P6 <<poly>>
+}
+
+P1 -right-> P2 : пустые\nинструменты
+P2 -right-> P3 : учётки\nи ключи
+P3 -right-> P4
+P4 -right-> P5 : задания\nперсонажам
+P3 -down-> N1 : кто какую\nроль держит
+N1 -right-> N2 : роли\nдействующих
+P5 -down-> N2 : слить, выложить,\nрешить
+P5 -down-> F1 : действия\nот своих учёток
+P5 -down-> F2
+P5 -down-> F3
+F1 -down-> N3
+F2 -down-> N3
+F3 -down-> N3
+N2 -down-> N3 : кто решил
+N3 -down-> P6 : время, цена, попытки,\nвмешательства людей
+
+legend right
+  |<#FEFCE8> П |функции полигона (новый стенд)|
+  |<#F3F4F6>   |функции фабрики без изменений|
+  |<#FFF7ED> Ф |новое в фабрике: нужно и полигону, и демо|
+endlegend
+@enduml

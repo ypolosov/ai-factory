@@ -1,0 +1,72 @@
+@startuml roles-run
+!include ../../demo/diagrams/common-uml.puml
+
+title Прогон одного состава на полигоне: фича "повторный розыгрыш"
+
+skinparam sequence {
+  ParticipantPadding 6
+  BoxPadding 6
+}
+autonumber "<b>0"
+
+box "Полигон" #FEFCE8
+  participant "Прогонщик" as Run
+  participant "Стенд:\ngit+трекер, чат, почта" as Stand
+end box
+box "Персонажи (у каждого своя учётка)" #FFF7ED
+  actor "Продукт\n(Аня)" as PO
+  actor "Архитектор\n(Вера)" as Arch
+  actor "Разработчик\n(Глеб)" as Dev
+  actor "Ревьюер\n(Дина)" as Rev
+  actor "QA\n(ИИ)" as QA
+  actor "DevOps\n(Глеб)" as Ops
+end box
+box "Фабрика" #F3F4F6
+  participant "Реестр ролей" as Reg
+  participant "Фабрика:\nсверщик, агент,\nстражи, судья" as Fac
+  participant "Учёт" as Acc
+end box
+
+== Подготовка ==
+Run -> Stand : стереть и поднять заново
+Run -> Stand : завести учётки персонажей (API админа)
+Stand --> Run : письма подтверждения - в почту стенда
+Run -> Reg : состав "Команда из 5": кто какую роль держит
+== Требование и решение ==
+Run -> PO : нагрузка: стори про повторный розыгрыш
+
+PO -> Stand : стори с меткой story - от учётки Ани
+Stand -> Fac : сверщик видит стори
+Fac -> Stand : противоречие с ADR-3 -> задача архитектору
+Arch -> Stand : PR: уточнение ADR-3 + правило-страж; слияние
+
+== Разработка: манера зависит от состава ==
+alt манера разработчика: традиционная
+  Dev -> Stand : пишет код и тесты сам, PR
+else ai-driven
+  Dev -> Fac : своя обвязка + MCP фабрики: правила, сверка
+  Dev -> Stand : PR, сделанный вместе со своими агентами
+else ai-native (роль держит ИИ)
+  Stand -> Fac : метка agent -> агент фабрики пишет PR
+end
+
+== Проверка и права в точках решения ==
+Fac -> Stand : вердикт стража, оценка судьи
+Rev -> Stand : одобрить PR - другая учётка\n(автор свой PR одобрить не может)
+QA -> Fac : "!e2e" в чате
+Fac --> QA : сквозные проверки на стенде: зелёные
+
+PO -> Fac : "!выкладка v1.1.0"
+Fac -> Reg : роль учётки Ани?
+Reg --> Fac : Product Owner
+Fac --> PO : отказ: выкладку подтверждает DevOps
+Ops -> Fac : "!выкладка v1.1.0"
+Fac -> Reg : роль учётки Глеба?
+Reg --> Fac : DevOps
+Fac -> Stand : выкладка
+
+== Учёт и сравнение ==
+Fac -> Acc : работа по назначениям: кто, сколько, вмешательства, цена
+Run -> Acc : итог прогона
+Run -> Run : тот же прогон с другим составом\n(традиционный, соло, ai-native) и сравнение
+@enduml

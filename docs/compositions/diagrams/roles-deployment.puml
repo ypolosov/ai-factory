@@ -1,0 +1,82 @@
+@startuml roles-deployment
+!include ../../demo/diagrams/common-uml.puml
+
+title Размещение: полигон работает на ноутбуке, показ - на настоящих SaaS
+
+skinparam node {
+  BackgroundColor #F8FAFC
+  BorderColor #64748B
+}
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #4B5563
+}
+skinparam component<<poly>> {
+  BackgroundColor #FEFCE8
+  BorderColor #A16207
+}
+skinparam cloud {
+  BackgroundColor #F0F9FF
+  BorderColor #0369A1
+}
+skinparam note {
+  BackgroundColor #FFFFFF
+  BorderColor #94A3B8
+}
+hide stereotype
+skinparam wrapWidth 460
+
+node "Ноутбук владельца: WSL и Docker" as Laptop {
+  node "Полигон (новый профиль compose)" as Poly {
+    component "Прогонщик\nсценариев" as Runner <<poly>>
+    component "Персонажи-агенты:\nпо контейнеру и учётке\nна персонажа" as Personas <<poly>>
+    component "Чат:\nMattermost или Zulip" as Chat <<poly>>
+    component "Mailpit:\nпочта-ловушка" as Mail <<poly>>
+  }
+  node "Стенд фабрики (уже есть)" as Factory {
+    component "Forgejo с раннерами\n(стенд РП 19)" as Forgejo
+    component "Координатор, бот,\nMCP, реестр ролей, учёт" as Coord
+    component "Шлюз моделей" as Gw
+    component "Свой раннер Bitbucket" as BbRunner
+  }
+}
+
+cloud "Показ: SaaS" as Saas {
+  component "Bitbucket, Jira, Confluence,\nDiscord, GitHub, GHCR" as SaasTools
+}
+cloud "Подписки моделей" as Models {
+  component "Claude, Codex,\nоткрытые модели" as ModelList
+}
+
+Runner -right-> Personas : запуск
+Runner -down-> Forgejo : учётки, сброс\n(API админа)
+Runner -right[norank]-> Chat : учётки\n(API админа)
+Personas -right-> Chat : команды\nи вопросы боту
+Personas -down-> Forgejo : задачи, PR, ревью -\nот своих учёток
+Personas -down-> Gw : модель персонажа
+Chat -down-> Mail : письма
+Forgejo -up[norank]-> Mail : письма
+Coord -left-> Forgejo : порты
+Coord -up-> Chat : порты
+Coord -down-> SaasTools : порты,\nтолько исходящие
+BbRunner -down-> SaasTools : задания,\nтолько исходящие
+Gw -down-> ModelList
+
+note right of Poly
+  **Полигон**
+  - учёток сколько нужно, без настоящей почты
+  - перед прогоном стенд стирается и поднимается заново
+  - всё внутри ноутбука: правила площадок не задеты
+  - Forgejo с раннерами уже есть - его и берём
+end note
+
+note right of Saas
+  **Показ**
+  - учётки: владелец и 3-5 тестовых персонажей
+    (почта вида ypolosov+роль@gmail.com);
+    ИИ-роли - боты и приложения
+  - правила площадок: GitHub - одна бесплатная
+    учётка на человека; Discord - автоматизировать
+    можно только ботов; Atlassian - бесплатно до 10
+end note
+@enduml

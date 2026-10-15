@@ -82,7 +82,7 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
     return (r.status === 204 || r.headers.get('content-length') === '0' ? undefined : await r.json().catch(() => undefined)) as T;
   }
 
-  const FIELDS = ['summary', 'description', 'labels', 'status'];
+  const FIELDS = ['summary', 'description', 'labels', 'status', 'creator'];
   const toIssue = (i: Json): Issue => {
     const f = i.fields as Json;
     const cat = ((f.status as Json | undefined)?.statusCategory as Json | undefined)?.key;
@@ -93,6 +93,7 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
       state: cat === 'done' ? 'closed' : 'open',
       labels: ((f.labels as string[] | undefined) ?? []).map(String),
       url: `${site}/browse/${String(i.key)}`,
+      ...((f.creator as Json | undefined)?.accountId ? { author: String((f.creator as Json).accountId) } : {}),
     };
   };
   const getRaw = async (key: string) => {
@@ -202,8 +203,10 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
               .split(' ')
               .filter(Boolean),
           );
-          for (const l of to) if (!from.has(l)) events.push({ label: l, action: 'added', at: String(h.created) });
-          for (const l of from) if (!to.has(l)) events.push({ label: l, action: 'removed', at: String(h.created) });
+          const by = (h.author as Json | undefined)?.accountId;
+          const author = by ? { author: String(by) } : {};
+          for (const l of to) if (!from.has(l)) events.push({ label: l, action: 'added', at: String(h.created), ...author });
+          for (const l of from) if (!to.has(l)) events.push({ label: l, action: 'removed', at: String(h.created), ...author });
         }
       }
       return events;
