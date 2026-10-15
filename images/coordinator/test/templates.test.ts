@@ -1,6 +1,7 @@
 // Шаблоны вывода фабрики: одна форма в похожих случаях - текст сверяется целиком.
 import { describe, expect, it } from 'vitest';
-import { gatewayLibrarian } from '../bot.ts';
+import { PortError } from '../../ports/ports.ts';
+import { failure, gatewayLibrarian } from '../bot.ts';
 import { librarianText, taskBody, taskLine } from '../templates.ts';
 
 const passages = [
@@ -36,5 +37,11 @@ describe('шаблоны вывода фабрики', () => {
     );
     // Не по схеме - текст модели идёт в "коротко", форма та же.
     expect((await lib('Повтор по ADR-3 [1].')).split('\n')[0]).toBe('Коротко: Повтор по ADR-3 [1].');
+  });
+
+  it('сбой команды в чате - для человека, без ответа API', () => {
+    expect(failure(new PortError('not_found', 'GET /pulls/999: 404 {...}'))).toBe('Не нашлось: проверьте номер задачи или PR в команде.');
+    expect(failure(new PortError('unavailable', 'fetch failed'))).toBe('Сервис сейчас недоступен - повторите команду через минуту.');
+    expect(failure(new Error('нарезка не вышла'))).toBe('Не вышло: нарезка не вышла');
   });
 });
