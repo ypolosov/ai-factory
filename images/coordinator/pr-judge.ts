@@ -19,10 +19,11 @@ export interface JudgeResult {
 const MAX_DIFF = 200_000;
 
 // Дифф судье: целиком, если влезает; иначе - файлы по возрастанию размера, файлы блокировки
-// последними, в исходном порядке диффа. Не вошедшие файлы судья знает по именам: обрезанный
+// последними, в исходном порядке диффа. Предел - в байтах UTF-8: шаг режет по байтам. Не вошедшие файлы судья знает по именам: обрезанный
 // дифф не должен читаться как "файлов нет".
 export function judgeDiff(diff: string, max = MAX_DIFF): { text: string; omitted: string[] } {
-  if (diff.length <= max) return { text: diff, omitted: [] };
+  const bytes = (s: string) => Buffer.byteLength(s);
+  if (bytes(diff) <= max) return { text: diff, omitted: [] };
   const sections = diff.split(/^(?=diff --git )/m).filter((s) => s.trim());
   const file = (s: string) => patchFiles(s.split('\n', 1)[0] ?? '').at(-1) ?? '?';
   const lock = (s: string) => LOCKFILES.includes(file(s).split('/').pop() ?? '');
@@ -31,12 +32,12 @@ export function judgeDiff(diff: string, max = MAX_DIFF): { text: string; omitted
     .sort((x, y) => {
       const a = sections[x] ?? '';
       const b = sections[y] ?? '';
-      return Number(lock(a)) - Number(lock(b)) || a.length - b.length;
+      return Number(lock(a)) - Number(lock(b)) || bytes(a) - bytes(b);
     });
   const kept = new Set<number>();
   let size = 0;
   for (const i of order) {
-    const len = sections[i]?.length ?? 0;
+    const len = bytes(sections[i] ?? '');
     if (size + len > max) continue;
     kept.add(i);
     size += len;
@@ -63,7 +64,7 @@ export function prJudge(d: CheckDeps & { forge: Forge; tracker: Tracker; log(m: 
     }
     const cut = judgeDiff(diff);
     const note = cut.omitted.length
-      ? `\n\nДифф сокращён до ${MAX_DIFF} знаков, не вошли файлы: ${cut.omitted.join(', ')}. Они есть в PR - не считай их отсутствующими, суди по вошедшим.`
+      ? `\n\nДифф сокращён до ${MAX_DIFF} байт, не вошли файлы: ${cut.omitted.slice(0, 30).join(', ')}${cut.omitted.length > 30 ? ` и ещё ${cut.omitted.length - 30}` : ''}. Они есть в PR - не считай их отсутствующими, суди по вошедшим.`
       : '';
     const { jobUrl } = await startCheck(d, {
       kind: 'judge',

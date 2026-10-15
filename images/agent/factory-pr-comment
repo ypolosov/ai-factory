@@ -16,7 +16,7 @@ trap 'rm -rf "$tmp"' EXIT
 printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$tmp/auth"
 chmod 600 "$tmp/auth"
 # Без управляющих последовательностей цвета; обрезка по строкам и по объёму.
-tail -n "$lines" "$logf" | sed 's/\x1b\[[0-9;]*m//g' | head -c 12000 >"$tmp/tail"
+tail -n "$lines" "$logf" | sed 's/\x1b\[[0-9;]*m//g' | factory-utf8-head 12000 >"$tmp/tail"
 jq -n --arg t "$title" --rawfile l "$tmp/tail" \
 	'{body: ("## Проверка не прошла: " + $t + "\n\n```\n" + $l + "\n```")}' >"$tmp/c.json"
 curl -fsS -X POST -H @"$tmp/auth" -H 'Content-Type: application/json' --data @"$tmp/c.json" \

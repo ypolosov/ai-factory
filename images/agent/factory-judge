@@ -24,9 +24,9 @@ trap 'rm -rf "$work"' EXIT
 {
 	cat /etc/factory/prompts/judge.md
 	printf '\n--- задача ---\n'
-	head -c 8000 "$task"
+	factory-utf8-head 8000 "$task"
 	printf '\n--- дифф PR ---\n'
-	head -c 200000 "$diff"
+	factory-utf8-head 200000 "$diff"
 } >"$work/prompt.md"
 chown -R node:node "$work"
 chmod 700 "$work"

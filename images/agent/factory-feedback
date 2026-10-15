@@ -29,4 +29,4 @@ since=$(get "/repos/$repo/git/commits/$sha" | jq -r '.created // .commit.committ
 	get "/repos/$repo/pulls/$pr/reviews" |
 		jq -r --arg s "$since" '.[] | select(.submitted_at > $s and (.body | length) > 0) |
 			"### ревью \(.user.login) (\(.state))\n\n\(.body)\n"'
-} | head -c 20000
+} | factory-utf8-head 20000

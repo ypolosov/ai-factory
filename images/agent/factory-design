@@ -19,7 +19,7 @@ trap 'rm -rf "$work"' EXIT
 {
 	cat /etc/factory/prompts/design.md
 	printf '\n--- задача и правила ---\n'
-	head -c 12000 "$task"
+	factory-utf8-head 12000 "$task"
 } >"$work/prompt.md"
 cp "$image" "$work/mockup.png"
 cp /etc/factory/prompts/design.schema.json "$work/schema.json"

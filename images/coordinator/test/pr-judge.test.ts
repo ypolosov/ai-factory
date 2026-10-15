@@ -91,4 +91,13 @@ describe('судья PR (Codex) на раннере', () => {
     expect(started).toHaveLength(1);
     expect((await m.forge.statuses(head)).filter((s) => s.key === JUDGE_KEY).at(-1)?.state).toBe('pending');
   });
+
+  it('предел судьи - в байтах UTF-8: кириллица весит вдвое', () => {
+    const section = (path: string, text: string) => `diff --git a/${path} b/${path}\n+${text}\n`;
+    const ru = section('AGENTS.md', 'я'.repeat(100)); // 100 знаков, 200 байт
+    const en = section('a.ts', 'x'.repeat(100));
+    const cut = judgeDiff(ru + en, Buffer.byteLength(en) + 50);
+    expect(cut.omitted).toEqual(['AGENTS.md']);
+    expect(cut.text).toBe(en);
+  });
 });
