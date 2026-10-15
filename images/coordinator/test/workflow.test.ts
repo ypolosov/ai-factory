@@ -30,7 +30,13 @@ type Change = { file: string; text: string; exit?: number } | 'no-result';
 describe('координатор: задача -> агент -> страж -> PR', () => {
   const root = mkdtempSync(join(tmpdir(), 'coord-'));
   const origin = join(root, 'origin.git');
-  const labels = { trigger: 'agent', running: 'agent-running', review: 'agent-review', failed: 'agent-failed' };
+  const labels = {
+    trigger: 'agent',
+    running: 'agent-running',
+    review: 'agent-review',
+    failed: 'agent-failed',
+    roles: { 'agent:backend': 'backend' },
+  };
   let brokerUrl = '';
   let change: Change = { file: 'src/draw.ts', text: 'export const draw = 1;\n' };
   const tracker: Tracker = memoryTracker();
@@ -164,6 +170,25 @@ describe('координатор: задача -> агент -> страж -> PR
     expect((await mf.forge.listPullComments(pull?.number ?? 0)).at(-1)?.body).toContain(
       `- сведение: спецификация: изменение OpenSpec openspec/changes/${issue}-redraw (утверждено слиянием в main)`,
     );
+  });
+
+  it('метка роли: агент бэкенда получает свою роль, изменение вне её путей страж не публикует', async () => {
+    const seed = mkdtempSync(join(root, 'role-'));
+    git(seed, 'clone', '-q', origin, 'repo');
+    writeFileSync(
+      join(seed, 'repo', '.factory', 'config.yml'),
+      'checks:\n  lint: npm run lint\n  format: npm run format:check\nroles:\n  backend:\n    paths:\n      allowed: [api/]\n',
+    );
+    git(join(seed, 'repo'), 'commit', '-q', '-am', 'пути ролей');
+    git(join(seed, 'repo'), 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+    change = { file: 'web/src/App.tsx', text: 'export const App = 1;\n' };
+    const issue = (await tracker.createIssue({ title: 'Экран', body: '', labels: ['agent:backend'] })).key;
+    expect(await settle(issue)).toEqual([labels.failed]);
+    expect(runs.list().find((r) => r.issue === issue)?.role).toBe('backend');
+    expect((await tracker.listComments(issue)).at(-1)?.body).toContain('роль backend меняет только api/: web/src/App.tsx - вне её путей');
+    change = { file: 'api/src/draw.ts', text: 'export const draw = 2;\n' };
+    const ok = (await tracker.createIssue({ title: 'API', body: '', labels: ['agent:backend'] })).key;
+    expect(await settle(ok)).toEqual([labels.review]);
   });
 
   it('изменение настроек CI страж не публикует', async () => {
