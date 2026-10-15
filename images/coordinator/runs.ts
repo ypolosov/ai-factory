@@ -15,13 +15,14 @@ export interface RunMeta {
   baseSha?: string;
   jobId?: string;
   jobUrl?: string;
-  // Вид задания: агент (по умолчанию) или проверка - судья PR, сверка макета, e2e на стенде.
+  // Вид задания: агент (по умолчанию) или проверка - судья PR, сверка макета, e2e на стенде,
+  // сканеры изменения.
   kind?: RunKind;
   subject?: string; // что проверяет проверка: PR и коммит, задача, коммит стенда
   reported?: boolean; // итог проверки уже разобран
 }
 
-export type RunKind = 'agent' | 'judge' | 'design' | 'e2e';
+export type RunKind = 'agent' | 'judge' | 'design' | 'e2e' | 'scan';
 
 export type RunFile =
   | 'task.md'

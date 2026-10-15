@@ -78,6 +78,9 @@ export function stepEnvFor(cfg: Config, m: RunMeta): Record<string, string> {
       NO_PROXY: `${cfg.stepEnv.NO_PROXY},${host}`,
     };
   }
+  if (m.kind === 'scan') {
+    return { ...id, FACTORY_JOB: 'scan', HTTP_PROXY: cfg.proxy, HTTPS_PROXY: cfg.proxy, NO_PROXY: cfg.stepEnv.NO_PROXY ?? '' };
+  }
   if (m.kind === 'judge' || m.kind === 'design') {
     return {
       ...cfg.stepEnv,

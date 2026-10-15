@@ -4,7 +4,7 @@
 #
 # Вход:  BROKER_URL, RUN_TOKEN - разовый ключ запуска (у исполнителя - скрытая переменная).
 #        Вид задания - FACTORY_JOB от посредника: agent (по умолчанию), judge (судья PR),
-#        design (сверка макета).
+#        design (сверка макета), scan (сканеры изменения PR).
 # Выход: agent.patch, run.json, agent.log, secrets.json (находки Gitleaks в добавленных строках,
 #        значения скрыты) и код агента - у посредника; код шага = код агента.
 # Ключи шага (подписка, шлюз) приходят только от посредника, не печатаются и живут в окружении
@@ -58,6 +58,16 @@ design)
 	rc=$?
 	set -e
 	upload result.json agent.log codex-auth.json
+	finish "$rc"
+	;;
+scan)
+	# Сканеры изменения PR: вход - дифф и файлы блокировки на общем предке и на голове.
+	broker -o "$work/input.json" "$BROKER_URL/v1/input"
+	set +e
+	factory-scan "$work/input.json" "$work/out/result.json" 2>"$work/out/agent.log"
+	rc=$?
+	set -e
+	upload result.json agent.log
 	finish "$rc"
 	;;
 esac

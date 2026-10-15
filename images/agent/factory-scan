@@ -1,0 +1,68 @@
+#!/bin/sh
+# Сканеры изменения для стража (шаг "scan" на раннере): секреты в добавленных строках диффа
+# (Gitleaks) и уязвимости файлов блокировки на общем предке и на голове (OSV-Scanner по скачанной
+# базе OSV: API OSV отсюда может быть закрыт). Настройки сканеров - фабрики, не репозитория.
+# Использование: factory-scan ВХОД.json ИТОГ.json
+# Вход:  {"diff": "...", "files": [{"path": "...", "base": "...", "head": "..."}]}
+# Итог:  {"secrets": [отчёт Gitleaks, значения скрыты], "vulns": {"base": [...], "head": [...]}},
+#        элемент vulns - {"name", "version", "ids"}. Код выхода: 0 - итог записан, иначе - сбой.
+set -eu
+in=${1:?использование: factory-scan ВХОД.json ИТОГ.json}
+out=${2:?использование: factory-scan ВХОД.json ИТОГ.json}
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+jq -r '.diff' "$in" | grep '^+' | grep -v '^+++' >"$tmp/added" || true
+gitleaks stdin --no-banner --redact --exit-code 0 --config /etc/factory/checks/gitleaks.toml \
+	--report-format json --report-path "$tmp/secrets.json" <"$tmp/added" >/dev/null 2>&1 || true
+[ -s "$tmp/secrets.json" ] || echo '[]' >"$tmp/secrets.json"
+
+# Файлы блокировки по сторонам: base/ПУТЬ и head/ПУТЬ.
+mkdir "$tmp/base" "$tmp/head"
+n=$(jq '.files | length' "$in")
+i=0
+while [ "$i" -lt "$n" ]; do
+	path=$(jq -r ".files[$i].path" "$in")
+	case /$path/ in
+	//* | */../* | */./*)
+		echo "плохой путь файла блокировки: $path" >&2
+		exit 2
+		;;
+	esac
+	for side in base head; do
+		if jq -e ".files[$i] | has(\"$side\")" "$in" >/dev/null; then
+			mkdir -p "$tmp/$side/$(dirname "$path")"
+			jq -r ".files[$i].$side" "$in" >"$tmp/$side/$path"
+		fi
+	done
+	i=$((i + 1))
+done
+
+# vulns СТОРОНА - уязвимые пакеты файлов блокировки стороны в $tmp/СТОРОНА.json.
+export OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY="$tmp/db"
+vulns() {
+	if [ -z "$(find "$tmp/$1" -type f | head -1)" ]; then
+		echo '[]' >"$tmp/$1.json"
+		return 0
+	fi
+	rc=0
+	osv-scanner scan source -r --format json --offline-vulnerabilities --download-offline-databases \
+		--config /etc/factory/checks/osv-scanner.toml "$tmp/$1" >"$tmp/$1.osv" 2>>"$tmp/osv.log" || rc=$?
+	case $rc in
+	0 | 1)
+		jq '[.results[]?.packages[]? | select((.vulnerabilities // []) | length > 0)
+			| {name: .package.name, version: .package.version, ids: [.vulnerabilities[].id]}]' "$tmp/$1.osv" >"$tmp/$1.json"
+		;;
+	128) echo '[]' >"$tmp/$1.json" ;;
+	*)
+		cat "$tmp/osv.log" >&2
+		echo "OSV-Scanner: код $rc" >&2
+		return 1
+		;;
+	esac
+}
+vulns base
+vulns head
+
+jq -n --slurpfile s "$tmp/secrets.json" --slurpfile b "$tmp/base.json" --slurpfile h "$tmp/head.json" \
+	'{secrets: $s[0], vulns: {base: $b[0], head: $h[0]}}' >"$out"

@@ -41,6 +41,7 @@ import { releaseWorkflow } from './release-workflow.ts';
 import { parseRoles } from './roles.ts';
 import { proposeRule } from './rule-candidates.ts';
 import { runStore } from './runs.ts';
+import { allowedLicenses, prScan, scanHandler } from './scan.ts';
 import { slicer, sliceWorkflow } from './slice.ts';
 import { e2eHandler, startStandE2e } from './stand-e2e.ts';
 import type { StoryDeps } from './story.ts';
@@ -142,13 +143,14 @@ const storyChecks = storyLoop({
   log,
 });
 const configPath = join(knowledgeDir, '.factory', 'config.yml');
+const targetConfig = async () => {
+  await stories.refreshKnowledge();
+  return existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined;
+};
 const pulls = pullGuard({
   forge: deps.forge,
   guard: DEFAULT_GUARD,
-  targetConfig: async () => {
-    await stories.refreshKnowledge();
-    return existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined;
-  },
+  targetConfig,
   log,
 });
 // MCP фабрики для экзокортексов; на хосте - только 127.0.0.1 (compose.yaml).
@@ -261,11 +263,20 @@ const bot = chat
     })
   : undefined;
 const judges = prJudge({ ...checkDeps, forge: deps.forge, tracker: deps.tracker, log });
+// Сканеры изменения для всех PR цели: секреты, уязвимости и лицензии зависимостей.
+const scans = prScan({
+  ...checkDeps,
+  forge: deps.forge,
+  lockFiles: (p, paths) =>
+    deps.git.changedFiles(join(cfg.data, 'scan-repo'), { base: p.targetBranch, head: p.sourceBranch, headSha: p.headSha, paths }),
+  log,
+});
 const checks = checkLoop({
   runs,
   jobs: deps.jobs,
   handlers: {
     judge: judgeHandler(deps.forge),
+    scan: scanHandler({ forge: deps.forge, runs, licenses: async () => allowedLicenses(await targetConfig()) }),
     e2e: e2eHandler(async (channel, text) => {
       if (chat) await chat.post(channel, text);
       else log(text);
@@ -298,6 +309,7 @@ const tick = async () => {
   await releaseChecks.tick();
   await incidents?.tick();
   await judges.tick();
+  await scans.tick();
   await checks.tick();
   await ciReruns?.tick();
 };

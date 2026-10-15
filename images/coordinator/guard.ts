@@ -28,7 +28,7 @@ export const DEFAULT_GUARD: GuardOptions = {
 const unquote = (p: string) => (p.startsWith('"') ? (JSON.parse(p) as string) : p);
 
 // Файлы блокировки зависимостей пишет менеджер пакетов: в размер патча для ревью они не входят.
-const LOCKFILES = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'Cargo.lock', 'go.sum', 'poetry.lock', 'uv.lock'];
+export const LOCKFILES = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'Cargo.lock', 'go.sum', 'poetry.lock', 'uv.lock'];
 
 function reviewBytes(patch: string): number {
   return patch

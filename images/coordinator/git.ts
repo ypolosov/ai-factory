@@ -22,6 +22,12 @@ export interface Git {
   archive(dir: string, sha: string): Promise<Buffer>;
   // Рабочая копия ветки в КАТАЛОГЕ - клон или обновление до вершины ветки.
   sync(dir: string, branch: string): Promise<{ sha: string }>;
+  // Файлы на общем предке с веткой base и на голове ветки head (обе подтягиваются в рабочую
+  // копию КАТАЛОГ). Голова ветки не совпала с headSha (PR сдвинулся) - ошибка.
+  changedFiles(
+    dir: string,
+    p: { base: string; head: string; headSha: string; paths: string[] },
+  ): Promise<{ path: string; base?: string; head?: string }[]>;
   // Файлы -> коммит в новой ветке поверх клона КАТАЛОГ/repo (после prepare) -> push.
   commitFiles(dir: string, p: { branch: string; message: string; files: Record<string, string> }): Promise<{ headSha: string }>;
 }
@@ -53,6 +59,16 @@ export function git(cfg: GitConfig): Git {
         maxBuffer: 64 * 1024 * 1024,
       })
     ).stdout.trim();
+  async function sync(dir: string, branch: string) {
+    if (!existsSync(join(dir, '.git'))) {
+      mkdirSync(dirname(dir), { recursive: true });
+      await g(dirname(dir), ['clone', '--quiet', '--single-branch', '--branch', branch, cfg.url, dir], cfg.read);
+    } else {
+      await g(dir, ['fetch', '--quiet', 'origin', branch], cfg.read);
+      await g(dir, ['reset', '--quiet', '--hard', 'FETCH_HEAD']);
+    }
+    return { sha: await g(dir, ['rev-parse', 'HEAD']) };
+  }
   return {
     async prepare(dir, branch) {
       await g(dir, ['clone', '--quiet', '--single-branch', '--branch', branch, cfg.url, 'repo'], cfg.read);
@@ -89,15 +105,21 @@ export function git(cfg: GitConfig): Git {
       const r = await run('git', ['archive', '--format=tar.gz', sha], { cwd: dir, encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 });
       return r.stdout;
     },
-    async sync(dir, branch) {
-      if (!existsSync(join(dir, '.git'))) {
-        mkdirSync(dirname(dir), { recursive: true });
-        await g(dirname(dir), ['clone', '--quiet', '--single-branch', '--branch', branch, cfg.url, dir], cfg.read);
-      } else {
-        await g(dir, ['fetch', '--quiet', 'origin', branch], cfg.read);
-        await g(dir, ['reset', '--quiet', '--hard', 'FETCH_HEAD']);
+    sync,
+    async changedFiles(dir, p) {
+      for (const path of p.paths) if (path.startsWith('/') || path.split('/').includes('..')) throw new Error(`плохой путь ${path}`);
+      await sync(dir, p.base);
+      await g(dir, ['fetch', '--quiet', 'origin', p.head], cfg.read);
+      const head = await g(dir, ['rev-parse', 'FETCH_HEAD']);
+      if (head !== p.headSha) throw new Error(`ветка ${p.head} сдвинулась: ${head.slice(0, 7)} вместо ${p.headSha.slice(0, 7)}`);
+      const base = await g(dir, ['merge-base', 'HEAD', head]);
+      const show = (sha: string, path: string) => g(dir, ['show', `${sha}:${path}`]).catch(() => undefined);
+      const out: { path: string; base?: string; head?: string }[] = [];
+      for (const path of p.paths) {
+        const [b, h] = [await show(base, path), await show(head, path)];
+        out.push({ path, ...(b === undefined ? {} : { base: b }), ...(h === undefined ? {} : { head: h }) });
       }
-      return { sha: await g(dir, ['rev-parse', 'HEAD']) };
+      return out;
     },
   };
 }
