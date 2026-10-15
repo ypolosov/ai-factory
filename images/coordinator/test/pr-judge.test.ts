@@ -64,4 +64,31 @@ describe('судья PR (Codex) на раннере', () => {
     expect(cut.omitted).toEqual(['.claude/skills/a/SKILL.md', 'package-lock.json']);
     expect(cut.text).toBe(section('AGENTS.md', 50) + section('openspec/config.yaml', 80));
   });
+
+  it('!судья N: повтор для головы, у которой уже есть итог судьи', async () => {
+    const runs = runStore(join(root, 'rerun'));
+    const m = memoryForge();
+    const pr = await m.openPull();
+    const head = (await m.forge.getPull(pr.n)).headSha;
+    await m.forge.setStatus(head, { key: VERDICT_KEY, state: 'success', description: '' });
+    await m.forge.setStatus(head, { key: JUDGE_KEY, state: 'failure', description: 'судья (Codex): 35/100' });
+    const started: string[] = [];
+    const jobs = memoryJobs({ 'agent-task': async (env) => (started.push(env.RUN_TOKEN ?? ''), 'success') });
+    const judge = prJudge({
+      runs,
+      jobs,
+      brokerUrl: 'http://broker',
+      pipeline: () => 'agent-task',
+      forge: m.forge,
+      tracker: memoryTracker(),
+      log: () => {},
+    });
+    await judge.tick(); // итог уже есть - сам судья не повторяет
+    expect(started).toHaveLength(0);
+    expect(await judge.rerun(pr.n)).toBe(
+      `Судья (Codex) снова смотрит PR ${pr.n} (${head.slice(0, 7)}): итог - статусом factory/judge и комментарием в PR.`,
+    );
+    expect(started).toHaveLength(1);
+    expect((await m.forge.statuses(head)).filter((s) => s.key === JUDGE_KEY).at(-1)?.state).toBe('pending');
+  });
 });

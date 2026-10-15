@@ -1,7 +1,7 @@
 // Судья PR моделью другого семейства (Codex по подписке): агент пишет Claude-ом, судит Codex.
 // Судья смотрит любой открытый PR, у головы которого есть вердикт стража; итог - статус
 // factory/judge и комментарий с оценкой и главными замечаниями. Решает человек.
-import type { Forge, Tracker } from '../ports/ports.ts';
+import type { Forge, Pull, Tracker } from '../ports/ports.ts';
 import { VERDICT_KEY } from './actions.ts';
 import { type CheckDeps, type CheckHandler, startCheck } from './checks.ts';
 import { LOCKFILES, patchFiles } from './guard.ts';
@@ -49,6 +49,32 @@ export function judgeDiff(diff: string, max = MAX_DIFF): { text: string; omitted
 
 export function prJudge(d: CheckDeps & { forge: Forge; tracker: Tracker; log(m: string): void }) {
   let busy = false;
+  async function judge(p: Pull) {
+    const diff = await d.forge.pullDiff(p.number);
+    const key = /^([A-Z][A-Z0-9]+-\d+)/.exec(p.title)?.[1];
+    let issue = '';
+    if (key) {
+      try {
+        const i = await d.tracker.getIssue(key);
+        issue = `\n\nЗадача ${key}: ${i.title}\n${i.body}`;
+      } catch {
+        issue = '';
+      }
+    }
+    const cut = judgeDiff(diff);
+    const note = cut.omitted.length
+      ? `\n\nДифф сокращён до ${MAX_DIFF} знаков, не вошли файлы: ${cut.omitted.join(', ')}. Они есть в PR - не считай их отсутствующими, суди по вошедшим.`
+      : '';
+    const { jobUrl } = await startCheck(d, {
+      kind: 'judge',
+      issue: key ?? `pr-${p.number}`,
+      subject: `${p.number}:${p.headSha}`,
+      task: `PR ${p.number}: ${p.title}\n\n${p.body}${issue}${note}`,
+      input: new TextEncoder().encode(cut.text),
+    });
+    await d.forge.setStatus(p.headSha, { key: JUDGE_KEY, state: 'pending', description: 'судья (Codex) проверяет', url: jobUrl });
+    d.log(`судья: PR ${p.number} ${p.headSha.slice(0, 7)}`);
+  }
   return {
     // Новые головы PR с вердиктом стража -> задание судьи; на голове - статус "проверяет".
     async tick() {
@@ -59,36 +85,20 @@ export function prJudge(d: CheckDeps & { forge: Forge; tracker: Tracker; log(m: 
           const sts = await d.forge.statuses(p.headSha);
           const verdict = sts.find((s) => s.key === VERDICT_KEY);
           if (!verdict || verdict.state === 'pending' || sts.some((s) => s.key === JUDGE_KEY)) continue;
-          const diff = await d.forge.pullDiff(p.number);
-          const key = /^([A-Z][A-Z0-9]+-\d+)/.exec(p.title)?.[1];
-          let issue = '';
-          if (key) {
-            try {
-              const i = await d.tracker.getIssue(key);
-              issue = `\n\nЗадача ${key}: ${i.title}\n${i.body}`;
-            } catch {
-              issue = '';
-            }
-          }
-          const cut = judgeDiff(diff);
-          const note = cut.omitted.length
-            ? `\n\nДифф сокращён до ${MAX_DIFF} знаков, не вошли файлы: ${cut.omitted.join(', ')}. Они есть в PR - не считай их отсутствующими, суди по вошедшим.`
-            : '';
-          const { jobUrl } = await startCheck(d, {
-            kind: 'judge',
-            issue: key ?? `pr-${p.number}`,
-            subject: `${p.number}:${p.headSha}`,
-            task: `PR ${p.number}: ${p.title}\n\n${p.body}${issue}${note}`,
-            input: new TextEncoder().encode(cut.text),
-          });
-          await d.forge.setStatus(p.headSha, { key: JUDGE_KEY, state: 'pending', description: 'судья (Codex) проверяет', url: jobUrl });
-          d.log(`судья: PR ${p.number} ${p.headSha.slice(0, 7)}`);
+          await judge(p);
         }
       } catch (e) {
         d.log(`судья PR: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         busy = false;
       }
+    },
+    // Повтор судьи по просьбе человека (!судья N): например, после сбоя или исправления фабрики.
+    async rerun(n: number): Promise<string> {
+      const p = await d.forge.getPull(n);
+      if (p.state !== 'open') return `PR ${n} не открыт - судить нечего.`;
+      await judge(p);
+      return `Судья (Codex) снова смотрит PR ${n} (${p.headSha.slice(0, 7)}): итог - статусом factory/judge и комментарием в PR.`;
     },
   };
 }

@@ -240,6 +240,7 @@ const bot = chat
           m,
         ),
       ...(ciReruns ? { ci: (channel: string, pr?: number) => ciReruns.request(channel, pr) } : {}),
+      judge: (n: number) => judges.rerun(n),
       e2e: (channel) =>
         startStandE2e(
           {

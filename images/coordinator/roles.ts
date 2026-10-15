@@ -23,7 +23,7 @@ export const DECISIONS = {
   'submit-task': 'передать задачу агенту',
   story: 'отдать стори на сверку',
   'propose-rule': 'предложить правило',
-  'rerun-checks': 'перезапустить проверки',
+  'rerun-checks': 'перезапустить проверки', // !e2e, !ci, !судья
   'design-check': 'сверить макет',
 } as const;
 
