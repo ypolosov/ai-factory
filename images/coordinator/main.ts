@@ -10,6 +10,7 @@ import {
   selectIncidents,
   selectJobs,
   selectKnowledge,
+  selectMockups,
   selectNotifier,
   selectRegistry,
   selectTracker,
@@ -23,6 +24,7 @@ import { broker } from './broker.ts';
 import { checkLoop } from './checks.ts';
 import { loadConfig, stepEnvFor } from './config.ts';
 import { coordinator } from './coordinator.ts';
+import { designHandler, startDesign } from './design.ts';
 import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
 import { incidentLoop } from './incidents.ts';
@@ -187,6 +189,19 @@ const bot = chat
       release: { draft: async () => (await notes(releases)).text, confirm: releaseChecks.confirm },
       account: async () => accountText(await account({ runs, forge: deps.forge, usage: gatewayUsage(cfg.gatewayLog) })),
       slice: slicer(mastra.getWorkflow('slice')),
+      design: (issue, m) =>
+        startDesign(
+          {
+            ...checkDeps,
+            tracker: deps.tracker,
+            knowledge: stories.knowledge,
+            refreshKnowledge: stories.refreshKnowledge,
+            ...(cfg.mockups ? { mockups: selectMockups(cfg.mockups) } : {}),
+            ...(cfg.figmaLink ? { defaultLink: cfg.figmaLink } : {}),
+          },
+          issue,
+          m,
+        ),
       e2e: (channel) =>
         startStandE2e(
           {
@@ -217,6 +232,10 @@ const checks = checkLoop({
   handlers: {
     judge: judgeHandler(deps.forge),
     e2e: e2eHandler(async (channel, text) => {
+      if (chat) await chat.post(channel, text);
+      else log(text);
+    }),
+    design: designHandler(deps.tracker, async (channel, text) => {
       if (chat) await chat.post(channel, text);
       else log(text);
     }),

@@ -3,7 +3,16 @@
 // в момент выдачи посредником и в окружение процесса не попадают.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ChatConfig, ForgeConfig, IncidentsConfig, JobsConfig, NotifierConfig, TrackerConfig, WikiConfig } from '../ports/select.ts';
+import type {
+  ChatConfig,
+  ForgeConfig,
+  IncidentsConfig,
+  JobsConfig,
+  MockupsConfig,
+  NotifierConfig,
+  TrackerConfig,
+  WikiConfig,
+} from '../ports/select.ts';
 import type { Labels } from './actions.ts';
 import type { GitConfig } from './git.ts';
 import type { GatewayModelConfig } from './llm.ts';
@@ -50,6 +59,9 @@ export interface Config {
   codexAuth(): string;
   e2eBaseUrl: string;
   proxy: string;
+  // Макеты Figma (нет figma.env - только картинки из чата) и макет по умолчанию.
+  mockups?: MockupsConfig;
+  figmaLink?: string;
 }
 
 // Переменные шага по виду задания: каждому - только свои ключи.
@@ -108,6 +120,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     return v;
   };
   const discord = existsSync(join(secrets, 'discord.env')) ? envFile('discord.env') : {};
+  const figma = existsSync(join(secrets, 'figma.env')) ? envFile('figma.env') : {};
   const atl = envFile('atlassian.env');
   const bb = envFile('bitbucket.env');
   const gh = envFile('github-target.env');
@@ -204,6 +217,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       HTTPS_PROXY: proxy,
       NO_PROXY: [new URL(gateway).hostname, new URL(brokerUrl).hostname].join(','),
     },
+    ...(figma.FIGMA_TOKEN ? { mockups: { kind: 'figma' as const, token: figma.FIGMA_TOKEN } } : {}),
+    ...(figma.FIGMA_FILE_KEY ? { figmaLink: figma.FIGMA_FILE_KEY.replace(/^"|"$/g, '') } : {}),
     judgeModel: env.JUDGE_CODEX_MODEL ?? 'default',
     // Вход Codex: обновлённый шагами (в данных координатора) или исходный из секретов.
     codexAuth: () => {

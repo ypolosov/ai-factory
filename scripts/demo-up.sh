@@ -22,6 +22,8 @@ done
 	exit 1
 }
 cmp -s "$state/codex/auth.json" "$dst/codex-auth.json" || (umask 077 && cp "$state/codex/auth.json" "$dst/codex-auth.json")
+# Макеты Figma - по желанию: без figma.env сверка макета берёт картинки из чата.
+[ ! -s "$state/figma.env" ] || cmp -s "$state/figma.env" "$dst/figma.env" || (umask 077 && cp "$state/figma.env" "$dst/figma.env")
 mkdir -p "$state/cd"
 chmod 700 "$state/cd"
 # Ключ MCP фабрики для экзокортексов (Authorization: Bearer).

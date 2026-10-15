@@ -129,12 +129,18 @@ export function discordChat(cfg: DiscordBotConfig): Chat {
               const ch =
                 (await channels()).get(String(d.channel_id)) ?? (await channels(true)).get(String(d.channel_id)) ?? String(d.channel_id);
               ids.set(String(d.id), String(d.channel_id));
+              const attachments = ((d.attachments as Json[] | undefined) ?? []).map((a) => ({
+                url: String(a.url),
+                name: String(a.filename ?? ''),
+                ...(a.content_type ? { contentType: String(a.content_type) } : {}),
+              }));
               await onMessage({
                 id: String(d.id),
                 channel: ch,
                 text: String(d.content ?? ''),
                 author: String(author.username ?? ''),
                 mentionsMe: mentions.includes(me),
+                ...(attachments.length ? { attachments } : {}),
               });
             })().catch((e) => cfg.log?.(`сообщение Discord: ${(e as Error).message}`));
           }

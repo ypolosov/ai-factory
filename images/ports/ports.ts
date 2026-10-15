@@ -167,6 +167,7 @@ export interface ChatMessage {
   text: string;
   author: string;
   mentionsMe: boolean; // сообщение обращено к боту фабрики
+  attachments?: { url: string; name: string; contentType?: string }[];
 }
 
 // Чат команды: входящие сообщения, ответы и сообщения в канал по имени.
@@ -215,4 +216,9 @@ export interface Incident {
 export interface Incidents {
   open(): Promise<Incident[]>;
   resolve(id: string): Promise<void>;
+}
+
+// Макеты экранов (Figma): картинка рамки по ссылке на неё.
+export interface Mockups {
+  render(link: string): Promise<{ png: Uint8Array; source: string }>;
 }
