@@ -116,17 +116,46 @@ export function discordChat(cfg: DiscordBotConfig): Chat {
       let ws: WebSocket | undefined;
       let beat: ReturnType<typeof setInterval> | undefined;
       let me = '';
+      // Связь с шлюзом держится сама: сбой подключения - повтор с растущей паузой (до минуты),
+      // нет ответа на пульс (соединение умерло без закрытия) - новое подключение. Поколение
+      // отбрасывает события брошенного сокета.
+      let gen = 0;
+      const reconnect = (delay: number) => {
+        if (closed) return;
+        setTimeout(() => {
+          void connect().catch((e) => {
+            const next = Math.min(delay * 2, 60_000);
+            cfg.log?.(`Discord: ${(e as Error).message} - повтор через ${Math.round(next / 1000)} с`);
+            reconnect(next);
+          });
+        }, delay);
+      };
       const connect = async () => {
+        const my = ++gen;
         const { url } = await call<{ url: string }>('GET', '/gateway/bot');
         let seq: number | null = null;
+        let acked = true;
         ws = new WebSocket(`${url}/?v=10&encoding=json`);
         const sock = ws;
         sock.onmessage = (ev) => {
+          if (my !== gen) return;
           const p = JSON.parse(String(ev.data)) as { op: number; s?: number | null; t?: string; d?: Json };
           if (p.s != null) seq = p.s;
-          if (p.op === 10) {
+          if (p.op === 11) acked = true;
+          else if (p.op === 10) {
             const every = Number(p.d?.heartbeat_interval ?? 41250);
-            beat = setInterval(() => sock.send(JSON.stringify({ op: 1, d: seq })), every);
+            beat = setInterval(() => {
+              if (!acked) {
+                cfg.log?.('Discord: нет ответа на пульс - переподключение');
+                if (beat) clearInterval(beat);
+                gen++;
+                sock.close();
+                reconnect(1000);
+                return;
+              }
+              acked = false;
+              sock.send(JSON.stringify({ op: 1, d: seq }));
+            }, every);
             sock.send(
               JSON.stringify({
                 op: 2,
@@ -168,11 +197,15 @@ export function discordChat(cfg: DiscordBotConfig): Chat {
           }
         };
         sock.onclose = () => {
+          if (my !== gen) return;
           if (beat) clearInterval(beat);
-          if (!closed) setTimeout(() => void connect().catch((e) => cfg.log?.(`Discord: ${(e as Error).message}`)), 5000);
+          reconnect(5000);
         };
       };
-      void connect().catch((e) => cfg.log?.(`Discord: ${(e as Error).message}`));
+      void connect().catch((e) => {
+        cfg.log?.(`Discord: ${(e as Error).message} - повтор через 5 с`);
+        reconnect(5000);
+      });
       return {
         close() {
           closed = true;
