@@ -25,21 +25,39 @@ const t0 = Date.now();
 const log = (m: string) => console.log(`${((Date.now() - t0) / 1000).toFixed(0).padStart(4)}s ${m}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const atl = env('atlassian.env');
-const tracker = selectTracker({
-  kind: 'jira',
-  site: atl.ATLASSIAN_SITE ?? '',
-  email: atl.ATLASSIAN_EMAIL ?? '',
-  token: atl.JIRA_API_TOKEN ?? '',
-  project: atl.JIRA_PROJECT ?? '',
-});
-const wiki = selectWiki({
-  kind: 'confluence',
-  site: atl.ATLASSIAN_SITE ?? '',
-  email: atl.ATLASSIAN_EMAIL ?? '',
-  token: atl.CONFLUENCE_API_TOKEN ?? '',
-  space: atl.CONFLUENCE_SPACE ?? '',
-});
+// Atlassian: учётка фабрики (ожидание итогов) и учётки участников (действия под своим именем):
+// .state/atlassian.env и .state/atlassian-<персонаж>.env.
+const atlassian = (file: string) => {
+  const a = env(file);
+  return {
+    tracker: selectTracker({
+      kind: 'jira',
+      site: a.ATLASSIAN_SITE ?? '',
+      email: a.ATLASSIAN_EMAIL ?? '',
+      token: a.JIRA_API_TOKEN ?? '',
+      project: a.JIRA_PROJECT ?? '',
+    }),
+    wiki: a.CONFLUENCE_API_TOKEN
+      ? selectWiki({
+          kind: 'confluence',
+          site: a.ATLASSIAN_SITE ?? '',
+          email: a.ATLASSIAN_EMAIL ?? '',
+          token: a.CONFLUENCE_API_TOKEN,
+          space: a.CONFLUENCE_SPACE ?? '',
+        })
+      : undefined,
+  };
+};
+const factory = atlassian('atlassian.env');
+const tracker = factory.tracker;
+const accounts = new Map<string, ReturnType<typeof atlassian>>();
+// Учётка, под которой действует участник: своя, если заведена, иначе - фабрики.
+const as = (who: string) => {
+  const id = film.personas[who]?.atlassian;
+  if (!id || !existsSync(join(state, `atlassian-${id}.env`))) return factory;
+  if (!accounts.has(id)) accounts.set(id, atlassian(`atlassian-${id}.env`));
+  return accounts.get(id) ?? factory;
+};
 
 // Discord: бот фабрики читает ответы, бот персонажа пишет реплику.
 const factoryToken = env('discord.env').DISCORD_BOT_TOKEN ?? '';
@@ -86,14 +104,30 @@ async function act(step: Step): Promise<void> {
     log(`${step.id}: ${who.name} пишет в #${d.discord.channel}`);
   }
   if (d.wiki) {
+    const wiki = as(step.who).wiki ?? factory.wiki;
+    if (!wiki) throw new Error(`у участника ${step.who} нет учётки Confluence`);
     const page = await wiki.upsertPage(fill(d.wiki.title, ctx), fill(d.wiki.body, ctx));
     if (d.wiki.label) await wiki.addLabel(page.id, d.wiki.label);
     did.page = page;
     log(`${step.id}: страница ${page.url}`);
   }
   if (d.label) {
-    await tracker.addLabel(fill(d.label.key, ctx), d.label.label);
+    await as(step.who).tracker.addLabel(fill(d.label.key, ctx), d.label.label);
     log(`${step.id}: метка ${d.label.label} на ${fill(d.label.key, ctx)}`);
+  }
+  if (d.comment) {
+    await as(step.who).tracker.addComment(fill(d.comment.key, ctx), fill(d.comment.text, ctx));
+    log(`${step.id}: комментарий на ${fill(d.comment.key, ctx)}`);
+  }
+  if (d.assign) {
+    const who = film.personas[d.assign.to];
+    if (!who?.jira) throw new Error(`у участника ${d.assign.to} нет учётки Jira`);
+    await as(step.who).tracker.assign(fill(d.assign.key, ctx), who.jira);
+    log(`${step.id}: ${fill(d.assign.key, ctx)} - исполнитель ${who.name}`);
+  }
+  if (d.logWork) {
+    await as(step.who).tracker.logWork(fill(d.logWork.key, ctx), d.logWork.minutes * 60, fill(d.logWork.comment, ctx));
+    log(`${step.id}: списано ${d.logWork.minutes} мин на ${fill(d.logWork.key, ctx)}`);
   }
   if (d.decision) log(`${step.id}: РЕШЕНИЕ ЧЕЛОВЕКА - ${fill(d.decision, ctx)}`);
 }
