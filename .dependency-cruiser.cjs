@@ -39,8 +39,8 @@ module.exports = {
       severity: 'error',
       comment:
         'Код фабрики работает без зависимостей (AGENTS.md): в рабочем коде - только модули Node. ' +
-        'Исключение - служба координатора на Mastra core.',
-      from: { path: '^images/', pathNot: ['/test/', '^images/coordinator/'] },
+        'Исключения - служба координатора на Mastra core и камера видео-демо на Playwright.',
+      from: { path: '^images/', pathNot: ['/test/', '^images/coordinator/', '^images/camera/'] },
       to: { dependencyTypes: ['npm', 'npm-dev', 'npm-optional', 'npm-peer', 'npm-no-pkg', 'npm-unknown'] },
     },
     {

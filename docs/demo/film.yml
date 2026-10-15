@@ -1,0 +1,40 @@
+# Сценарий съёмки видео-демо: шаги сценария демо (scenario.md) - кто действует, как и что показать.
+# Действуют участники через API под своими учётками; камера только снимает экраны.
+# Решения в точках решения человек принимает вживую: шаг с do.decision называет команду и ждёт итога.
+# Запуск: scripts/demo-film.sh [--only шаг,шаг]
+title: Повторный розыгрыш невостребованного приза
+
+personas:
+  owner: { name: Юрий - владелец продукта, kind: human, browser: atlassian }
+  pm: { name: PM, kind: ai, discord: pm, browser: atlassian }
+
+# Сохранённые входы камеры в каталоге состояния (.state).
+browsers:
+  atlassian: camera/jira.json
+
+steps:
+  - id: librarian
+    chapter: База знаний отвечает команде
+    note: PM спрашивает фабрику в Discord, ответ - со ссылками на правила и решения проекта
+    who: pm
+    do:
+      discord: { channel: продукт, text: "@factory что известно про невостребованные призы?" }
+    wait:
+      timeout: 180
+      discord: { channel: продукт, contains: "Источники" }
+
+  - id: story
+    chapter: Требование сверяется со знаниями проекта
+    note: Владелец продукта пишет стори в Confluence, фабрика заводит её в Jira и сверяет
+    who: owner
+    do:
+      wiki:
+        title: "Проба съёмки: сколько дней осталось подтвердить приз"
+        body: "Победитель видит, сколько дней у него осталось, чтобы подтвердить приз. Когда срок истёк, приз становится невостребованным."
+        label: story
+    wait:
+      timeout: 300
+      jira: { label: "wiki-{story.page.id}", comment: "Сверщик фабрики" }
+    show:
+      - { who: owner, url: "{story.page.url}", caption: "Стори в Confluence", seconds: 6 }
+      - { who: pm, url: "{story.issue.url}", caption: "Фабрика завела стори и сверила её", seconds: 8, focus: "Сверщик фабрики" }
