@@ -32,6 +32,7 @@ describe('нарезка стори с утверждением PM', () => {
                       { name: 'следующий кандидат', when: 'приз не подтверждён за 3 дня', result: 'выигрывает следующий кандидат' },
                     ],
                     basis: ['ADR-3'],
+                    estimateHours: 3,
                   },
                   {
                     title: 'Экран невостребованного приза',
@@ -61,13 +62,16 @@ describe('нарезка стори с утверждением PM', () => {
   it('предложение -> утверждение (после перезапуска) -> задачи со связью и меткой агента', async () => {
     const story = await tracker.createIssue({ title: 'Повторный розыгрыш', body: 'следующий кандидат из той же последовательности' });
     const offer = await boot().propose(story.key);
-    expect(offer).toContain('1. API повтора - Повтор берёт следующего кандидата из той же последовательности (сценариев приёмки: 1)');
+    expect(offer).toContain(
+      '1. API повтора - Повтор берёт следующего кандидата из той же последовательности (сценариев приёмки: 1, оценка 3 ч)',
+    );
     expect(prompts[0]).toContain('ADR-3');
     expect(await boot().propose(story.key)).toContain('ждёт утверждения');
     const done = await boot().approve(story.key, 'pm', true);
     expect(done).toBe('Задачи заведены: DRAW-2, DRAW-3 - отданы агенту.');
     expect(await tracker.listDependencies(story.key)).toEqual(['DRAW-2', 'DRAW-3']);
     expect((await tracker.getIssue('DRAW-2')).labels).toEqual(['agent']);
+    expect((await tracker.getIssue('DRAW-2')).estimateSeconds).toBe(10_800);
     expect((await tracker.getIssue('DRAW-2')).body).toBe(
       [
         'Цель',
@@ -83,6 +87,9 @@ describe('нарезка стори с утверждением PM', () => {
         '',
         'Основания',
         '- ADR-3',
+        '',
+        'Оценка',
+        '3 ч',
         '',
         'Откуда',
         `Из стори ${story.key}; нарезку утвердил pm.`,

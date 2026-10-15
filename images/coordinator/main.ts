@@ -128,6 +128,8 @@ const roles = async () => {
   const p = join(knowledgeDir, '.factory', 'roles.yml');
   return parseRoles(existsSync(p) ? readFileSync(p, 'utf8') : undefined);
 };
+// Исполнитель задачи агента роли X - учётка трекера ИИ-персонажа роли X-developer-ai.
+deps.assignee = async (role) => (await roles()).account(`${role}-developer-ai`, cfg.tracker.kind);
 const loop = coordinator({
   workflow: mastra.getWorkflow('agentTask'),
   tracker: deps.tracker,
@@ -227,7 +229,8 @@ const bot = chat
       roles,
       chatTool: cfg.chat?.kind ?? 'discord',
       release: { draft: async () => (await notes(releases)).text, confirm: releaseChecks.confirm },
-      account: async () => accountText(await account({ runs, forge: deps.forge, usage: gatewayUsage(cfg.gatewayLog) })),
+      account: async () =>
+        accountText(await account({ runs, forge: deps.forge, tracker: deps.tracker, usage: gatewayUsage(cfg.gatewayLog) })),
       slice: slicer(mastra.getWorkflow('slice')),
       design: (issue, m) =>
         startDesign(

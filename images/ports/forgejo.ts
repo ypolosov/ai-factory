@@ -91,6 +91,7 @@ export function forgejoTracker(cfg: ForgejoConfig): Tracker {
     labels: ((i.labels as Json[] | null) ?? []).map((l) => String(l.name)),
     url: publicLink(cfg, String(i.html_url ?? '')),
     ...((i.user as Json | undefined)?.login ? { author: String((i.user as Json).login) } : {}),
+    ...((i.assignee as Json | undefined)?.login ? { assignee: String((i.assignee as Json).login) } : {}),
   });
   // Метки у Forgejo - по номеру; порт работает с именами и заводит недостающие.
   async function labelId(name: string, create: boolean): Promise<number | undefined> {
@@ -159,6 +160,19 @@ export function forgejoTracker(cfg: ForgejoConfig): Tracker {
           at: String(e.created_at),
           ...((e.user as Json | undefined)?.login ? { author: String((e.user as Json).login) } : {}),
         }));
+    },
+    async assign(key, account) {
+      await api.json('PATCH', `/issues/${key}`, { assignees: [account] });
+    },
+    async estimate(key, hours) {
+      // У Forgejo нет плановой оценки: строка в конце описания.
+      const i = await api.json<Json>('GET', `/issues/${encodeURIComponent(key)}`);
+      const body = String(i.body ?? '').replace(/\n*Оценка: [0-9.,]+ ч$/, '');
+      await api.json('PATCH', `/issues/${key}`, { body: `${body}\n\nОценка: ${hours} ч` });
+    },
+    async logWork(key, seconds, comment) {
+      await api.json('POST', `/issues/${key}/times`, { time: Math.max(60, Math.round(seconds)) });
+      await api.json('POST', `/issues/${key}/comments`, { body: comment });
     },
     async me() {
       self ??= api

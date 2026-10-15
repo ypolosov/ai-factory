@@ -41,13 +41,20 @@ export interface RoleRegistry {
   holder(tool: string, account: string): Holder | undefined;
   rolesOf(holderId: string): string[];
   check(decision: Decision, tool: string, account: string | undefined): Check;
+  account(role: string, tool: string): string | undefined; // учётка первого держателя роли
 }
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)]);
 
 export function parseRoles(text: string | undefined): RoleRegistry {
   if (!text?.trim()) {
-    return { open: true, holder: () => undefined, rolesOf: () => [], check: () => ({ ok: true, roles: [], need: [] }) };
+    return {
+      open: true,
+      holder: () => undefined,
+      rolesOf: () => [],
+      check: () => ({ ok: true, roles: [], need: [] }),
+      account: () => undefined,
+    };
   }
   const raw = (parse(text) ?? {}) as {
     holders?: Record<string, Record<string, unknown>>;
@@ -68,6 +75,10 @@ export function parseRoles(text: string | undefined): RoleRegistry {
     open: false,
     holder,
     rolesOf,
+    account(role, tool) {
+      const ids = roles.find((r) => r.role === role)?.ids ?? [];
+      return ids.map((id) => holders.find((h) => h.id === id)?.accounts[tool]?.[0]).find(Boolean);
+    },
     check(decision, tool, account) {
       const need = list(decisions[decision]);
       const h = account ? holder(tool, account) : undefined;

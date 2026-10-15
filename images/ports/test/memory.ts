@@ -112,6 +112,17 @@ export function memoryTracker(user = 'factory-bot', keyPrefix = ''): Tracker & {
       async me() {
         return user;
       },
+      async assign(key, account) {
+        get(key).assignee = account;
+      },
+      async estimate(key, hours) {
+        get(key).estimateSeconds = Math.round(hours * 3600);
+      },
+      async logWork(key, seconds, comment) {
+        const i = get(key);
+        i.spentSeconds = (i.spentSeconds ?? 0) + Math.max(60, Math.round(seconds));
+        comments.set(key, [...(comments.get(key) ?? []), { author: user, body: comment, createdAt: now() }]);
+      },
     };
   };
   return { ...view(user), as: view };

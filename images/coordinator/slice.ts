@@ -33,7 +33,8 @@ ${context || '(нет)'}
   "goal": "что сделать и зачем, одно-два предложения",
   "scenarios": [{"name": "короткое имя", "given": "исходное состояние, можно опустить", "when": "действие", "result": "наблюдаемый результат"}],
   "outOfScope": ["что задача сознательно не делает"],
-  "basis": ["правило или решение проекта, на которое опирается задача, например ADR-3"]
+  "basis": ["правило или решение проекта, на которое опирается задача, например ADR-3"],
+  "estimateHours": "оценка работы исполнителя в часах, число от 0.5 до 16"
 }]}
 Сценариев приёмки у задачи 1-4, "given", "when" и "result" - с маленькой буквы и без точки в конце.`;
 }
@@ -93,6 +94,7 @@ export function sliceWorkflow(d: SliceDeps) {
           body: taskBody(t, `Из стори ${inputData.story}; нарезку утвердил ${inputData.by}.`),
           labels: inputData.agent ? [d.agentLabel] : [],
         });
+        if (t.estimateHours) await d.tracker.estimate(i.key, t.estimateHours).catch(() => undefined);
         await d.tracker.linkDependency(inputData.story, i.key);
         keys.push(i.key);
       }
