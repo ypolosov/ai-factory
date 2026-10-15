@@ -1,6 +1,7 @@
 // Цикл сверки требований: новые стори с меткой-триггером -> сценарий сверки; стори, которые
 // ждут решения, возобновляются, когда закрыты все задачи, от которых они зависят. Истина о
-// решении - в трекере, поэтому цикл переживает перезапуск координатора.
+// решении - в трекере, поэтому цикл переживает перезапуск координатора. Стори закрыли люди -
+// её ожидающая сверка отменяется: сверять нечего.
 import type { Tracker } from '../ports/ports.ts';
 import { message } from './errors.ts';
 import { admitIssue, type RoleRegistry } from './roles.ts';
@@ -42,6 +43,11 @@ export function storyLoop(d: StoryLoopDeps) {
     const { runs } = await d.workflow.listWorkflowRuns({ status: 'suspended' });
     for (const { runId, resourceId } of runs) {
       if (!resourceId) continue;
+      if ((await d.tracker.getIssue(resourceId)).state === 'closed') {
+        await (await d.workflow.createRun({ runId, resourceId })).cancel();
+        d.log(`${runId}: стори ${resourceId} закрыта - сверка отменена`);
+        continue;
+      }
       const deps = await d.tracker.listDependencies(resourceId);
       if (!deps.length) continue;
       const states = await Promise.all(deps.map(async (k) => (await d.tracker.getIssue(k)).state));

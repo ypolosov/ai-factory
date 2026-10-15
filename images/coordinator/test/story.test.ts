@@ -90,6 +90,25 @@ describe('сверка требования со знаниями', () => {
     expect(refreshed).toBeGreaterThanOrEqual(2);
   });
 
+  it('стори закрыли люди - ожидающая сверка отменяется, повтора нет', async () => {
+    docs[0] = {
+      path: 'docs/adr/ADR-3.md',
+      text: '# ADR-3\n\nРезультат воспроизводим из зерна; розыгрыш заново среди всех противоречит решению.',
+    };
+    const story = (await tracker.createIssue({ title: 'Розыгрыш заново 2', body: 'Разыграть заново среди всех', labels: ['story'] })).key;
+    await boot().tick();
+    const [task] = await tracker.listDependencies(story);
+    const comments = (await tracker.listComments(story)).length;
+    const before = posts.length;
+    await tracker.close(story); // след наладки - закрыт людьми
+    await tracker.close(task ?? '');
+    await boot().tick();
+    await boot().tick();
+    expect((await tracker.listComments(story)).length).toBe(comments);
+    expect(posts.length).toBe(before);
+    expect((await tracker.getIssue(story)).labels).toEqual(['needs-decision']);
+  });
+
   it('без противоречий - сразу согласовано', async () => {
     const story = (await tracker.createIssue({ title: 'Тёмная тема', body: 'Добавить тёмную тему', labels: ['story'] })).key;
     await boot().tick();
