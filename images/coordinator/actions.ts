@@ -5,11 +5,13 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { Forge, JobRunner, JobState, Tracker } from '../ports/ports.ts';
 import type { Git } from './git.ts';
-import { type GuardOptions, guardPatch, type Verdict } from './guard.ts';
+import { type GuardOptions, guardPatch, roleAllowed, type Verdict } from './guard.ts';
 import type { RunStore } from './runs.ts';
 
 export interface Labels {
-  trigger: string; // задача ждёт агента
+  trigger: string; // задача ждёт агента (роль dev - весь репозиторий)
+  // Метки ролей агента: метка -> роль (промпт роли в образе агента, пути роли - в .factory/config.yml цели).
+  roles?: Record<string, string>;
   running: string; // агент работает
   review: string; // PR открыт, решает человек
   failed: string; // агент или страж не дали результата
@@ -31,6 +33,7 @@ export interface Task {
   issue: string;
   title: string;
   body: string;
+  role?: string; // роль агента: dev, frontend, backend
 }
 
 export interface Dispatched {
@@ -53,10 +56,10 @@ const relabel = async (d: Deps, issue: string, from: string[], to: string) => {
   await d.tracker.addLabel(issue, to);
 };
 
-export async function claim(d: Deps, issue: string): Promise<Task> {
+export async function claim(d: Deps, issue: string, label = d.labels.trigger, role = 'dev'): Promise<Task> {
   const i = await d.tracker.getIssue(issue);
-  await relabel(d, issue, [d.labels.trigger], d.labels.running);
-  return { issue, title: i.title, body: i.body };
+  await relabel(d, issue, [label], d.labels.running);
+  return { issue, title: i.title, body: i.body, role };
 }
 
 // Спецификация задачи - изменение OpenSpec, утверждённое слиянием PR в базу: каталог
@@ -102,7 +105,14 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
     `# ${t.issue}: ${t.title}\n\n${t.body}\n${spec ? `\n## Спецификация: изменение OpenSpec ${spec.path} (утверждено слиянием)\n\nТесты - по сценариям требований и до кода; каталог openspec/ не меняй.\n\n${spec.text}\n` : ''}`,
   );
   const job = await d.jobs.start({ job: d.job, variables: { BROKER_URL: d.brokerUrl }, secrets: { RUN_TOKEN: token } });
-  d.runs.update(runId, { baseBranch, baseSha, jobId: job.id, jobUrl: job.url, ...(spec ? { spec: spec.path } : {}) });
+  d.runs.update(runId, {
+    baseBranch,
+    baseSha,
+    jobId: job.id,
+    jobUrl: job.url,
+    role: t.role ?? 'dev',
+    ...(spec ? { spec: spec.path } : {}),
+  });
   await d.tracker.addComment(t.issue, `Фабрика взяла задачу: запуск ${runId}, задание агента ${job.url}`);
   return { issue: t.issue, title: t.title, jobId: job.id, jobUrl: job.url };
 }
@@ -127,11 +137,12 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
   );
   // Настройки цели - из базы, а не из патча: агент их не меняет (защищённый путь).
   const configPath = join(d.runs.dir(runId), 'repo', '.factory', 'config.yml');
+  const config = existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined;
   const v = guardPatch(
     patch,
     exitCode,
-    d.guard,
-    existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined,
+    { ...d.guard, ...(meta.role ? { role: meta.role, allowed: roleAllowed(config, meta.role) } : {}) },
+    config,
     d.runs.read(runId, 'secrets.json')?.toString('utf8'),
     d.runs.read(runId, 'tests.json')?.toString('utf8'),
   );
