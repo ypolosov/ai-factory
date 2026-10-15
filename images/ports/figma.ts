@@ -25,6 +25,14 @@ export function parseFigmaLink(link: string): { key: string; node?: string; kind
   return { kind: m[1], key: m[2], ...(node ? { node } : {}) };
 }
 
+// Что рисовать на странице: первая рамка (Frame, компонент, секция), а если рамок нет - первый
+// видимый узел, например картинка макета, просто вставленная на страницу.
+const FRAMES = ['FRAME', 'COMPONENT', 'SECTION'];
+export function firstShown(children: Json[]): Json | undefined {
+  const shown = children.filter((n) => n.visible !== false);
+  return shown.find((n) => FRAMES.includes(String(n.type))) ?? shown[0];
+}
+
 export function figmaMockups(cfg: FigmaConfig): Mockups {
   const api = (cfg.api ?? 'https://api.figma.com').replace(/\/$/, '');
   async function call(path: string): Promise<Json> {
@@ -49,7 +57,7 @@ export function figmaMockups(cfg: FigmaConfig): Mockups {
       if (!node) {
         const file = await call(`/v1/files/${f.key}?depth=2`);
         const pages = ((file.document as Json | undefined)?.children as Json[] | undefined) ?? [];
-        node = String(((pages[0]?.children as Json[] | undefined) ?? []).find((n) => n.type === 'FRAME')?.id ?? '');
+        node = String(firstShown((pages[0]?.children as Json[] | undefined) ?? [])?.id ?? '');
         if (!node) throw new PortError('not_found', 'в файле нет рамок');
       }
       const render = async (id: string) =>
@@ -61,7 +69,7 @@ export function figmaMockups(cfg: FigmaConfig): Mockups {
         // Ссылка на страницу, а не на рамку: Figma страницы не рисует - берём первую рамку на ней.
         const nodes = await call(`/v1/files/${f.key}/nodes?ids=${encodeURIComponent(node)}&depth=1`);
         const doc = ((nodes.nodes as Json | undefined)?.[node] as Json | undefined)?.document as Json | undefined;
-        const frame = ((doc?.children as Json[] | undefined) ?? []).find((n) => ['FRAME', 'COMPONENT', 'SECTION'].includes(String(n.type)));
+        const frame = firstShown((doc?.children as Json[] | undefined) ?? []);
         if (!frame)
           throw new PortError('not_found', `на странице Figma "${String(doc?.name ?? node)}" нет рамок - добавьте макет рамкой (Frame)`);
         node = String(frame.id);
