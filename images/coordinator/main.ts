@@ -68,7 +68,10 @@ const deps: Deps = {
 // Знание для сверки - рабочая копия ветки по умолчанию цели; ссылки - на её коммит.
 const knowledgeDir = join(cfg.data, 'knowledge');
 // Чат команды: бот фабрики и уведомления; без бота - вебхук или ничего.
-const chat = cfg.chat ? selectChat({ ...cfg.chat, log }) : undefined;
+// Чужого бота бот фабрики слышит, только если он держатель ролей в реестре (ИИ-персонаж).
+const chat = cfg.chat
+  ? selectChat({ ...cfg.chat, log, allowBot: async (id) => !!(await roles()).holder(cfg.chat?.kind ?? 'discord', id) })
+  : undefined;
 let knowledgeSha = 'HEAD';
 const stories: StoryDeps = {
   tracker: deps.tracker,
