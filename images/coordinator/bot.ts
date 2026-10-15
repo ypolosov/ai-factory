@@ -23,6 +23,7 @@ export interface BotDeps {
   proposeRule?(): Promise<string>; // правило-кандидат из повторяющихся замечаний
   slice?: { propose(story: string): Promise<string>; approve(story: string, by: string, agent: boolean): Promise<string> };
   e2e?(channel: string): Promise<string>; // сквозные проверки цели на стенде
+  ci?(channel: string, pr?: number): Promise<string>; // перезапуск CI цели на её платформе
   design?(issue: string, m: ChatMessage): Promise<string>; // сверка макета с задачей
   log(message: string): void;
 }
@@ -36,6 +37,7 @@ export const HELP = `Я бот фабрики. Спросите меня (упо
 !правила - сверщик ищет повторяющиеся замечания к PR и предлагает правило
 !нарезка DRAW-N - предложить задачи по стори; !утвердить DRAW-N [agent] - завести их
 !e2e - перезапустить сквозные проверки цели на стенде; итог - сюда же
+!ci [номер PR] - перезапустить CI цели (GitHub Actions) для PR или ветки по умолчанию
 !макет DRAW-N [ссылка на рамку Figma] - сверить макет с задачей (или приложите картинку PNG)`;
 
 const STATES: [string, string][] = [
@@ -72,6 +74,8 @@ export async function answer(d: BotDeps, m: ChatMessage): Promise<string | undef
   if (d.account && /^!(учёт|учет|account)(\s|$)/i.test(text)) return d.account();
   if (d.proposeRule && /^!(правила|rules)(\s|$)/i.test(text)) return d.proposeRule();
   if (d.e2e && /^!e2e(\s|$)/i.test(text)) return d.e2e(m.channel);
+  const ci = /^!ci(?:\s+#?(\d+))?\s*$/i.exec(text);
+  if (d.ci && ci) return d.ci(m.channel, ci[1] ? Number(ci[1]) : undefined);
   const design = /^!(макет|design)\s+([A-Z][A-Z0-9]*-\d+)/i.exec(text)?.[2];
   if (d.design && design) return d.design(design.toUpperCase(), m);
   const slice = /^!(нарезка|slice)\s+([A-Z][A-Z0-9]*-\d+)\s*$/i.exec(text)?.[2];

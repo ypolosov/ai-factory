@@ -1,6 +1,16 @@
 // Адаптер GitHub для порта хостинга (REST API v3). Носитель платформы цели в демо;
 // трекер у цели - Jira, поэтому порта трекера здесь нет. Токен - fine-grained на репозиторий.
-import { type Comment, type CommitStatus, type Forge, PortError, type Pull, type Review, type StatusState } from './ports.ts';
+import {
+  type CiRun,
+  type Comment,
+  type CommitStatus,
+  type Forge,
+  PortError,
+  type Pull,
+  type Review,
+  type StatusState,
+  type TargetCi,
+} from './ports.ts';
 
 export interface GithubConfig {
   repo: string; // "владелец/имя"
@@ -176,4 +186,33 @@ export function githubForge(cfg: GithubConfig): Forge {
     },
   };
   return forge;
+}
+
+const ciState = (r: Json): CiRun['state'] => {
+  if (r.status !== 'completed') return r.status === 'in_progress' ? 'running' : 'pending';
+  return r.conclusion === 'success' ? 'success' : r.conclusion === 'cancelled' ? 'cancelled' : 'failed';
+};
+
+const toRun = (r: Json): CiRun => ({
+  id: String(r.id),
+  name: String(r.name ?? ''),
+  url: String(r.html_url ?? ''),
+  state: ciState(r),
+  attempt: Number(r.run_attempt ?? 1),
+});
+
+// CI цели в GitHub Actions; токену нужно право Actions: Read and write.
+export function githubCi(cfg: GithubConfig): TargetCi {
+  const api = client(cfg);
+  return {
+    async runs(sha) {
+      return ((await api.json('GET', `/actions/runs?head_sha=${encodeURIComponent(sha)}&per_page=20`)).workflow_runs as Json[]).map(toRun);
+    },
+    async run(id) {
+      return toRun(await api.json('GET', `/actions/runs/${encodeURIComponent(id)}`));
+    },
+    async rerun(id) {
+      await api.json('POST', `/actions/runs/${encodeURIComponent(id)}/rerun`, {});
+    },
+  };
 }

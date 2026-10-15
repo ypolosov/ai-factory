@@ -13,6 +13,7 @@ import {
   selectMockups,
   selectNotifier,
   selectRegistry,
+  selectTargetCi,
   selectTracker,
   selectWiki,
 } from '../ports/select.ts';
@@ -22,6 +23,7 @@ import type { Deps } from './actions.ts';
 import { chatBot, gatewayLibrarian } from './bot.ts';
 import { broker } from './broker.ts';
 import { checkLoop } from './checks.ts';
+import { ciRerun } from './ci-rerun.ts';
 import { loadConfig, stepEnvFor } from './config.ts';
 import { coordinator } from './coordinator.ts';
 import { designHandler, startDesign } from './design.ts';
@@ -177,6 +179,19 @@ const checkDeps = {
   brokerUrl: cfg.broker.url,
   pipeline: (kind: string) => (kind === 'e2e' ? 'e2e-stand' : cfg.job),
 };
+const targetCi = selectTargetCi(cfg.forge);
+const ciReruns = targetCi
+  ? ciRerun({
+      ci: targetCi,
+      forge: deps.forge,
+      post: async (channel, text) => {
+        if (chat) await chat.post(channel, text);
+        else log(text);
+      },
+      stateFile: join(cfg.data, 'ci-reruns.json'),
+      log,
+    })
+  : undefined;
 const bot = chat
   ? chatBot({
       chat,
@@ -202,6 +217,7 @@ const bot = chat
           issue,
           m,
         ),
+      ...(ciReruns ? { ci: (channel: string, pr?: number) => ciReruns.request(channel, pr) } : {}),
       e2e: (channel) =>
         startStandE2e(
           {
@@ -263,6 +279,7 @@ const tick = async () => {
   await incidents?.tick();
   await judges.tick();
   await checks.tick();
+  await ciReruns?.tick();
 };
 
 const server = broker({

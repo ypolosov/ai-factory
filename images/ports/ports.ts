@@ -222,3 +222,18 @@ export interface Incidents {
 export interface Mockups {
   render(link: string): Promise<{ png: Uint8Array; source: string }>;
 }
+
+export interface CiRun {
+  id: string;
+  name: string;
+  url: string;
+  state: 'pending' | 'running' | 'success' | 'failed' | 'cancelled';
+  attempt: number; // номер попытки: перезапуск увеличивает
+}
+
+// CI цели на её платформе (GitHub Actions): прогоны коммита и перезапуск прогона.
+export interface TargetCi {
+  runs(sha: string): Promise<CiRun[]>;
+  run(id: string): Promise<CiRun>;
+  rerun(id: string): Promise<void>;
+}

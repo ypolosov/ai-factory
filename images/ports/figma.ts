@@ -1,5 +1,6 @@
 // Адаптер макетов Figma (REST API): картинка рамки по ссылке figma.com/design/<ключ>/...?node-id=1-2.
-// Без node-id - первая рамка первой страницы (ещё один запрос). Бесплатный план даёт мало
+// Без node-id - первая рамка первой страницы, ссылка на страницу - первая рамка на ней (ещё
+// один запрос). Бесплатный план даёт мало
 // запросов в месяц, поэтому одна сверка - один-два запроса. Файлы Figma Make API не отдаёт.
 import { type Mockups, PortError } from './ports.ts';
 
@@ -51,8 +52,21 @@ export function figmaMockups(cfg: FigmaConfig): Mockups {
         node = String(((pages[0]?.children as Json[] | undefined) ?? []).find((n) => n.type === 'FRAME')?.id ?? '');
         if (!node) throw new PortError('not_found', 'в файле нет рамок');
       }
-      const img = await call(`/v1/images/${f.key}?ids=${encodeURIComponent(node)}&format=png&scale=1`);
-      const url = String((img.images as Json | undefined)?.[node] ?? '');
+      const render = async (id: string) =>
+        String(
+          ((await call(`/v1/images/${f.key}?ids=${encodeURIComponent(id)}&format=png&scale=1`)).images as Json | undefined)?.[id] ?? '',
+        );
+      let url = await render(node);
+      if (!url) {
+        // Ссылка на страницу, а не на рамку: Figma страницы не рисует - берём первую рамку на ней.
+        const nodes = await call(`/v1/files/${f.key}/nodes?ids=${encodeURIComponent(node)}&depth=1`);
+        const doc = ((nodes.nodes as Json | undefined)?.[node] as Json | undefined)?.document as Json | undefined;
+        const frame = ((doc?.children as Json[] | undefined) ?? []).find((n) => ['FRAME', 'COMPONENT', 'SECTION'].includes(String(n.type)));
+        if (!frame)
+          throw new PortError('not_found', `на странице Figma "${String(doc?.name ?? node)}" нет рамок - добавьте макет рамкой (Frame)`);
+        node = String(frame.id);
+        url = await render(node);
+      }
       if (!url) throw new PortError('not_found', `Figma не отрисовал рамку ${node}`);
       const png = new Uint8Array(await (await fetch(url)).arrayBuffer());
       return { png, source: `https://www.figma.com/design/${f.key}/?node-id=${node.replace(/:/g, '-')}` };

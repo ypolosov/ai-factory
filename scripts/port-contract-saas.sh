@@ -40,7 +40,7 @@ if [ "$only" = all ] || [ "$only" = github ]; then
 		printf 'GITHUB_TEST_REPO=%s\n' "${GITHUB_CONTRACT_REPO:-ypolosov/factory-contract-tests}"
 		printf 'GITHUB_TEST_TOKEN=%s\n' "$GITHUB_PUBLISH_TOKEN"
 	} >>"$tmp/test.env"
-	files="$files images/ports/test/github.test.ts"
+	files="$files images/ports/test/github.test.ts images/ports/test/github-ci.test.ts"
 fi
 if [ "$only" = all ] || [ "$only" = confluence ]; then
 	sed 's/\r$//' "$state/atlassian.env" >"$tmp/env"

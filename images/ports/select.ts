@@ -7,10 +7,10 @@ import { type FigmaConfig, figmaMockups } from './figma.ts';
 import { type ForgejoConfig, forgejoForge, forgejoTracker } from './forgejo.ts';
 import { type GhcrConfig, ghcrRegistry } from './ghcr.ts';
 import { type GitDocsConfig, gitDocsKnowledge } from './gitdocs.ts';
-import { type GithubConfig, githubForge } from './github.ts';
+import { type GithubConfig, githubCi, githubForge } from './github.ts';
 import { type GlitchtipConfig, glitchtipIncidents } from './glitchtip.ts';
 import { type JiraConfig, jiraTracker } from './jira.ts';
-import type { Chat, Forge, Incidents, JobRunner, Knowledge, Mockups, Notifier, Registry, Tracker, Wiki } from './ports.ts';
+import type { Chat, Forge, Incidents, JobRunner, Knowledge, Mockups, Notifier, Registry, TargetCi, Tracker, Wiki } from './ports.ts';
 
 export type TrackerConfig = ({ kind: 'jira' } & JiraConfig) | ({ kind: 'forgejo' } & ForgejoConfig);
 export type ForgeConfig = ({ kind: 'github' } & GithubConfig) | ({ kind: 'forgejo' } & ForgejoConfig);
@@ -61,4 +61,8 @@ export function selectIncidents(c: IncidentsConfig): Incidents {
 
 export function selectMockups(c: MockupsConfig): Mockups {
   return figmaMockups(c);
+}
+
+export function selectTargetCi(c: ForgeConfig): TargetCi | undefined {
+  return c.kind === 'github' ? githubCi(c) : undefined;
 }
