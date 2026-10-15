@@ -26,6 +26,7 @@ import { checkLoop } from './checks.ts';
 import { ciRerun } from './ci-rerun.ts';
 import { loadConfig, stepEnvFor } from './config.ts';
 import { coordinator } from './coordinator.ts';
+import { deliveryLoop } from './delivery.ts';
 import { designHandler, startDesign } from './design.ts';
 import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
@@ -291,6 +292,17 @@ const checks = checkLoop({
   },
   log,
 });
+// Доставка: задача агента закрывается, когда её изменение слито и выложено на стенд.
+const delivery = deliveryLoop({
+  forge: deps.forge,
+  tracker: deps.tracker,
+  review: cfg.labels.review,
+  post: async (text) => {
+    if (chat) await chat.post(cfg.devChannel, text);
+    else log(text);
+  },
+  log,
+});
 // Стори из Confluence (метка story) -> стори в Jira на сверку; итог - на страницу.
 const wikiStoryLoop = wikiStories({
   wiki: releases.wiki,
@@ -308,6 +320,7 @@ const tick = async () => {
   await pulls.tick();
   await releaseChecks.tick();
   await incidents?.tick();
+  await delivery.tick();
   await judges.tick();
   await scans.tick();
   await checks.tick();
