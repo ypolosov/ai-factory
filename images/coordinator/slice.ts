@@ -4,6 +4,7 @@ import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
 import type { Knowledge, Tracker } from '../ports/ports.ts';
 import type { Ask } from './llm.ts';
+import { jsonOf, type TaskSpec, taskBody, taskLine, taskSpec } from './templates.ts';
 
 export interface SliceDeps {
   tracker: Tracker;
@@ -13,13 +14,12 @@ export interface SliceDeps {
   agentLabel: string;
 }
 
-const task = z.object({ title: z.string(), body: z.string() });
-type Task = z.infer<typeof task>;
+const task = taskSpec;
+type Task = TaskSpec;
 
 export function slicePrompt(title: string, body: string, context: string): string {
   return `Ты - аналитик команды. Нарежь стори на 2-6 задач разработки, каждую - на одного исполнителя и один PR:
-API, экран, сквозная проверка, документ. В описании задачи - что сделать и признак готовности. Учитывай правила
-и решения проекта ниже, не противоречь им.
+API, экран, сквозная проверка, документ. Учитывай правила и решения проекта ниже, не противоречь им.
 
 Стори: ${title}
 ${body}
@@ -27,15 +27,29 @@ ${body}
 Правила и решения проекта:
 ${context || '(нет)'}
 
-Ответь только JSON: {"tasks": [{"title": "короткое название по-русски", "body": "что сделать; готово, когда ..."}]}`;
+Ответь только JSON, все строки - по-русски:
+{"tasks": [{
+  "title": "глагол и объект, до 80 знаков",
+  "goal": "что сделать и зачем, одно-два предложения",
+  "scenarios": [{"name": "короткое имя", "given": "исходное состояние, можно опустить", "when": "действие", "result": "наблюдаемый результат"}],
+  "outOfScope": ["что задача сознательно не делает"],
+  "basis": ["правило или решение проекта, на которое опирается задача, например ADR-3"]
+}]}
+Сценариев приёмки у задачи 1-4, "given", "when" и "result" - с маленькой буквы и без точки в конце.`;
 }
 
 export function parseTasks(content: string): Task[] {
-  const raw = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1)) as { tasks?: unknown[] };
+  const raw = jsonOf(content) as { tasks?: unknown[] };
   const tasks = (raw.tasks ?? [])
     .map((t) => task.safeParse(t))
     .filter((r) => r.success)
-    .map((r) => ({ title: r.data.title.slice(0, 200), body: r.data.body }))
+    .map(({ data: t }) => ({
+      ...t,
+      title: t.title.slice(0, 200),
+      scenarios: t.scenarios.slice(0, 4),
+      outOfScope: t.outOfScope.slice(0, 3),
+      basis: t.basis.slice(0, 3),
+    }))
     .slice(0, 6);
   if (tasks.length < 2) throw new Error('сверщик не предложил хотя бы двух задач');
   return tasks;
@@ -76,7 +90,7 @@ export function sliceWorkflow(d: SliceDeps) {
       for (const t of inputData.tasks) {
         const i = await d.tracker.createIssue({
           title: t.title,
-          body: `${t.body}\n\nИз стори ${inputData.story}; нарезку утвердил ${inputData.by}.`,
+          body: taskBody(t, `Из стори ${inputData.story}; нарезку утвердил ${inputData.by}.`),
           labels: inputData.agent ? [d.agentLabel] : [],
         });
         await d.tracker.linkDependency(inputData.story, i.key);
@@ -105,7 +119,7 @@ type Result = { status: string; error?: unknown; result?: unknown; steps?: Recor
 
 // Команды PM в чате: предложить нарезку и утвердить её.
 export function slicer(workflow: SliceWorkflow) {
-  const list = (tasks: Task[]) => tasks.map((t, i) => `${i + 1}. ${t.title} - ${t.body}`).join('\n');
+  const list = (tasks: Task[]) => tasks.map((t, i) => taskLine(t, i + 1)).join('\n');
   return {
     async propose(story: string): Promise<string> {
       const old = await workflow.getWorkflowRunById(runId(story));

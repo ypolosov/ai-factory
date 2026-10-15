@@ -5,6 +5,7 @@ import type { Chat, ChatMessage, Forge, Knowledge, Passage, Tracker } from '../p
 import { VERDICT_KEY } from './actions.ts';
 import type { Ask } from './llm.ts';
 import { type Decision, type RoleRegistry, refusal } from './roles.ts';
+import { jsonOf, type LibrarianAnswer, librarianAnswer, librarianText } from './templates.ts';
 
 export interface Librarian {
   answer(question: string, passages: Passage[]): Promise<string>;
@@ -128,20 +129,30 @@ export function chatBot(d: BotDeps) {
   });
 }
 
-// Ответ только по отрывкам, со ссылками [n]; список источников добавляется всегда.
+// Ответ только по отрывкам, со ссылками [n], по шаблону "коротко, подробнее, источники".
 export function gatewayLibrarian(ask: Ask): Librarian {
   return {
     async answer(question, passages) {
       const list = passages.map((p, i) => `[${i + 1}] ${p.source} - ${p.title}\n${p.text}`).join('\n\n');
-      const prompt = `Ты - библиотекарь проекта. Ответь на вопрос кратко, по-русски, только по отрывкам ниже.
-После каждого утверждения поставь номер отрывка в скобках, например [2]. Если в отрывках ответа нет - так и скажи.
+      const prompt = `Ты - библиотекарь проекта. Ответь на вопрос по-русски, только по отрывкам ниже.
+После каждого утверждения поставь номер отрывка в скобках, например [2].
 
 Вопрос: ${question}
 
 Отрывки:
-${list}`;
-      const text = (await ask(prompt, 'chat-librarian')).trim() || 'Ответа нет.';
-      return `${text}\n\nИсточники:\n${passages.map((p, i) => `[${i + 1}] ${p.title} - <${p.url}>`).join('\n')}`;
+${list}
+
+Ответь только JSON: {"found": true или false - есть ли ответ в отрывках, "short": "ответ одним-двумя
+предложениями", "details": ["до пяти подробностей, каждая со ссылкой [n]"]}`;
+      const content = await ask(prompt, 'chat-librarian');
+      let a: LibrarianAnswer;
+      try {
+        a = librarianAnswer.parse(jsonOf(content));
+      } catch {
+        // Модель ответила не по схеме - её текст идёт в "коротко", форма ответа та же.
+        a = { found: !!content.trim(), short: content.trim().slice(0, 600), details: [] };
+      }
+      return librarianText(a, passages);
     },
   };
 }
