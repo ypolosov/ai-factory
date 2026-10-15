@@ -3,6 +3,8 @@
 # посредника координатора задачу, рабочую копию и ключи, запускает factory-agent и сдаёт итог.
 #
 # Вход:  BROKER_URL, RUN_TOKEN - разовый ключ запуска (у исполнителя - скрытая переменная).
+#        Вид задания - FACTORY_JOB от посредника: agent (по умолчанию), judge (судья PR),
+#        design (сверка макета).
 # Выход: agent.patch, run.json, agent.log, secrets.json (находки Gitleaks в добавленных строках,
 #        значения скрыты) и код агента - у посредника; код шага = код агента.
 # Ключи шага (подписка, шлюз) приходят только от посредника, не печатаются и живут в окружении
@@ -20,9 +22,47 @@ broker() { curl -fsS --noproxy '*' -H @"$work/auth" "$@"; }
 
 broker -o "$work/env.json" "$BROKER_URL/v1/env"
 broker -o "$work/task.md" "$BROKER_URL/v1/task"
-broker -o "$work/repo.bundle" "$BROKER_URL/v1/repo"
 eval "$(jq -r 'to_entries[] | select(.key | test("^[A-Z][A-Z0-9_]*$")) | "export \(.key)=\(.value | @sh)"' "$work/env.json")"
 rm -f "$work/env.json"
+mkdir -p "$work/out"
+
+# upload ФАЙЛ... - сдать файлы итога посреднику (каких нет - пропустить).
+upload() {
+	for f in "$@"; do
+		[ ! -f "$work/out/$f" ] || broker -X PUT --data-binary @"$work/out/$f" "$BROKER_URL/v1/files/$f"
+	done
+}
+finish() {
+	broker -X POST -H 'content-type: application/json' --data "{\"exit_code\":$1}" "$BROKER_URL/v1/done"
+	echo "задание ${FACTORY_JOB:-agent} закончено с кодом $1"
+	exit "$1"
+}
+
+case ${FACTORY_JOB:-agent} in
+judge)
+	# Судья PR: дифф - вход проверки, ответ - JSON по схеме судьи (factory-judge).
+	broker -o "$work/input.patch" "$BROKER_URL/v1/input"
+	set +e
+	GATEWAY_KEY=$GATEWAY_KEY_SUB factory-judge "$FACTORY_EXECUTOR" "$FACTORY_MODEL" "$work/task.md" "$work/input.patch" \
+		"$work/out/result.json" 2>"$work/out/agent.log"
+	rc=$?
+	set -e
+	upload result.json agent.log
+	finish "$rc"
+	;;
+design)
+	# Сверка макета: картинка макета - вход проверки, требования - в задаче (factory-design).
+	broker -o "$work/input.png" "$BROKER_URL/v1/input"
+	set +e
+	GATEWAY_KEY=$GATEWAY_KEY_SUB factory-design "$FACTORY_MODEL" "$work/task.md" "$work/input.png" "$work/out/result.json" 2>"$work/out/agent.log"
+	rc=$?
+	set -e
+	upload result.json agent.log
+	finish "$rc"
+	;;
+esac
+
+broker -o "$work/repo.bundle" "$BROKER_URL/v1/repo"
 git clone -q "$work/repo.bundle" "$work/repo"
 
 set +e
@@ -35,9 +75,5 @@ if [ -s "$work/out/agent.patch" ]; then
 		gitleaks stdin --no-banner --redact --exit-code 0 --config /etc/factory/checks/gitleaks.toml \
 			--report-format json --report-path "$work/out/secrets.json" >/dev/null 2>&1 || true
 fi
-for f in agent.patch run.json agent.log secrets.json; do
-	[ ! -f "$work/out/$f" ] || broker -X PUT --data-binary @"$work/out/$f" "$BROKER_URL/v1/files/$f"
-done
-broker -X POST -H 'content-type: application/json' --data "{\"exit_code\":$rc}" "$BROKER_URL/v1/done"
-echo "агент закончил с кодом $rc"
-exit "$rc"
+upload agent.patch run.json agent.log secrets.json
+finish "$rc"

@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["matches", "score", "summary", "remarks"],
+  "properties": {
+    "matches": { "type": "boolean" },
+    "score": { "type": "integer" },
+    "summary": { "type": "string" },
+    "remarks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["area", "issue", "requirement"],
+        "properties": {
+          "area": { "type": "string" },
+          "issue": { "type": "string" },
+          "requirement": { "type": "string" }
+        }
+      }
+    }
+  }
+}

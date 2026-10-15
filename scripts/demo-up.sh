@@ -16,6 +16,12 @@ for f in atlassian.env bitbucket.env github-target.env claude-oauth.token gw-age
 	}
 	cmp -s "$state/$f" "$dst/$f" || (umask 077 && cp "$state/$f" "$dst/$f")
 done
+# Вход Codex по подписке - судье PR и сверке макета (другое семейство моделей, чем агент).
+[ -s "$state/codex/auth.json" ] || {
+	echo "нет $state/codex/auth.json: вход Codex фабрики (README, раздел о подписках)" >&2
+	exit 1
+}
+cmp -s "$state/codex/auth.json" "$dst/codex-auth.json" || (umask 077 && cp "$state/codex/auth.json" "$dst/codex-auth.json")
 mkdir -p "$state/cd"
 chmod 700 "$state/cd"
 # Ключ MCP фабрики для экзокортексов (Authorization: Bearer).

@@ -4,9 +4,10 @@
 //
 // Запросы - с заголовком "Authorization: Bearer <ключ запуска>":
 //   GET  /v1/task              текст задачи
-//   GET  /v1/repo              рабочая копия цели (git bundle)
+//   GET  /v1/repo              рабочая копия цели (git bundle или архив tar.gz)
+//   GET  /v1/input             вход проверки (дифф PR, картинка макета)
 //   GET  /v1/env               переменные шага с ключами (JSON); выдаются один раз
-//   PUT  /v1/files/<имя>       agent.patch, run.json, agent.log, secrets.json
+//   PUT  /v1/files/<имя>       agent.patch, run.json, agent.log, secrets.json, result.json
 //   POST /v1/done              {"exit_code": N} - шаг закончил; после этого запуск только читается
 //   GET  /healthz              без ключа
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -20,7 +21,7 @@ export interface BrokerOptions {
   maxUpload?: number; // байт на файл, по умолчанию 10 МБ
 }
 
-const UPLOADS: RunFile[] = ['agent.patch', 'run.json', 'agent.log', 'secrets.json'];
+const UPLOADS: RunFile[] = ['agent.patch', 'run.json', 'agent.log', 'secrets.json', 'result.json'];
 
 class HttpError extends Error {
   readonly status: number;
@@ -55,8 +56,13 @@ export function broker(o: BrokerOptions): Server {
       const meta = token ? o.runs.byToken(token) : undefined;
       if (!meta) throw new HttpError(401, 'нет ключа запуска или он истёк');
       const route = `${req.method} ${url.pathname}`;
-      if (route === 'GET /v1/task' || route === 'GET /v1/repo') {
-        const file = o.runs.read(meta.runId, route === 'GET /v1/task' ? 'task.md' : 'repo.bundle');
+      if (route === 'GET /v1/task' || route === 'GET /v1/repo' || route === 'GET /v1/input') {
+        const file =
+          route === 'GET /v1/task'
+            ? o.runs.read(meta.runId, 'task.md')
+            : route === 'GET /v1/input'
+              ? o.runs.read(meta.runId, 'input')
+              : (o.runs.read(meta.runId, 'repo.bundle') ?? o.runs.read(meta.runId, 'repo.tar.gz'));
         if (!file) throw new HttpError(404, 'нет данных запуска');
         return send(200, file, route === 'GET /v1/task' ? 'text/markdown; charset=utf-8' : 'application/octet-stream');
       }

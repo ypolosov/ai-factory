@@ -20,7 +20,8 @@ import { account, accountText, gatewayUsage } from './accounting.ts';
 import type { Deps } from './actions.ts';
 import { chatBot, gatewayLibrarian } from './bot.ts';
 import { broker } from './broker.ts';
-import { loadConfig } from './config.ts';
+import { checkLoop } from './checks.ts';
+import { loadConfig, stepEnvFor } from './config.ts';
 import { coordinator } from './coordinator.ts';
 import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
@@ -28,6 +29,7 @@ import { incidentLoop } from './incidents.ts';
 import { gatewayJudge } from './judge.ts';
 import { gatewayAsk } from './llm.ts';
 import { mcpHttp } from './mcp.ts';
+import { judgeHandler, prJudge } from './pr-judge.ts';
 import { pullGuard } from './pull-guard.ts';
 import { missingImages, notes, type ReleaseDeps } from './release.ts';
 import { releaseLoop } from './release-loop.ts';
@@ -186,17 +188,28 @@ const bot = chat
       log,
     })
   : undefined;
+// Проверки на раннере: судья PR (Codex) и разбор итогов проверок.
+const checkDeps = {
+  runs,
+  jobs: deps.jobs,
+  brokerUrl: cfg.broker.url,
+  pipeline: (kind: string) => (kind === 'e2e' ? 'e2e-stand' : cfg.job),
+};
+const judges = prJudge({ ...checkDeps, forge: deps.forge, tracker: deps.tracker, log });
+const checks = checkLoop({ runs, jobs: deps.jobs, handlers: { judge: judgeHandler(deps.forge) }, log });
 const tick = async () => {
   await loop.tick();
   await storyChecks.tick();
   await pulls.tick();
   await releaseChecks.tick();
   await incidents?.tick();
+  await judges.tick();
+  await checks.tick();
 };
 
 const server = broker({
   runs,
-  env: (m) => ({ ...cfg.stepEnv, TASK_ID: m.runId, ...cfg.stepSecrets() }),
+  env: (m) => stepEnvFor(cfg, m),
   onDone: (m) => {
     log(`${m.runId}: шаг сдал итог`);
     setTimeout(() => void loop.tick(), 5000);

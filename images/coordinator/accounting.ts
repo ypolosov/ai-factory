@@ -48,7 +48,7 @@ export interface AccountRow {
 export async function account(d: { runs: RunStore; forge: Forge; usage: UsageSource }): Promise<AccountRow[]> {
   const byIssue = new Map<string, AccountRow>();
   const pulls = await d.forge.listPulls({ state: 'all', limit: 100 });
-  for (const meta of d.runs.list()) {
+  for (const meta of d.runs.list().filter((m) => !m.kind || m.kind === 'agent')) {
     const row = byIssue.get(meta.issue) ?? {
       issue: meta.issue,
       attempts: 0,

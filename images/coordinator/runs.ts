@@ -15,12 +15,28 @@ export interface RunMeta {
   baseSha?: string;
   jobId?: string;
   jobUrl?: string;
+  // Вид задания: агент (по умолчанию) или проверка - судья PR, сверка макета, e2e на стенде.
+  kind?: RunKind;
+  subject?: string; // что проверяет проверка: PR и коммит, задача, коммит стенда
+  reported?: boolean; // итог проверки уже разобран
 }
 
-export type RunFile = 'task.md' | 'repo.bundle' | 'agent.patch' | 'run.json' | 'agent.log' | 'secrets.json' | 'done.json';
+export type RunKind = 'agent' | 'judge' | 'design' | 'e2e';
+
+export type RunFile =
+  | 'task.md'
+  | 'repo.bundle'
+  | 'repo.tar.gz'
+  | 'input'
+  | 'agent.patch'
+  | 'run.json'
+  | 'agent.log'
+  | 'secrets.json'
+  | 'result.json'
+  | 'done.json';
 
 export interface RunStore {
-  create(runId: string, issue: string): { meta: RunMeta; token: string };
+  create(runId: string, issue: string, extra?: Pick<RunMeta, 'kind' | 'subject'>): { meta: RunMeta; token: string };
   meta(runId: string): RunMeta | undefined;
   list(): RunMeta[]; // все запуски, старые первыми
   update(runId: string, patch: Partial<RunMeta>): RunMeta;
@@ -44,11 +60,19 @@ export function runStore(root: string, ttlMs = 3 * 60 * 60 * 1000): RunStore {
     existsSync(metaPath(runId)) ? (JSON.parse(readFileSync(metaPath(runId), 'utf8')) as RunMeta) : undefined;
   const save = (m: RunMeta) => writeFileSync(metaPath(m.runId), JSON.stringify(m, null, 2), { mode: 0o600 });
   return {
-    create(runId, issue) {
+    create(runId, issue, extra = {}) {
       if (meta(runId)) throw new Error(`запуск ${runId} уже есть`);
       mkdirSync(dir(runId), { recursive: true, mode: 0o700 });
       const token = randomBytes(32).toString('hex');
-      const m: RunMeta = { runId, issue, tokenHash: hash(token), createdAt: new Date().toISOString(), envServed: false, done: false };
+      const m: RunMeta = {
+        runId,
+        issue,
+        tokenHash: hash(token),
+        createdAt: new Date().toISOString(),
+        envServed: false,
+        done: false,
+        ...extra,
+      };
       save(m);
       return { meta: m, token };
     },

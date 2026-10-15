@@ -1,0 +1,44 @@
+#!/bin/sh
+# Сверка макета: картинка экрана из Figma сверяется с требованиями задачи моделью Codex по
+# подписке (умеет картинки), без инструментов. Ответ - JSON по схеме
+# /etc/factory/prompts/design.schema.json (matches, score, summary, remarks). Обвязка работает
+# через factory-untrusted: от пользователя node, с ключом шлюза подписок и входом своей подписки.
+#
+# Использование: factory-design МОДЕЛЬ ЗАДАЧА.md КАРТИНКА.png ВЫХОД.json
+# Окружение: GATEWAY_URL, GATEWAY_KEY (ключ подписок), TASK_ID, CODEX_AUTH_JSON.
+set -eu
+[ $# -eq 4 ] || { echo "использование: factory-design МОДЕЛЬ ЗАДАЧА.md КАРТИНКА.png ВЫХОД.json" >&2 && exit 2; }
+model=$1
+task=$2
+image=$3
+out=$4
+: "${GATEWAY_URL:?}" "${GATEWAY_KEY:?}" "${TASK_ID:?}" "${CODEX_AUTH_JSON:?}"
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+{
+	cat /etc/factory/prompts/design.md
+	printf '\n--- задача и правила ---\n'
+	head -c 12000 "$task"
+} >"$work/prompt.md"
+cp "$image" "$work/mockup.png"
+cp /etc/factory/prompts/design.schema.json "$work/schema.json"
+chown -R node:node "$work"
+chmod 700 "$work"
+auth=/home/node/.codex/auth.json
+install -d -m 700 -o node -g node /home/node/.codex
+(umask 077 && printf '%s' "$CODEX_AUTH_JSON" >"$auth")
+chown node:node "$auth"
+set --
+[ "$model" = default ] || set -- -m "$model"
+gw="-e GATEWAY_URL -e GATEWAY_KEY -e TASK_ID"
+# shellcheck disable=SC2086 # список флагов через пробел
+(cd "$work" && factory-untrusted $gw codex exec --skip-git-repo-check --ephemeral --sandbox read-only "$@" \
+	-c model_provider=gw \
+	-c "model_providers.gw={name=\"gateway\",base_url=\"$GATEWAY_URL/v1\",wire_api=\"responses\",requires_openai_auth=true,env_http_headers={\"x-gateway-key\"=\"GATEWAY_KEY\",\"x-task-id\"=\"TASK_ID\"}}" \
+	-i mockup.png --output-schema schema.json -o last.json <prompt.md >codex.log 2>&1) || {
+	tail -n 20 "$work/codex.log" >&2
+	exit 1
+}
+jq -e 'select(type == "object")' "$work/last.json" >"$out"
+jq -c '{matches, score, n_remarks: (.remarks | length)}' "$out" >&2

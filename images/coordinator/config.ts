@@ -7,6 +7,7 @@ import type { ChatConfig, ForgeConfig, IncidentsConfig, JobsConfig, NotifierConf
 import type { Labels } from './actions.ts';
 import type { GitConfig } from './git.ts';
 import type { GatewayModelConfig } from './llm.ts';
+import type { RunMeta } from './runs.ts';
 import type { StoryLabels } from './story.ts';
 
 export interface Config {
@@ -43,6 +44,40 @@ export interface Config {
   // Переменные шага без ключей и с ключами.
   stepEnv: Record<string, string>;
   stepSecrets(): Record<string, string>;
+  // Проверки на раннере: судья и сверка макета - Codex по подписке (другое семейство, чем
+  // агент); e2e - по адресу стенда в сети шагов.
+  judgeModel: string;
+  codexAuth(): string;
+  e2eBaseUrl: string;
+  proxy: string;
+}
+
+// Переменные шага по виду задания: каждому - только свои ключи.
+export function stepEnvFor(cfg: Config, m: RunMeta): Record<string, string> {
+  const id = { TASK_ID: m.runId };
+  if (m.kind === 'e2e') {
+    const host = new URL(cfg.e2eBaseUrl).hostname;
+    return {
+      ...id,
+      FACTORY_JOB: 'e2e',
+      E2E_BASE_URL: cfg.e2eBaseUrl,
+      HTTP_PROXY: cfg.proxy,
+      HTTPS_PROXY: cfg.proxy,
+      NO_PROXY: `${cfg.stepEnv.NO_PROXY},${host}`,
+    };
+  }
+  if (m.kind === 'judge' || m.kind === 'design') {
+    return {
+      ...cfg.stepEnv,
+      ...id,
+      FACTORY_JOB: m.kind,
+      FACTORY_EXECUTOR: 'codex',
+      FACTORY_MODEL: cfg.judgeModel,
+      GATEWAY_KEY_SUB: cfg.stepSecrets().GATEWAY_KEY_SUB ?? '',
+      CODEX_AUTH_JSON: cfg.codexAuth(),
+    };
+  }
+  return { ...cfg.stepEnv, ...id, ...cfg.stepSecrets() };
 }
 
 // Файл вида ИМЯ=значение (как читает sh): комментарии и пустые строки пропускаются.
@@ -169,6 +204,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       HTTPS_PROXY: proxy,
       NO_PROXY: [new URL(gateway).hostname, new URL(brokerUrl).hostname].join(','),
     },
+    judgeModel: env.JUDGE_CODEX_MODEL ?? 'default',
+    codexAuth: () => file('codex-auth.json').trim(),
+    e2eBaseUrl: env.E2E_BASE_URL ?? 'http://172.31.250.50:8082',
+    proxy,
     stepSecrets: () => ({
       GATEWAY_KEY_SUB: file('gw-agent-sub.key').trim(),
       CLAUDE_CODE_OAUTH_TOKEN: file('claude-oauth.token').trim(),
