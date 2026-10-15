@@ -7,7 +7,7 @@
 //   GET  /v1/repo              рабочая копия цели (git bundle или архив tar.gz)
 //   GET  /v1/input             вход проверки (дифф PR, картинка макета)
 //   GET  /v1/env               переменные шага с ключами (JSON); выдаются один раз
-//   PUT  /v1/files/<имя>       agent.patch, run.json, agent.log, secrets.json, result.json
+//   PUT  /v1/files/<имя>       agent.patch, run.json, agent.log, secrets.json, tests.json, result.json
 //   POST /v1/done              {"exit_code": N} - шаг закончил; после этого запуск только читается
 //   GET  /healthz              без ключа
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -22,7 +22,7 @@ export interface BrokerOptions {
 }
 
 // codex-auth.json - вход Codex, обновлённый в шаге: фабрика хранит его и выдаёт следующим шагам.
-const UPLOADS: RunFile[] = ['agent.patch', 'run.json', 'agent.log', 'secrets.json', 'result.json', 'codex-auth.json'];
+const UPLOADS: RunFile[] = ['agent.patch', 'run.json', 'agent.log', 'secrets.json', 'tests.json', 'result.json', 'codex-auth.json'];
 
 class HttpError extends Error {
   readonly status: number;

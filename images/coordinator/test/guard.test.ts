@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GUARD, guardPatch, patchFiles, targetChecks } from '../guard.ts';
+import { DEFAULT_GUARD, guardPatch, patchFiles, targetChecks, testFindings } from '../guard.ts';
 
 const diff = (path: string, extra = '') => `diff --git a/${path} b/${path}\n${extra}--- a/${path}\n+++ b/${path}\n@@ -0,0 +1 @@\n+x\n`;
 
@@ -88,5 +88,36 @@ describe('страж изменения агента', () => {
   it('файлы блокировки зависимостей в размер патча не входят', () => {
     const lock = diff('api/package-lock.json') + 'x'.repeat(DEFAULT_GUARD.maxBytes);
     expect(guardPatch(diff('api/package.json') + lock, 0, DEFAULT_GUARD, CONFIG).state).toBe('success');
+  });
+});
+
+describe('тест до кода', () => {
+  const report = (r: Record<string, unknown>) =>
+    JSON.stringify({ tests: [], code: [], base: 'skipped', head: 'skipped', reason: '', ...r });
+  const code = ['api/src/domain/rules.ts'];
+  const tests = ['api/test/rules.test.ts'];
+
+  it('тесты падали на базе и проходят с изменением - сведение, вердикт зелёный', () => {
+    const r = report({ tests, code, base: 'failed', head: 'passed' });
+    expect(testFindings(r)).toEqual([
+      { level: 'info', message: 'тест до кода: тесты (api/test/rules.test.ts) падали на коде базы и проходят с изменением' },
+    ]);
+    const v = guardPatch(diff('api/src/domain/rules.ts'), 0, DEFAULT_GUARD, CONFIG, undefined, r);
+    expect(v.state).toBe('success');
+    expect(v.findings).toHaveLength(1);
+  });
+
+  it('замечания: код без тестов, тесты проходят и без кода, тесты падают, проверки не было', () => {
+    expect(testFindings(undefined)).toEqual([]);
+    expect(testFindings(report({ reason: 'в изменении нет модульных тестов' }))).toEqual([]);
+    expect(testFindings(report({ code }))[0]?.message).toBe('код изменён без модульных тестов: api/src/domain/rules.ts');
+    expect(testFindings(report({ tests, code, base: 'passed', head: 'passed' }))[0]?.message).toContain('проходят и на коде базы');
+    expect(testFindings(report({ tests, code, base: 'failed', head: 'failed' }))[0]?.message).toBe(
+      'модульные тесты не проходят с изменением',
+    );
+    expect(testFindings(report({ tests, code, reason: 'npm ci не прошёл' }))[0]?.message).toBe(
+      'тест до кода не проверен: npm ci не прошёл',
+    );
+    expect(guardPatch(diff('api/src/a.ts'), 0, DEFAULT_GUARD, CONFIG, undefined, report({ code })).state).toBe('failure');
   });
 });

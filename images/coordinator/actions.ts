@@ -70,8 +70,10 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
   return { issue: t.issue, title: t.title, jobId: job.id, jobUrl: job.url };
 }
 
+const LEVEL = { block: 'стоп', fail: 'замечание', info: 'сведение' } as const;
 const verdictText = (v: Verdict) =>
-  v.findings.length ? v.findings.map((f) => `- ${f.level === 'block' ? 'стоп' : 'замечание'}: ${f.message}`).join('\n') : '- замечаний нет';
+  v.findings.length ? v.findings.map((f) => `- ${LEVEL[f.level]}: ${f.message}`).join('\n') : '- замечаний нет';
+const remarks = (v: Verdict) => v.findings.filter((f) => f.level !== 'info').length;
 
 export async function finish(d: Deps, runId: string, t: Dispatched, jobState: JobState): Promise<Outcome> {
   const meta = d.runs.meta(runId);
@@ -94,6 +96,7 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
     d.guard,
     existsSync(configPath) ? readFileSync(configPath, 'utf8') : undefined,
     d.runs.read(runId, 'secrets.json')?.toString('utf8'),
+    d.runs.read(runId, 'tests.json')?.toString('utf8'),
   );
   if (v.state === 'blocked') {
     await d.tracker.addComment(t.issue, `Страж фабрики не пропустил изменение агента:\n${verdictText(v)}\nЖурнал: ${t.jobUrl}`);
@@ -112,7 +115,7 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
   await d.forge.setStatus(headSha, {
     key: VERDICT_KEY,
     state: ok ? 'success' : 'failure',
-    description: ok ? 'страж: изменение в границах правил' : `страж: замечаний ${v.findings.length}`,
+    description: ok ? 'страж: изменение в границах правил' : `страж: замечаний ${remarks(v)}`,
     url: t.jobUrl,
   });
   await d.forge.commentPull(pull.number, `Вердикт стража фабрики (${ok ? 'зелёный' : 'красный'}):\n${verdictText(v)}`);

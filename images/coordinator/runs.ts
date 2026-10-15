@@ -33,6 +33,7 @@ export type RunFile =
   | 'run.json'
   | 'agent.log'
   | 'secrets.json'
+  | 'tests.json'
   | 'result.json'
   | 'codex-auth.json'
   | 'done.json';

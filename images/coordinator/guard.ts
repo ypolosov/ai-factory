@@ -1,5 +1,6 @@
 // Страж изменения агента: детерминированные правила к патчу до публикации. "block" - патч
-// не публикуется; "fail" - PR открывается, но вердикт фабрики красный и решает человек.
+// не публикуется; "fail" - PR открывается, но вердикт фабрики красный и решает человек;
+// "info" - сведение для ревьюера, вердикт не меняет.
 import { parse } from 'yaml';
 export interface GuardOptions {
   // Пути, которые агент не меняет: настройки CI и фабрики. Каталог - с "/" в конце.
@@ -9,7 +10,7 @@ export interface GuardOptions {
 }
 
 export interface Finding {
-  level: 'block' | 'fail';
+  level: 'block' | 'fail' | 'info';
   message: string;
 }
 
@@ -138,16 +139,47 @@ export function secretFindings(report: string | undefined): Finding[] {
   return rules.length ? [{ level: 'block', message: `в изменении найдены секреты (Gitleaks): ${rules.join(', ')}` }] : [];
 }
 
+// Тест до кода (отчёт factory-test-first из шага агента): модульные тесты изменения падают на
+// коде базы и проходят с изменением. Нет отчёта - шаг старый, проверки не было.
+export function testFindings(report: string | undefined): Finding[] {
+  if (!report?.trim()) return [];
+  let r: { tests?: string[]; code?: string[]; base?: string; head?: string; reason?: string };
+  try {
+    r = JSON.parse(report);
+  } catch {
+    return [{ level: 'fail', message: 'отчёт "тест до кода" не читается' }];
+  }
+  const tests = r.tests ?? [];
+  const code = r.code ?? [];
+  if (!code.length) return [];
+  if (!tests.length) return [{ level: 'fail', message: `код изменён без модульных тестов: ${code.slice(0, 5).join(', ')}` }];
+  if (r.base === 'skipped') return [{ level: 'fail', message: `тест до кода не проверен: ${r.reason || 'причина не названа'}` }];
+  const out: Finding[] = [];
+  if (r.base === 'passed')
+    out.push({ level: 'fail', message: 'тесты изменения проходят и на коде базы: не видно, что они проверяют изменение (тест до кода)' });
+  if (r.head !== 'passed') out.push({ level: 'fail', message: 'модульные тесты не проходят с изменением' });
+  if (!out.length)
+    out.push({ level: 'info', message: `тест до кода: тесты (${tests.join(', ')}) падали на коде базы и проходят с изменением` });
+  return out;
+}
+
 export function guardPatch(
   patch: string,
   agentExitCode: number,
   o: GuardOptions = DEFAULT_GUARD,
   targetConfig?: string,
   secretsReport?: string,
+  testsReport?: string,
 ): Verdict {
   const files = patchFiles(patch);
   const { rules, findings: bad } = targetRules(targetConfig);
-  const findings: Finding[] = [...targetChecks(targetConfig), ...bad, ...ruleFindings(patch, rules), ...secretFindings(secretsReport)];
+  const findings: Finding[] = [
+    ...targetChecks(targetConfig),
+    ...bad,
+    ...ruleFindings(patch, rules),
+    ...secretFindings(secretsReport),
+    ...testFindings(testsReport),
+  ];
   if (!patch.trim() || files.length === 0) findings.push({ level: 'block', message: 'агент ничего не изменил' });
   for (const f of files) {
     const hit = o.protectedPaths.find((p) => (p.endsWith('/') ? f.startsWith(p) : f === p));
@@ -159,6 +191,6 @@ export function guardPatch(
   if (files.length > o.maxFiles)
     findings.push({ level: 'fail', message: `изменено файлов: ${files.length} - больше предела ${o.maxFiles}` });
   if (agentExitCode !== 0) findings.push({ level: 'fail', message: `агент завершился с кодом ${agentExitCode}` });
-  const state = findings.some((f) => f.level === 'block') ? 'blocked' : findings.length ? 'failure' : 'success';
+  const state = findings.some((f) => f.level === 'block') ? 'blocked' : findings.some((f) => f.level === 'fail') ? 'failure' : 'success';
   return { files, findings, state };
 }

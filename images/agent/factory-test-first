@@ -1,0 +1,48 @@
+#!/bin/sh
+# Тест до кода: модульные тесты изменения должны падать на коде базы и проходить с изменением.
+# Запуск - из рабочей копии, где изменение лежит в индексе (как его оставил factory-agent): код
+# изменения снимается на время первого прогона и возвращается. Команда тестов - checks.test из
+# .factory/config.yml (защищённый путь: агент его не меняет). Тесты и npm ci - недоверенный код.
+# Использование: factory-test-first ИТОГ.json
+# Итог: {"tests": [...], "code": [...], "base": "failed"|"passed"|"skipped",
+#        "head": "passed"|"failed"|"skipped", "reason": "..."}
+set -eu
+out=${1:?использование: factory-test-first ИТОГ.json}
+tmp=$(mktemp -d)
+chmod 755 "$tmp"
+trap 'rm -rf "$tmp"' EXIT
+
+# Модульные тесты - файлы *.test.* и *.spec.* и каталоги test, tests, __tests__ (кроме e2e/:
+# сквозные тесты гоняет CI цели); код - исходники остальных путей.
+factory-untrusted git diff --cached --name-only --diff-filter=d >"$tmp/files"
+grep -E '(^|/)(test|tests|__tests__)/|\.(test|spec)\.[cm]?[jt]sx?$' "$tmp/files" | grep -v '^e2e/' >"$tmp/tests" || true
+grep -E '\.[cm]?[jt]sx?$' "$tmp/files" | grep -vxF -f "$tmp/tests" | grep -v '^e2e/' >"$tmp/code" || true
+
+result() {
+	jq -n --rawfile t "$tmp/tests" --rawfile c "$tmp/code" --arg base "$1" --arg head "$2" --arg reason "$3" \
+		'{tests: ($t | split("\n") | map(select(. != ""))), code: ($c | split("\n") | map(select(. != ""))),
+		base: $base, head: $head, reason: $reason}' >"$out"
+	exit 0
+}
+
+[ -s "$tmp/tests" ] || result skipped skipped "в изменении нет модульных тестов"
+[ -s "$tmp/code" ] || result skipped skipped "в изменении только тесты"
+cmd=$(awk '/^checks:/ { c = 1; next } c && /^[^ #]/ { c = 0 }
+	c && $1 == "test:" { sub(/^[ \t]*test:[ \t]*/, ""); print; exit }' .factory/config.yml 2>/dev/null || true)
+[ -n "$cmd" ] || result skipped skipped "нет checks.test в .factory/config.yml"
+if [ ! -d node_modules ] && [ -f package-lock.json ]; then
+	factory-untrusted factory-npm-ci >"$tmp/npm.log" 2>&1 || result skipped skipped "npm ci не прошёл"
+fi
+
+# Код изменения - отдельным патчем: снять, прогнать тесты, вернуть, прогнать снова.
+tr '\n' '\0' <"$tmp/code" | xargs -0 factory-untrusted git diff --cached --binary -- >"$tmp/code.patch"
+chmod 644 "$tmp/code.patch"
+run() { timeout 600 factory-untrusted sh -c "$cmd" >>"$tmp/tests.log" 2>&1; }
+factory-untrusted git apply -R --whitespace=nowarn "$tmp/code.patch"
+base=passed
+run || base=failed
+factory-untrusted git apply --whitespace=nowarn "$tmp/code.patch"
+head=passed
+run || head=failed
+tail -20 "$tmp/tests.log" >&2
+result "$base" "$head" ""

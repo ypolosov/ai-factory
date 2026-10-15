@@ -6,7 +6,7 @@
 #        Вид задания - FACTORY_JOB от посредника: agent (по умолчанию), judge (судья PR),
 #        design (сверка макета), scan (сканеры изменения PR).
 # Выход: agent.patch, run.json, agent.log, secrets.json (находки Gitleaks в добавленных строках,
-#        значения скрыты) и код агента - у посредника; код шага = код агента.
+#        значения скрыты), tests.json (тест до кода) и код агента - у посредника; код шага = код агента.
 # Ключи шага (подписка, шлюз) приходят только от посредника, не печатаются и живут в окружении
 # этого процесса; недоверенный код получает их через factory-agent и factory-untrusted.
 set -eu
@@ -85,5 +85,9 @@ if [ -s "$work/out/agent.patch" ]; then
 		gitleaks stdin --no-banner --redact --exit-code 0 --config /etc/factory/checks/gitleaks.toml \
 			--report-format json --report-path "$work/out/secrets.json" >/dev/null 2>&1 || true
 fi
-upload agent.patch run.json agent.log secrets.json
+# Тест до кода: модульные тесты изменения падают на коде базы и проходят с изменением.
+if [ -s "$work/out/agent.patch" ]; then
+	(cd "$work/repo" && factory-test-first "$work/out/tests.json") 2>>"$work/out/agent.log" || true
+fi
+upload agent.patch run.json agent.log secrets.json tests.json
 finish "$rc"
