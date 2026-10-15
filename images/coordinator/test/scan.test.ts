@@ -64,10 +64,11 @@ describe('сканеры изменения', () => {
         base: [{ name: 'lodash', version: '4.17.20', ids: ['GHSA-old'] }],
         head: [
           { name: 'lodash', version: '4.17.20', ids: ['GHSA-old'] },
-          { name: 'minimist', version: '0.0.8', ids: ['GHSA-new'] },
+          { name: 'lodash', version: '4.17.20', ids: ['GHSA-old', 'GHSA-new2'] },
+          { name: 'minimist', version: '0.0.8', ids: ['GHSA-new', 'GHSA-new3'] },
         ],
       }),
-    ).toEqual(['minimist@0.0.8: GHSA-new']);
+    ).toEqual(['lodash@4.17.20: GHSA-new2', 'minimist@0.0.8: GHSA-new, GHSA-new3']);
   });
 
   it('любой PR -> задание сканеров с файлами блокировки -> статус и замечания', async () => {
@@ -121,7 +122,7 @@ describe('сканеры изменения', () => {
     expect((await m.forge.listPullComments(pr.number)).at(-1)?.body).toBe(
       'Сканеры фабрики для sha-dep:\n' +
         '- в изменении найдены секреты (Gitleaks): generic-api-key\n' +
-        '- уязвимость в зависимости left-pad@1.3.0: GHSA-xxxx (OSV)\n' +
+        '- уязвимости в зависимости left-pad@1.3.0: GHSA-xxxx (OSV)\n' +
         '- лицензия вне разрешённых: left-pad@1.3.0 (WTFPL)\n' +
         'Решает человек.',
     );

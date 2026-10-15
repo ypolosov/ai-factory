@@ -103,12 +103,13 @@ export function licenseFindings(files: LockFile[], allow: string[]): string[] {
   return bad;
 }
 
-// Уязвимости головы, которых не было на общем предке.
+// Уязвимости головы, которых не было на общем предке: по строке на пакет.
 export function newVulns(v: ScanResult['vulns']): string[] {
   const seen = new Set(v.base.flatMap((x) => x.ids.map((id) => `${x.name}@${x.version}:${id}`)));
-  return v.head.flatMap((x) =>
-    x.ids.filter((id) => !seen.has(`${x.name}@${x.version}:${id}`)).map((id) => `${x.name}@${x.version}: ${id}`),
-  );
+  return v.head.flatMap((x) => {
+    const ids = x.ids.filter((id) => !seen.has(`${x.name}@${x.version}:${id}`));
+    return ids.length ? [`${x.name}@${x.version}: ${ids.join(', ')}`] : [];
+  });
 }
 
 const isLock = (path: string) => LOCKFILES.includes(path.split('/').pop() ?? '');
@@ -171,7 +172,7 @@ export function scanHandler(d: { forge: Forge; runs: RunStore; licenses(): Promi
     const input = JSON.parse(d.runs.read(meta.runId, 'input')?.toString('utf8') || '{}') as Partial<ScanInput>;
     const findings = [
       ...secretFindings(JSON.stringify(result.secrets)).map((f) => f.message),
-      ...newVulns(result.vulns).map((v) => `уязвимость в зависимости ${v} (OSV)`),
+      ...newVulns(result.vulns).map((v) => `уязвимости в зависимости ${v} (OSV)`),
       ...licenseFindings(input.files ?? [], await d.licenses()).map((l) => `лицензия вне разрешённых: ${l}`),
     ];
     await d.forge.setStatus(sha, {
