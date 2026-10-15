@@ -65,21 +65,30 @@ const ARTIFACTS = ['proposal.md', 'design.md', 'tasks.md', 'test-plan.md'];
 export function openspecChange(repo: string, issue: string): { path: string; text: string } | undefined {
   const changes = join(repo, 'openspec', 'changes');
   const key = issue.toLowerCase();
-  const name = existsSync(changes) ? readdirSync(changes).find((n) => n === key || n.startsWith(`${key}-`)) : undefined;
-  if (!name) return undefined;
-  const dir = join(changes, name);
+  // Изменений у задачи может оказаться несколько - агент получает все, по порядку имён.
+  const names = existsSync(changes)
+    ? readdirSync(changes)
+        .filter((n) => n === key || n.startsWith(`${key}-`))
+        .sort()
+    : [];
+  if (!names.length) return undefined;
   const walk = (p: string): string[] =>
     statSync(p).isDirectory()
       ? readdirSync(p)
           .sort()
           .flatMap((n) => walk(join(p, n)))
       : [p];
-  const files = [
-    ...ARTIFACTS.map((f) => join(dir, f)).filter((f) => existsSync(f)),
-    ...(existsSync(join(dir, 'specs')) ? walk(join(dir, 'specs')).filter((f) => f.endsWith('.md')) : []),
-  ];
-  const text = files.map((f) => `### ${relative(dir, f)}\n\n${readFileSync(f, 'utf8').trim()}`).join('\n\n');
-  return { path: `openspec/changes/${name}`, text: text.slice(0, 30_000) };
+  const text = names
+    .flatMap((name) => {
+      const dir = join(changes, name);
+      const files = [
+        ...ARTIFACTS.map((f) => join(dir, f)).filter((f) => existsSync(f)),
+        ...(existsSync(join(dir, 'specs')) ? walk(join(dir, 'specs')).filter((f) => f.endsWith('.md')) : []),
+      ];
+      return files.map((f) => `### ${names.length > 1 ? `${name}/` : ''}${relative(dir, f)}\n\n${readFileSync(f, 'utf8').trim()}`);
+    })
+    .join('\n\n');
+  return { path: names.map((n) => `openspec/changes/${n}`).join(', '), text: text.slice(0, 30_000) };
 }
 
 export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatched> {

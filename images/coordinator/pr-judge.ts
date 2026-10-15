@@ -4,6 +4,7 @@
 import type { Forge, Tracker } from '../ports/ports.ts';
 import { VERDICT_KEY } from './actions.ts';
 import { type CheckDeps, type CheckHandler, startCheck } from './checks.ts';
+import { LOCKFILES, patchFiles } from './guard.ts';
 
 export const JUDGE_KEY = 'factory/judge';
 
@@ -16,6 +17,35 @@ export interface JudgeResult {
 }
 
 const MAX_DIFF = 200_000;
+
+// Дифф судье: целиком, если влезает; иначе - файлы по возрастанию размера, файлы блокировки
+// последними, в исходном порядке диффа. Не вошедшие файлы судья знает по именам: обрезанный
+// дифф не должен читаться как "файлов нет".
+export function judgeDiff(diff: string, max = MAX_DIFF): { text: string; omitted: string[] } {
+  if (diff.length <= max) return { text: diff, omitted: [] };
+  const sections = diff.split(/^(?=diff --git )/m).filter((s) => s.trim());
+  const file = (s: string) => patchFiles(s.split('\n', 1)[0] ?? '').at(-1) ?? '?';
+  const lock = (s: string) => LOCKFILES.includes(file(s).split('/').pop() ?? '');
+  const order = sections
+    .map((s, i) => i)
+    .sort((x, y) => {
+      const a = sections[x] ?? '';
+      const b = sections[y] ?? '';
+      return Number(lock(a)) - Number(lock(b)) || a.length - b.length;
+    });
+  const kept = new Set<number>();
+  let size = 0;
+  for (const i of order) {
+    const len = sections[i]?.length ?? 0;
+    if (size + len > max) continue;
+    kept.add(i);
+    size += len;
+  }
+  return {
+    text: sections.filter((_, i) => kept.has(i)).join(''),
+    omitted: sections.filter((_, i) => !kept.has(i)).map(file),
+  };
+}
 
 export function prJudge(d: CheckDeps & { forge: Forge; tracker: Tracker; log(m: string): void }) {
   let busy = false;
@@ -40,12 +70,16 @@ export function prJudge(d: CheckDeps & { forge: Forge; tracker: Tracker; log(m: 
               issue = '';
             }
           }
+          const cut = judgeDiff(diff);
+          const note = cut.omitted.length
+            ? `\n\nДифф сокращён до ${MAX_DIFF} знаков, не вошли файлы: ${cut.omitted.join(', ')}. Они есть в PR - не считай их отсутствующими, суди по вошедшим.`
+            : '';
           const { jobUrl } = await startCheck(d, {
             kind: 'judge',
             issue: key ?? `pr-${p.number}`,
             subject: `${p.number}:${p.headSha}`,
-            task: `PR ${p.number}: ${p.title}\n\n${p.body}${issue}`,
-            input: new TextEncoder().encode(diff.slice(0, MAX_DIFF)),
+            task: `PR ${p.number}: ${p.title}\n\n${p.body}${issue}${note}`,
+            input: new TextEncoder().encode(cut.text),
           });
           await d.forge.setStatus(p.headSha, { key: JUDGE_KEY, state: 'pending', description: 'судья (Codex) проверяет', url: jobUrl });
           d.log(`судья: PR ${p.number} ${p.headSha.slice(0, 7)}`);

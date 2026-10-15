@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { memoryForge, memoryJobs, memoryTracker } from '../../ports/test/memory.ts';
 import { VERDICT_KEY } from '../actions.ts';
 import { checkLoop } from '../checks.ts';
-import { JUDGE_KEY, judgeHandler, prJudge } from '../pr-judge.ts';
+import { JUDGE_KEY, judgeDiff, judgeHandler, prJudge } from '../pr-judge.ts';
 import { runStore } from '../runs.ts';
 
 describe('судья PR (Codex) на раннере', () => {
@@ -49,5 +49,19 @@ describe('судья PR (Codex) на раннере', () => {
       expect.objectContaining({ state: 'success', description: 'судья (Codex): 72/100, можно сливать' }),
     );
     expect((await m.forge.listPullComments(pr.n)).at(-1)?.body).toContain('a.ts: тест - добавить граничный случай');
+  });
+
+  it('большой дифф: судья видит важное, а не вошедшие файлы знает по именам', () => {
+    const section = (path: string, size: number) => `diff --git a/${path} b/${path}\n+${'x'.repeat(size)}\n`;
+    const diff = [
+      section('.claude/skills/a/SKILL.md', 600),
+      section('AGENTS.md', 50),
+      section('package-lock.json', 100),
+      section('openspec/config.yaml', 80),
+    ].join('');
+    expect(judgeDiff(diff, 10_000)).toEqual({ text: diff, omitted: [] });
+    const cut = judgeDiff(diff, 300); // блокировка (153 знака) уже не влезает после двух важных (226)
+    expect(cut.omitted).toEqual(['.claude/skills/a/SKILL.md', 'package-lock.json']);
+    expect(cut.text).toBe(section('AGENTS.md', 50) + section('openspec/config.yaml', 80));
   });
 });
