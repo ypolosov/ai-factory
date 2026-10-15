@@ -93,7 +93,10 @@ export async function answer(d: BotDeps, m: ChatMessage): Promise<string | undef
   const slice = /^!(нарезка|slice)\s+([A-Z][A-Z0-9]*-\d+)\s*$/i.exec(text)?.[2];
   if (d.slice && slice) return (await gate('slice')) ?? d.slice.propose(slice.toUpperCase());
   const approve = /^!(утвердить|approve)\s+([A-Z][A-Z0-9]*-\d+)(\s+agent)?\s*$/i.exec(text);
-  if (d.slice && approve?.[2]) return (await gate('approve-slice')) ?? d.slice.approve(approve[2].toUpperCase(), await by(), !!approve[3]);
+  if (d.slice && approve?.[2]) {
+    const denied = (await gate('approve-slice')) ?? (approve[3] ? await gate('submit-task') : undefined);
+    return denied ?? d.slice.approve(approve[2].toUpperCase(), await by(), !!approve[3]);
+  }
   const deployTag = /^!(выкладка|deploy)\s+(v\d+\.\d+\.\d+)\s*$/i.exec(text)?.[2];
   if (d.release && deployTag) return (await gate('deploy')) ?? d.release.confirm(deployTag, await by());
   const task = /^!(задача|task)\s+([\s\S]+)$/i.exec(text)?.[2];

@@ -123,6 +123,9 @@ export function confluenceWiki(cfg: ConfluenceConfig): Wiki {
     url: url(p),
     body: fromStorage(String(((p.body as Json | undefined)?.storage as Json | undefined)?.value ?? '')),
     version: Number((p.version as Json | undefined)?.number ?? 1),
+    ...(((p.version as Json | undefined)?.by as Json | undefined)?.accountId
+      ? { author: String(((p.version as Json).by as Json).accountId) }
+      : {}),
   });
   const cqlSearch = async (cql: string, limit: number) => {
     const q = new URLSearchParams({ cql, expand: 'body.storage,version', limit: String(limit) });

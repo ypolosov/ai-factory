@@ -36,6 +36,7 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
   const site = cfg.site.replace(/\/$/, '');
   const auth = `Basic ${Buffer.from(`${cfg.email}:${cfg.token}`).toString('base64')}`;
   let cloudId: Promise<string> | undefined;
+  let self: Promise<string> | undefined;
   // Поиск JQL согласован в конечном счёте; недавно изменённые задачи передаём поиску явно.
   const touched: number[] = [];
   const touch = (id: unknown) => {
@@ -210,6 +211,15 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
         }
       }
       return events;
+    },
+    async me() {
+      self ??= call<Json>('GET', '/myself')
+        .then((u) => String(u.accountId))
+        .catch((e) => {
+          self = undefined;
+          throw e;
+        });
+      return self;
     },
   };
 }

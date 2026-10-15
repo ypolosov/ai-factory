@@ -4,6 +4,7 @@
 // Нет файла - открытый режим: решения разрешены всем, как до реестра.
 import { parse } from 'yaml';
 import type { Tracker } from '../ports/ports.ts';
+import { message } from './errors.ts';
 
 export type HolderKind = 'human' | 'human-ai' | 'ai';
 
@@ -93,6 +94,8 @@ export async function requester(tracker: Tracker, key: string, label: string): P
 }
 
 // Задача с меткой-триггером от учётки без нужной роли: метка снимается, причина - в комментарии.
+// Метку от учётки самой фабрики (задача из чата или MCP, нарезка, стори из вики) проверили там,
+// где решение приняли, - второй раз не проверяем. Поэтому у фабрики своя учётка, не человека.
 export async function admitIssue(
   d: { tracker: Tracker; roles?: () => Promise<RoleRegistry>; trackerTool?: string; log(m: string): void },
   key: string,
@@ -102,7 +105,13 @@ export async function admitIssue(
   if (!d.roles) return true;
   const registry = await d.roles();
   if (registry.open) return true;
-  const c = registry.check(decision, d.trackerTool ?? 'jira', await requester(d.tracker, key, label));
+  const who = await requester(d.tracker, key, label);
+  const self = await d.tracker.me().catch((e) => {
+    d.log(`своя учётка трекера не известна: ${message(e)}`);
+    return undefined;
+  });
+  if (who !== undefined && who === self) return true;
+  const c = registry.check(decision, d.trackerTool ?? 'jira', who);
   if (c.ok) return true;
   await d.tracker.removeLabel(key, label);
   await d.tracker.addComment(key, refusal(decision, c));

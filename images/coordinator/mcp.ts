@@ -1,6 +1,7 @@
 // MCP фабрики: любой экзокортекс (Claude Code, Codex, своя обвязка) получает знание проекта,
 // правила стражей, сверку требования и передаёт задачу агенту фабрики. Протокол - MCP
-// Streamable HTTP без сессий на /mcp; доступ - по ключу "Authorization: Bearer".
+// Streamable HTTP без сессий на /mcp; доступ - по ключу "Authorization: Bearer". Ключ называет
+// учётку (инструмент mcp в реестре ролей): по ней фабрика решает, можно ли передать задачу агенту.
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -9,6 +10,7 @@ import { z } from 'zod';
 import type { Knowledge, Passage, Tracker } from '../ports/ports.ts';
 import type { GuardOptions } from './guard.ts';
 import type { Judge } from './judge.ts';
+import { type RoleRegistry, refusal } from './roles.ts';
 
 export interface McpDeps {
   knowledge: Knowledge;
@@ -19,14 +21,27 @@ export interface McpDeps {
   targetFile(path: string): Promise<string | undefined>;
   guard: GuardOptions;
   agentLabel: string;
+  // Ключи: строки "учётка ключ"; один ключ без учётки - учётка default.
   token(): string;
+  roles?(): Promise<RoleRegistry>;
+}
+
+export function mcpKeys(text: string): [key: string, account: string][] {
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'))
+    .map((l): [string, string] => {
+      const [first = '', second] = l.split(/\s+/);
+      return second ? [second, first] : [first, 'default'];
+    });
 }
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const passages = (ps: Passage[]) =>
   ps.map((p, i) => `[${i + 1}] ${p.title} (${p.source})\n${p.url}\n${p.text}`).join('\n\n') || 'ничего не найдено';
 
-export function factoryMcp(d: McpDeps): McpServer {
+export function factoryMcp(d: McpDeps, account = 'default'): McpServer {
   const s = new McpServer({ name: 'ai-factory', version: '0.1.0' });
   s.registerTool(
     'kb_search',
@@ -79,7 +94,10 @@ export function factoryMcp(d: McpDeps): McpServer {
       inputSchema: { title: z.string().min(3), body: z.string() },
     },
     async ({ title, body }) => {
-      const i = await d.tracker.createIssue({ title, body, labels: [d.agentLabel] });
+      const c = (await d.roles?.())?.check('submit-task', 'mcp', account);
+      if (c && !c.ok) return text(refusal('submit-task', c));
+      const by = c?.holder?.name ?? account;
+      const i = await d.tracker.createIssue({ title, body: `${body}\n\nИз MCP: ${by}`.trim(), labels: [d.agentLabel] });
       return text(`Задача ${i.key} заведена: ${i.url}`);
     },
   );
@@ -95,11 +113,12 @@ export function mcpHttp(d: McpDeps): Server {
       return;
     }
     const token = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
-    if (!token || !same(token, d.token())) {
+    const account = token ? mcpKeys(d.token()).find(([k]) => same(token, k))?.[1] : undefined;
+    if (!account) {
       res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' }).end('нужен ключ MCP фабрики');
       return;
     }
-    const server = factoryMcp(d);
+    const server = factoryMcp(d, account);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on('close', () => {
       void transport.close();

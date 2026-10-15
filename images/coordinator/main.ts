@@ -165,6 +165,7 @@ const mcp = mcpHttp({
   guard: DEFAULT_GUARD,
   agentLabel: cfg.labels.trigger,
   token: cfg.mcpToken,
+  roles,
 });
 mcp.listen(cfg.mcpPort, '0.0.0.0', () => log(`MCP фабрики: :${cfg.mcpPort}/mcp`));
 const releaseChecks = releaseLoop({
@@ -286,6 +287,7 @@ const wikiStoryLoop = wikiStories({
   labels: cfg.storyLabels,
   pageLabel: cfg.storyLabels.trigger,
   stateFile: join(cfg.data, 'wiki-stories.json'),
+  roles,
   log,
 });
 const tick = async () => {

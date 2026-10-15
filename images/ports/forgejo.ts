@@ -22,11 +22,12 @@ export interface ForgejoConfig {
 type Json = Record<string, unknown>;
 
 function client(cfg: ForgejoConfig) {
-  const base = `${cfg.url.replace(/\/$/, '')}/api/v1/repos/${cfg.repo}`;
-  async function req(method: string, path: string, body?: unknown, accept = 'application/json'): Promise<Response> {
+  const root = `${cfg.url.replace(/\/$/, '')}/api/v1`;
+  const base = `${root}/repos/${cfg.repo}`;
+  async function req(method: string, path: string, body?: unknown, accept = 'application/json', at = base): Promise<Response> {
     let r: Response;
     try {
-      r = await fetch(`${base}${path}`, {
+      r = await fetch(`${at}${path}`, {
         method,
         headers: { authorization: `token ${cfg.token}`, 'content-type': 'application/json', accept },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -56,6 +57,10 @@ function client(cfg: ForgejoConfig) {
     async text(path: string): Promise<string> {
       return (await req('GET', path, undefined, 'text/plain')).text();
     },
+    // Учётка токена - вне репозитория.
+    async user(): Promise<Json> {
+      return (await req('GET', '/user', undefined, 'application/json', root)).json() as Promise<Json>;
+    },
     async optional<T = Json>(path: string): Promise<T | undefined> {
       try {
         return await this.json<T>('GET', path);
@@ -77,6 +82,7 @@ const toComment = (c: Json): Comment => ({
 
 export function forgejoTracker(cfg: ForgejoConfig): Tracker {
   const api = client(cfg);
+  let self: Promise<string> | undefined;
   const toIssue = (i: Json): Issue => ({
     key: String(i.number),
     title: String(i.title ?? ''),
@@ -153,6 +159,16 @@ export function forgejoTracker(cfg: ForgejoConfig): Tracker {
           at: String(e.created_at),
           ...((e.user as Json | undefined)?.login ? { author: String((e.user as Json).login) } : {}),
         }));
+    },
+    async me() {
+      self ??= api
+        .user()
+        .then((u) => String(u.login))
+        .catch((e) => {
+          self = undefined;
+          throw e;
+        });
+      return self;
     },
   };
 }

@@ -33,81 +33,88 @@ const matches = (text: string, query: string) => {
 };
 
 // keyPrefix - ключи задач как у Jira ("DRAW-"); по умолчанию - номера, как у Forgejo.
-export function memoryTracker(user = 'factory-bot', keyPrefix = ''): Tracker {
+// as(учётка) - тот же трекер от лица другой учётки (человек ставит метку руками).
+export function memoryTracker(user = 'factory-bot', keyPrefix = ''): Tracker & { as(user: string): Tracker } {
   let seq = 0;
   const issues = new Map<string, Issue>();
   const comments = new Map<string, Comment[]>();
   const events = new Map<string, LabelEvent[]>();
   const deps = new Map<string, string[]>();
-  const get = (key: string) => {
-    const i = issues.get(key);
-    if (!i) throw new PortError('not_found', `задача ${key} не найдена`);
-    return i;
-  };
-  const label = (key: string, l: string, action: LabelEvent['action']) => {
-    const i = get(key);
-    i.labels = action === 'added' ? [...new Set([...i.labels, l])] : i.labels.filter((x) => x !== l);
-    events.set(key, [...(events.get(key) ?? []), { label: l, action, at: now(), author: user }]);
-  };
-  return {
-    async getIssue(key) {
-      return { ...get(key), labels: [...get(key).labels] };
-    },
-    async listIssues(q = {}) {
-      const state = q.state ?? 'open';
-      return [...issues.values()]
-        .filter((i) => state === 'all' || i.state === state)
-        .filter((i) => !q.label || i.labels.includes(q.label))
-        .filter((i) => !q.text || matches(`${i.title}\n${i.body}`, q.text))
-        .slice(0, q.limit ?? 50)
-        .map((i) => ({ ...i, labels: [...i.labels] }));
-    },
-    async createIssue({ title, body, labels = [] }) {
-      const key = `${keyPrefix}${++seq}`;
-      const i: Issue = { key, title, body, state: 'open', labels: [], url: `http://memory/issues/${key}`, author: user };
-      issues.set(key, i);
-      for (const l of labels) label(key, l, 'added');
-      return { ...i, labels: [...i.labels] };
-    },
-    async updateIssue(key, { title, body }) {
+  const view = (user: string): Tracker => {
+    const get = (key: string) => {
+      const i = issues.get(key);
+      if (!i) throw new PortError('not_found', `задача ${key} не найдена`);
+      return i;
+    };
+    const label = (key: string, l: string, action: LabelEvent['action']) => {
       const i = get(key);
-      if (title !== undefined) i.title = title;
-      if (body !== undefined) i.body = body;
-    },
-    async addComment(key, body) {
-      get(key);
-      comments.set(key, [...(comments.get(key) ?? []), { author: user, body, createdAt: now() }]);
-    },
-    async listComments(key) {
-      get(key);
-      return [...(comments.get(key) ?? [])];
-    },
-    async addLabel(key, l) {
-      label(key, l, 'added');
-    },
-    async removeLabel(key, l) {
-      label(key, l, 'removed');
-    },
-    async close(key) {
-      get(key).state = 'closed';
-    },
-    async reopen(key) {
-      get(key).state = 'open';
-    },
-    async linkDependency(key, dependsOn) {
-      get(key);
-      get(dependsOn);
-      deps.set(key, [...new Set([...(deps.get(key) ?? []), dependsOn])]);
-    },
-    async listDependencies(key) {
-      get(key);
-      return [...(deps.get(key) ?? [])];
-    },
-    async labelEvents(key) {
-      get(key);
-      return [...(events.get(key) ?? [])];
-    },
+      i.labels = action === 'added' ? [...new Set([...i.labels, l])] : i.labels.filter((x) => x !== l);
+      events.set(key, [...(events.get(key) ?? []), { label: l, action, at: now(), author: user }]);
+    };
+    return {
+      async getIssue(key) {
+        return { ...get(key), labels: [...get(key).labels] };
+      },
+      async listIssues(q = {}) {
+        const state = q.state ?? 'open';
+        return [...issues.values()]
+          .filter((i) => state === 'all' || i.state === state)
+          .filter((i) => !q.label || i.labels.includes(q.label))
+          .filter((i) => !q.text || matches(`${i.title}\n${i.body}`, q.text))
+          .slice(0, q.limit ?? 50)
+          .map((i) => ({ ...i, labels: [...i.labels] }));
+      },
+      async createIssue({ title, body, labels = [] }) {
+        const key = `${keyPrefix}${++seq}`;
+        const i: Issue = { key, title, body, state: 'open', labels: [], url: `http://memory/issues/${key}`, author: user };
+        issues.set(key, i);
+        for (const l of labels) label(key, l, 'added');
+        return { ...i, labels: [...i.labels] };
+      },
+      async updateIssue(key, { title, body }) {
+        const i = get(key);
+        if (title !== undefined) i.title = title;
+        if (body !== undefined) i.body = body;
+      },
+      async addComment(key, body) {
+        get(key);
+        comments.set(key, [...(comments.get(key) ?? []), { author: user, body, createdAt: now() }]);
+      },
+      async listComments(key) {
+        get(key);
+        return [...(comments.get(key) ?? [])];
+      },
+      async addLabel(key, l) {
+        label(key, l, 'added');
+      },
+      async removeLabel(key, l) {
+        label(key, l, 'removed');
+      },
+      async close(key) {
+        get(key).state = 'closed';
+      },
+      async reopen(key) {
+        get(key).state = 'open';
+      },
+      async linkDependency(key, dependsOn) {
+        get(key);
+        get(dependsOn);
+        deps.set(key, [...new Set([...(deps.get(key) ?? []), dependsOn])]);
+      },
+      async listDependencies(key) {
+        get(key);
+        return [...(deps.get(key) ?? [])];
+      },
+      async labelEvents(key) {
+        get(key);
+        return [...(events.get(key) ?? [])];
+      },
+      async me() {
+        return user;
+      },
+    };
   };
+  return { ...view(user), as: view };
 }
 
 export function memoryForge(user = 'factory-bot') {
@@ -322,17 +329,19 @@ export function memoryChat() {
   };
 }
 
-export function memoryWiki(): Wiki & {
-  pages: Map<string, { id: string; body: string; labels: string[]; version: number; comments: string[] }>;
-} {
-  const pages = new Map<string, { id: string; body: string; labels: string[]; version: number; comments: string[] }>();
+type MemoryPage = { id: string; body: string; labels: string[]; version: number; comments: string[]; author?: string };
+
+// user - учётка, от лица которой пишутся страницы; автора версии тест может сменить в pages.
+export function memoryWiki(user = 'factory-bot'): Wiki & { pages: Map<string, MemoryPage> } {
+  const pages = new Map<string, MemoryPage>();
   let seq = 0;
-  const page = (title: string, p: { id: string; body: string; version: number }) => ({
+  const page = (title: string, p: MemoryPage) => ({
     id: p.id,
     title,
     url: `http://memory/wiki/${p.id}`,
     body: p.body,
     version: p.version,
+    ...(p.author ? { author: p.author } : {}),
   });
   const byId = (id: string) => [...pages.entries()].find(([, p]) => p.id === id);
   return {
@@ -340,7 +349,14 @@ export function memoryWiki(): Wiki & {
     async upsertPage(title, body) {
       const old = pages.get(title);
       const id = old?.id ?? String(++seq);
-      pages.set(title, { id, body, labels: old?.labels ?? [], version: (old?.version ?? 0) + 1, comments: old?.comments ?? [] });
+      pages.set(title, {
+        id,
+        body,
+        labels: old?.labels ?? [],
+        version: (old?.version ?? 0) + 1,
+        comments: old?.comments ?? [],
+        author: user,
+      });
       return { id, url: `http://memory/wiki/${id}` };
     },
     async getPage(title) {

@@ -62,6 +62,8 @@ export interface Tracker {
   linkDependency(key: string, dependsOn: string): Promise<void>;
   listDependencies(key: string): Promise<string[]>;
   labelEvents(key: string): Promise<LabelEvent[]>;
+  // Учётка самой фабрики в трекере: её метки ставятся только после проверки прав.
+  me(): Promise<string>;
 }
 
 export type PullState = 'open' | 'merged' | 'closed';
@@ -189,6 +191,7 @@ export interface WikiPage {
   url: string;
   body: string;
   version: number;
+  author?: string; // учётка автора текущей версии
 }
 
 export interface Wiki {

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { memoryTracker, memoryWiki } from '../../ports/test/memory.ts';
+import { parseRoles } from '../roles.ts';
 import { wikiStories } from '../wiki-stories.ts';
 
 describe('стори из вики', () => {
@@ -42,5 +43,46 @@ describe('стори из вики', () => {
     expect(again.body).toContain('следующего кандидата');
     expect(again.labels).toContain('story');
     expect(again.labels).not.toContain('needs-decision');
+  });
+
+  it('стори от автора без роли не берётся: отказ на странице один раз; версия продукта - берётся', async () => {
+    const roles = parseRoles(`
+holders:
+  anna: { kind: human, name: Аня, accounts: { confluence: anna } }
+  gleb: { kind: human, name: Глеб, accounts: { confluence: gleb } }
+roles:
+  product-owner: [anna]
+  devops: [gleb]
+decisions:
+  story: [product-owner]
+`);
+    const wiki = memoryWiki('gleb');
+    const tracker = memoryTracker('factory-bot', 'DRAW-');
+    const loop = wikiStories({
+      wiki,
+      tracker,
+      labels,
+      pageLabel: 'story',
+      stateFile: join(root, 'roles.json'),
+      roles: async () => roles,
+      log: () => {},
+    });
+    const page = await wiki.upsertPage('Тёмная тема', 'Нужна тёмная тема');
+    await wiki.addLabel(page.id, 'story');
+    await loop.tick();
+    await loop.tick();
+    expect(await tracker.listIssues({ state: 'all' })).toEqual([]);
+    expect(wiki.pages.get('Тёмная тема')?.comments).toEqual([
+      'Нельзя отдать стори на сверку: это решение ролей product-owner, а здесь Глеб (роли: devops). Реестр ролей - .factory/roles.yml цели.',
+    ]);
+
+    // Продукт переписал страницу - новая версия от Ани уходит на сверку.
+    await wiki.upsertPage('Тёмная тема', 'Тёмная тема по настройке системы');
+    const p = wiki.pages.get('Тёмная тема');
+    if (p) p.author = 'anna';
+    await loop.tick();
+    const [issue] = await tracker.listIssues({ state: 'all' });
+    expect(issue?.labels).toEqual(['story', `wiki-${page.id}`]);
+    expect(issue?.body).toContain('по настройке системы');
   });
 });

@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { KNOWLEDGE_DOCS } from '../../ports/test/contract.ts';
 import { memoryKnowledge, memoryTracker } from '../../ports/test/memory.ts';
 import { DEFAULT_GUARD } from '../guard.ts';
-import { mcpHttp } from '../mcp.ts';
+import { mcpHttp, mcpKeys } from '../mcp.ts';
+import { parseRoles } from '../roles.ts';
 
 describe('MCP фабрики', () => {
   const tracker = memoryTracker();
@@ -74,5 +75,61 @@ describe('MCP фабрики', () => {
     };
     const key = /Задача (\S+)/.exec(sub.content[0]?.text ?? '')?.[1] ?? '';
     expect((await tracker.getIssue(key)).labels).toEqual(['agent']);
+  });
+});
+
+describe('MCP фабрики и реестр ролей', () => {
+  it('ключи: "учётка ключ" или один ключ - учётка default', () => {
+    expect(mcpKeys('k-1\n')).toEqual([['k-1', 'default']]);
+    expect(mcpKeys('# разработчики\nanna k-a\ngleb   k-g')).toEqual([
+      ['k-a', 'anna'],
+      ['k-g', 'gleb'],
+    ]);
+  });
+
+  it('задачу агенту передаёт только роль с этим решением; учётку называет ключ', async () => {
+    const tracker = memoryTracker();
+    const srv = mcpHttp({
+      knowledge: memoryKnowledge([]),
+      refreshKnowledge: async () => {},
+      judge: { check: async () => ({ verdict: 'ok', summary: '', conflicts: [], checked: [] }) },
+      tracker,
+      targetFile: async () => undefined,
+      guard: DEFAULT_GUARD,
+      agentLabel: 'agent',
+      token: () => 'anna key-anna\ngleb key-gleb',
+      roles: async () =>
+        parseRoles(`
+holders:
+  anna: { kind: human-ai, name: Аня, accounts: { mcp: anna } }
+  gleb: { kind: human, name: Глеб, accounts: { mcp: gleb } }
+roles:
+  developer: [anna]
+  devops: [gleb]
+decisions:
+  submit-task: [developer]
+`),
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const url = new URL(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/mcp`);
+    const submit = async (key: string) => {
+      const client = new Client({ name: 'test', version: '1' });
+      await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { authorization: `Bearer ${key}` } } }));
+      const r = (await client.callTool({ name: 'submit_task', arguments: { title: 'Тёмная тема', body: 'нужна' } })) as {
+        content: { text: string }[];
+      };
+      await client.close();
+      return r.content[0]?.text ?? '';
+    };
+    try {
+      expect(await submit('key-gleb')).toBe(
+        'Нельзя передать задачу агенту: это решение ролей developer, а здесь Глеб (роли: devops). Реестр ролей - .factory/roles.yml цели.',
+      );
+      expect(await submit('key-anna')).toMatch(/^Задача 1 заведена/);
+      expect((await tracker.getIssue('1')).body).toBe('нужна\n\nИз MCP: Аня');
+      expect((await fetch(url, { method: 'POST', body: '{}', headers: { authorization: 'Bearer anna' } })).status).toBe(401);
+    } finally {
+      srv.close();
+    }
   });
 });

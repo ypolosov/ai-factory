@@ -146,6 +146,8 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
       // Кто поставил и кто завёл - учётка носителя: по ней реестр ролей узнаёт роль.
       assert.ok(added.author, 'нет автора метки');
       assert.equal((await t.getIssue(i.key)).author, added.author);
+      // Своя учётка порта: метки фабрики после её же проверки прав не проверяются второй раз.
+      assert.equal(await t.me(), added.author);
     });
 
     it('задачу можно закрыть и открыть снова', async () => {
@@ -392,7 +394,7 @@ export function wikiContract(name: string, setup: () => Promise<WikiFixture>) {
       await w.addLabel(a.id, label);
       await w.comment(a.id, 'комментарий фабрики');
       // Поиск носителя отстаёт от записи (индекс Confluence): ждём до 30 с.
-      let byLabel: { id: string; version: number }[] = [];
+      let byLabel: { id: string; version: number; author?: string }[] = [];
       let byText: { id: string }[] = [];
       for (let n = 0; n < 30 && (!byLabel.length || !byText.length); n++) {
         byLabel = await w.pagesByLabel(label);
@@ -401,6 +403,8 @@ export function wikiContract(name: string, setup: () => Promise<WikiFixture>) {
       }
       assert.equal(byLabel[0]?.id, a.id);
       assert.ok((byLabel[0]?.version ?? 0) >= 1);
+      // Автор текущей версии: по нему реестр ролей решает, можно ли отдать стори на сверку.
+      assert.ok(byLabel[0]?.author, 'нет автора версии');
       assert.ok(
         byText.some((p) => p.id === a.id),
         'нет поиска по тексту',
