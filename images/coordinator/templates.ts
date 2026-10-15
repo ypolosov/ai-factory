@@ -13,6 +13,8 @@ export const taskSpec = z.object({
     .min(1),
   outOfScope: z.array(z.string()).default([]),
   basis: z.array(z.string()).default([]),
+  // Плановая оценка исполнителю в часах; негодная оценка отбрасывается, а не задача.
+  estimateHours: z.coerce.number().min(0.25).max(40).optional().catch(undefined),
 });
 export type TaskSpec = z.infer<typeof taskSpec>;
 
@@ -39,6 +41,9 @@ export function taskBody(t: TaskSpec, origin: string): string {
     'Основания',
     ...list(t.basis),
     '',
+    'Оценка',
+    t.estimateHours ? `${t.estimateHours} ч` : 'нет',
+    '',
     'Откуда',
     origin,
   ].join('\n');
@@ -46,7 +51,7 @@ export function taskBody(t: TaskSpec, origin: string): string {
 
 // Строка задачи в предложении нарезки (чат).
 export function taskLine(t: TaskSpec, n: number): string {
-  return `${n}. ${t.title} - ${t.goal} (сценариев приёмки: ${t.scenarios.length})`;
+  return `${n}. ${t.title} - ${t.goal} (сценариев приёмки: ${t.scenarios.length}${t.estimateHours ? `, оценка ${t.estimateHours} ч` : ''})`;
 }
 
 // Ответ библиотекаря: коротко, подробнее, источники; ссылки [n] - на источники.

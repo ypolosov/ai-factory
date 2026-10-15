@@ -25,6 +25,9 @@ export interface Issue {
   labels: string[];
   url: string;
   author?: string; // кто завёл: учётка носителя (accountId Jira, логин Forgejo)
+  assignee?: string; // исполнитель: учётка носителя
+  estimateSeconds?: number; // плановая оценка (у носителя, который её хранит)
+  spentSeconds?: number; // списанное время
 }
 
 export interface Comment {
@@ -64,6 +67,11 @@ export interface Tracker {
   labelEvents(key: string): Promise<LabelEvent[]>;
   // Учётка самой фабрики в трекере: её метки ставятся только после проверки прав.
   me(): Promise<string>;
+  // Исполнитель, плановая оценка и списанное время. Оценку хранит не каждый носитель:
+  // Forgejo знает только списанное время - оценка там идёт строкой в описание.
+  assign(key: string, account: string): Promise<void>;
+  estimate(key: string, hours: number): Promise<void>;
+  logWork(key: string, seconds: number, comment: string): Promise<void>;
 }
 
 export type PullState = 'open' | 'merged' | 'closed';

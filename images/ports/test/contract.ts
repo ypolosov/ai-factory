@@ -60,6 +60,19 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
     });
     afterAll(async () => fx?.cleanup());
 
+    it('исполнитель, плановая оценка и списанное время', async () => {
+      const i = await t.createIssue({ title: `исполнитель ${uniq()}`, body: 'задача' });
+      const me = await t.me();
+      await t.assign(i.key, me);
+      await t.estimate(i.key, 1.5);
+      await t.logWork(i.key, 600, 'агент фабрики: 10 мин работы');
+      const got = await t.getIssue(i.key);
+      assert.equal(got.assignee, me);
+      // Оценку носитель хранит полем или строкой описания; списанное время - если отдаёт его в задаче.
+      assert.ok(got.estimateSeconds === 5400 || got.body.includes('Оценка: 1.5 ч'), 'нет оценки');
+      if (got.spentSeconds !== undefined) assert.ok(got.spentSeconds >= 600);
+    });
+
     it('название и описание задачи меняются', async () => {
       const i = await t.createIssue({ title: `было ${uniq()}`, body: 'старое описание' });
       await t.updateIssue(i.key, { title: 'стало', body: 'новое описание' });

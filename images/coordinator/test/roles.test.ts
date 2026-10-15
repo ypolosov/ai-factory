@@ -43,4 +43,19 @@ describe('реестр ролей', () => {
     expect(r.open).toBe(true);
     expect(r.check('deploy', 'discord', 'кто угодно').ok).toBe(true);
   });
+
+  it('учётка держателя роли в инструменте - для назначения исполнителя', () => {
+    const r = parseRoles(`
+holders:
+  be: { kind: ai, name: Бэкенд, accounts: { discord: "d-1", jira: "j-be" } }
+  fe: { kind: ai, name: Фронтенд, accounts: { discord: "d-2" } }
+roles:
+  backend-developer-ai: [be]
+  frontend-developer-ai: [fe]
+decisions: {}
+`);
+    expect(r.account('backend-developer-ai', 'jira')).toBe('j-be');
+    expect(r.account('frontend-developer-ai', 'jira')).toBeUndefined();
+    expect(parseRoles(undefined).account('backend-developer-ai', 'jira')).toBeUndefined();
+  });
 });

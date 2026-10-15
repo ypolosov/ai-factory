@@ -27,6 +27,8 @@ export interface Deps {
   brokerUrl: string; // адрес посредника для шага
   labels: Labels;
   guard: GuardOptions;
+  // Исполнитель задачи агента роли: учётка трекера ИИ-персонажа роли (реестр ролей цели).
+  assignee?(role: string): Promise<string | undefined>;
 }
 
 export interface Task {
@@ -59,6 +61,9 @@ const relabel = async (d: Deps, issue: string, from: string[], to: string) => {
 export async function claim(d: Deps, issue: string, label = d.labels.trigger, role = 'dev'): Promise<Task> {
   const i = await d.tracker.getIssue(issue);
   await relabel(d, issue, [label], d.labels.running);
+  const who = await d.assignee?.(role).catch(() => undefined);
+  if (who)
+    await d.tracker.assign(issue, who).catch((e) => d.tracker.addComment(issue, `Исполнителя назначить не вышло: ${(e as Error).message}`));
   return { issue, title: i.title, body: i.body, role };
 }
 
@@ -131,6 +136,16 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
     await relabel(d, t.issue, [d.labels.running], d.labels.failed);
     return { result: 'failed', detail };
   }
+  // Фактическое время агента - в трекер (план против факта); сбой списания задачу не ломает.
+  const seconds = Number((JSON.parse(d.runs.read(runId, 'run.json')?.toString('utf8') ?? '{}') as { seconds?: number }).seconds ?? 0);
+  if (seconds > 0)
+    await d.tracker
+      .logWork(
+        t.issue,
+        seconds,
+        `Агент фабрики (роль ${meta.role ?? 'dev'}): ${Math.max(1, Math.round(seconds / 60))} мин работы, запуск ${runId}`,
+      )
+      .catch((e) => d.tracker.addComment(t.issue, `Время агента не списано: ${(e as Error).message}`));
   const patch = d.runs.read(runId, 'agent.patch')?.toString('utf8') ?? '';
   const exitCode = Number(
     (JSON.parse(d.runs.read(runId, 'done.json')?.toString('utf8') ?? '{}') as { exit_code?: number }).exit_code ?? -1,

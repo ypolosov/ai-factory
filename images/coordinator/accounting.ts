@@ -3,7 +3,7 @@
 // теневая: шлюз считает её по каталогу цен.
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import type { Forge } from '../ports/ports.ts';
+import type { Forge, Tracker } from '../ports/ports.ts';
 import { VERDICT_KEY } from './actions.ts';
 import type { RunStore } from './runs.ts';
 
@@ -43,9 +43,11 @@ export interface AccountRow {
   agentSeconds: number;
   usage: Usage;
   pull?: { number: number; url: string; state: string; verdict?: string };
+  planSeconds?: number; // плановая оценка в трекере
+  spentSeconds?: number; // списанное время в трекере (агент и люди)
 }
 
-export async function account(d: { runs: RunStore; forge: Forge; usage: UsageSource }): Promise<AccountRow[]> {
+export async function account(d: { runs: RunStore; forge: Forge; usage: UsageSource; tracker?: Tracker }): Promise<AccountRow[]> {
   const byIssue = new Map<string, AccountRow>();
   const pulls = await d.forge.listPulls({ state: 'all', limit: 100 });
   for (const meta of d.runs.list().filter((m) => !m.kind || m.kind === 'agent')) {
@@ -73,6 +75,11 @@ export async function account(d: { runs: RunStore; forge: Forge; usage: UsageSou
     }
     byIssue.set(meta.issue, row);
   }
+  for (const row of byIssue.values()) {
+    const i = await d.tracker?.getIssue(row.issue).catch(() => undefined);
+    if (i?.estimateSeconds) row.planSeconds = i.estimateSeconds;
+    if (i?.spentSeconds) row.spentSeconds = i.spentSeconds;
+  }
   return [...byIssue.values()];
 }
 
@@ -84,7 +91,12 @@ export function accountText(rows: AccountRow[]): string {
     const pr = r.pull
       ? `PR ${r.pull.number} ${STATE[r.pull.state] ?? r.pull.state}, страж ${r.pull.verdict === 'success' ? 'зелёный' : r.pull.verdict ? 'красный' : '-'} ${r.pull.url}`
       : 'PR нет';
-    return `- ${r.issue}: попыток ${r.attempts}; агент ${r.agentSeconds} с (модель ${r.usage.seconds} с, запросов ${r.usage.requests}); $${r.usage.cost.toFixed(3)}; токенов ${Math.round(r.usage.tokensIn / 1000)}k/${Math.round(r.usage.tokensOut / 1000)}k; ${pr}`;
+    const hours = (s: number) => `${Math.round((s / 3600) * 10) / 10} ч`;
+    const plan =
+      r.planSeconds || r.spentSeconds
+        ? `план ${r.planSeconds ? hours(r.planSeconds) : '-'}, списано ${r.spentSeconds ? hours(r.spentSeconds) : '-'}; `
+        : '';
+    return `- ${r.issue}: ${plan}попыток ${r.attempts}; агент ${r.agentSeconds} с (модель ${r.usage.seconds} с, запросов ${r.usage.requests}); $${r.usage.cost.toFixed(3)}; токенов ${Math.round(r.usage.tokensIn / 1000)}k/${Math.round(r.usage.tokensOut / 1000)}k; ${pr}`;
   });
   const total = rows.reduce((s, r) => s + r.usage.cost, 0);
   const attempts = rows.reduce((s, r) => s + r.attempts, 0);

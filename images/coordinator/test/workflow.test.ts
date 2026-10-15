@@ -64,7 +64,7 @@ describe('координатор: задача -> агент -> страж -> PR
     const put = (name: string, body: string | Uint8Array) =>
       fetch(`${env.BROKER_URL}/v1/files/${name}`, { method: 'PUT', headers: h, body: body as BodyInit });
     await put('agent.patch', new Uint8Array(patch));
-    await put('run.json', JSON.stringify({ task_id: vars.TASK_ID, exit_code: change.exit ?? 0 }));
+    await put('run.json', JSON.stringify({ task_id: vars.TASK_ID, exit_code: change.exit ?? 0, seconds: 120 }));
     await fetch(`${env.BROKER_URL}/v1/done`, { method: 'POST', headers: h, body: JSON.stringify({ exit_code: change.exit ?? 0 }) });
     return change.exit ? ('failed' as const) : ('success' as const);
   };
@@ -87,6 +87,7 @@ describe('координатор: задача -> агент -> страж -> PR
     brokerUrl,
     labels,
     guard: DEFAULT_GUARD,
+    assignee: async (role) => (role === 'backend' ? 'agent-backend' : undefined),
   });
   // Новый экземпляр Mastra на тот же файл хранилища - как перезапуск службы.
   const boot = () => {
@@ -189,6 +190,10 @@ describe('координатор: задача -> агент -> страж -> PR
     change = { file: 'api/src/draw.ts', text: 'export const draw = 2;\n' };
     const ok = (await tracker.createIssue({ title: 'API', body: '', labels: ['agent:backend'] })).key;
     expect(await settle(ok)).toEqual([labels.review]);
+    // Задача назначена на персонажа роли, время агента списано.
+    expect((await tracker.getIssue(ok)).assignee).toBe('agent-backend');
+    expect((await tracker.getIssue(ok)).spentSeconds).toBe(120);
+    expect((await tracker.listComments(ok)).map((c) => c.body).join('\n')).toContain('Агент фабрики (роль backend): 2 мин работы');
   });
 
   it('изменение настроек CI страж не публикует', async () => {

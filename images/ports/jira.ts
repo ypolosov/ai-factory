@@ -83,10 +83,11 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
     return (r.status === 204 || r.headers.get('content-length') === '0' ? undefined : await r.json().catch(() => undefined)) as T;
   }
 
-  const FIELDS = ['summary', 'description', 'labels', 'status', 'creator'];
+  const FIELDS = ['summary', 'description', 'labels', 'status', 'creator', 'assignee', 'timetracking'];
   const toIssue = (i: Json): Issue => {
     const f = i.fields as Json;
     const cat = ((f.status as Json | undefined)?.statusCategory as Json | undefined)?.key;
+    const tt = f.timetracking as Json | undefined;
     return {
       key: String(i.key),
       title: String(f.summary ?? ''),
@@ -95,6 +96,9 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
       labels: ((f.labels as string[] | undefined) ?? []).map(String),
       url: `${site}/browse/${String(i.key)}`,
       ...((f.creator as Json | undefined)?.accountId ? { author: String((f.creator as Json).accountId) } : {}),
+      ...((f.assignee as Json | undefined)?.accountId ? { assignee: String((f.assignee as Json).accountId) } : {}),
+      ...(tt?.originalEstimateSeconds ? { estimateSeconds: Number(tt.originalEstimateSeconds) } : {}),
+      ...(tt?.timeSpentSeconds ? { spentSeconds: Number(tt.timeSpentSeconds) } : {}),
     };
   };
   const getRaw = async (key: string) => {
@@ -211,6 +215,21 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
         }
       }
       return events;
+    },
+    async assign(key, account) {
+      await call('PUT', `/issue/${encodeURIComponent(key)}/assignee`, { accountId: account });
+    },
+    async estimate(key, hours) {
+      // Поле "Time tracking" должно быть на экране типа задачи (в командном проекте - в настройках типа).
+      await call('PUT', `/issue/${encodeURIComponent(key)}`, {
+        fields: { timetracking: { originalEstimate: `${Math.max(1, Math.round(hours * 60))}m` } },
+      });
+    },
+    async logWork(key, seconds, comment) {
+      await call('POST', `/issue/${encodeURIComponent(key)}/worklog`, {
+        timeSpentSeconds: Math.max(60, Math.round(seconds)),
+        comment: textToAdf(comment),
+      });
     },
     async me() {
       self ??= call<Json>('GET', '/myself')
