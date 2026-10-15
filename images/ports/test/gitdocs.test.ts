@@ -24,6 +24,26 @@ describe('документы в git', () => {
     expect(anchor('ADR-3. Результат воспроизводим из зерна')).toBe('adr-3-результат-воспроизводим-из-зерна');
   });
 
+  it('спецификации OpenSpec - знание: живые требования и изменения в работе, без архива', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gitdocs-'));
+    const files: Record<string, string> = {
+      'openspec/specs/draw/spec.md': '## Requirements\n\n### Requirement: Повтор розыгрыша\nСледующий кандидат.\n',
+      'openspec/changes/draw-12-redraw/proposal.md': '## Why\n\nПовтор розыгрыша невостребованного приза.\n',
+      'openspec/changes/archive/2026-10-01-old/proposal.md': '## Why\n\nПовтор розыгрыша по-старому.\n',
+      'openspec/schemas/factory/templates/proposal.md': '## Why\n\nПовтор розыгрыша - шаблон.\n',
+    };
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), text);
+    }
+    const found = await gitDocsKnowledge({ dir, web: 'https://github.com/o/r', ref: () => 'abc' }).search('повтор розыгрыша', 10);
+    expect([...new Set(found.map((p) => p.source))].sort()).toEqual([
+      'openspec/changes/draw-12-redraw/proposal.md',
+      'openspec/specs/draw/spec.md',
+    ]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('ссылка ведёт на файл в коммите и раздел', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gitdocs-'));
     writeFileSync(join(dir, 'README.md'), '# Розыгрыш\n\n## Правила\n\nR1. Одна заявка.\n');

@@ -1,5 +1,7 @@
-// Адаптер базы знаний на документах в git: README.md, AGENTS.md и docs/**/*.md рабочей копии
-// репозитория. Отрывок - раздел под заголовком; ссылка - на файл в коммите и якорь раздела.
+// Адаптер базы знаний на документах в git: README.md, AGENTS.md, docs/**/*.md и спецификации
+// OpenSpec рабочей копии репозитория - живые требования (openspec/specs) и утверждённые
+// изменения в работе (openspec/changes без архива). Отрывок - раздел под заголовком; ссылка -
+// на файл в коммите и якорь раздела.
 // Поиск - по совпадению основ слов (text.ts); носитель для малого корпуса правил и
 // решений, пока нет ядра базы знаний.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -23,15 +25,18 @@ export const anchor = (heading: string) =>
 
 function markdownFiles(dir: string): string[] {
   const out = ['README.md', 'AGENTS.md'].filter((f) => existsSync(join(dir, f)));
-  const walk = (d: string) => {
+  const walk = (d: string, skip: string[] = []) => {
     if (!existsSync(d)) return;
     for (const name of readdirSync(d).sort()) {
+      if (skip.includes(name)) continue;
       const p = join(d, name);
       if (statSync(p).isDirectory()) walk(p);
       else if (name.endsWith('.md')) out.push(relative(dir, p));
     }
   };
   walk(join(dir, 'docs'));
+  walk(join(dir, 'openspec', 'specs'));
+  walk(join(dir, 'openspec', 'changes'), ['archive']);
   return out;
 }
 
