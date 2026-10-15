@@ -139,6 +139,33 @@ describe('координатор: задача -> агент -> страж -> PR
     expect(comments).not.toContain('секрет');
   });
 
+  it('изменение OpenSpec задачи из базы - в задании агента и в вердикте стража', async () => {
+    const issue = (await tracker.createIssue({ title: 'Повтор розыгрыша', body: 'по спецификации', labels: ['agent'] })).key;
+    const seed = mkdtempSync(join(root, 'spec-'));
+    git(seed, 'clone', '-q', origin, 'repo');
+    const change = join(seed, 'repo', 'openspec', 'changes', `${issue}-redraw`);
+    mkdirSync(join(change, 'specs', 'draw'), { recursive: true });
+    writeFileSync(join(change, 'proposal.md'), '## Why\n\nНевостребованный приз разыгрывается заново.\n');
+    writeFileSync(
+      join(change, 'specs', 'draw', 'spec.md'),
+      '## ADDED Requirements\n\n### Requirement: Повтор\n\n#### Scenario: следующий кандидат\n- **WHEN** приз не подтверждён\n- **THEN** выигрывает следующий кандидат\n',
+    );
+    git(join(seed, 'repo'), 'add', '-A');
+    git(join(seed, 'repo'), 'commit', '-q', '-m', `${issue}: изменение OpenSpec`);
+    git(join(seed, 'repo'), 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+    await settle(issue);
+    const run = runs.list().find((r) => r.issue === issue);
+    expect(run?.spec).toBe(`openspec/changes/${issue}-redraw`);
+    const task = runs.read(run?.runId ?? '', 'task.md')?.toString() ?? '';
+    expect(task).toContain('### proposal.md');
+    expect(task).toContain('### specs/draw/spec.md');
+    expect(task).toContain('- **THEN** выигрывает следующий кандидат');
+    const pull = (await mf.forge.listPulls()).find((p) => p.title.startsWith(`${issue}:`));
+    expect((await mf.forge.listPullComments(pull?.number ?? 0)).at(-1)?.body).toContain(
+      `- сведение: спецификация: изменение OpenSpec openspec/changes/${issue}-redraw (утверждено слиянием в main)`,
+    );
+  });
+
   it('изменение настроек CI страж не публикует', async () => {
     change = { file: '.github/workflows/ci.yml', text: 'on: push\n' };
     const before = (await mf.forge.listPulls({ state: 'all' })).length;

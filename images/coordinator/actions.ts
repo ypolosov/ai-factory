@@ -1,8 +1,8 @@
 // Действия координатора над портами: взять задачу, отдать её агенту на исполнителе заданий,
 // проверить итог стражем и опубликовать PR. Движок сценария (Mastra) только связывает их
 // в шаги и хранит состояние между ними - его замена не трогает этот код.
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import type { Forge, JobRunner, JobState, Tracker } from '../ports/ports.ts';
 import type { Git } from './git.ts';
 import { type GuardOptions, guardPatch, type Verdict } from './guard.ts';
@@ -59,13 +59,41 @@ export async function claim(d: Deps, issue: string): Promise<Task> {
   return { issue, title: i.title, body: i.body };
 }
 
+// Спецификация задачи - изменение OpenSpec, утверждённое слиянием PR в базу: каталог
+// openspec/changes/<ключ в нижнем регистре>[-<имя>]/. Артефакты - в постоянном порядке, до 30 КБ.
+const ARTIFACTS = ['proposal.md', 'design.md', 'tasks.md', 'test-plan.md'];
+export function openspecChange(repo: string, issue: string): { path: string; text: string } | undefined {
+  const changes = join(repo, 'openspec', 'changes');
+  const key = issue.toLowerCase();
+  const name = existsSync(changes) ? readdirSync(changes).find((n) => n === key || n.startsWith(`${key}-`)) : undefined;
+  if (!name) return undefined;
+  const dir = join(changes, name);
+  const walk = (p: string): string[] =>
+    statSync(p).isDirectory()
+      ? readdirSync(p)
+          .sort()
+          .flatMap((n) => walk(join(p, n)))
+      : [p];
+  const files = [
+    ...ARTIFACTS.map((f) => join(dir, f)).filter((f) => existsSync(f)),
+    ...(existsSync(join(dir, 'specs')) ? walk(join(dir, 'specs')).filter((f) => f.endsWith('.md')) : []),
+  ];
+  const text = files.map((f) => `### ${relative(dir, f)}\n\n${readFileSync(f, 'utf8').trim()}`).join('\n\n');
+  return { path: `openspec/changes/${name}`, text: text.slice(0, 30_000) };
+}
+
 export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatched> {
   const { token } = d.runs.create(runId, t.issue);
   const baseBranch = (await d.forge.repo()).defaultBranch;
   const { baseSha } = await d.git.prepare(d.runs.dir(runId), baseBranch);
-  d.runs.write(runId, 'task.md', `# ${t.issue}: ${t.title}\n\n${t.body}\n`);
+  const spec = openspecChange(join(d.runs.dir(runId), 'repo'), t.issue);
+  d.runs.write(
+    runId,
+    'task.md',
+    `# ${t.issue}: ${t.title}\n\n${t.body}\n${spec ? `\n## Спецификация: изменение OpenSpec ${spec.path} (утверждено слиянием)\n\nТесты - по сценариям требований и до кода; каталог openspec/ не меняй.\n\n${spec.text}\n` : ''}`,
+  );
   const job = await d.jobs.start({ job: d.job, variables: { BROKER_URL: d.brokerUrl }, secrets: { RUN_TOKEN: token } });
-  d.runs.update(runId, { baseBranch, baseSha, jobId: job.id, jobUrl: job.url });
+  d.runs.update(runId, { baseBranch, baseSha, jobId: job.id, jobUrl: job.url, ...(spec ? { spec: spec.path } : {}) });
   await d.tracker.addComment(t.issue, `Фабрика взяла задачу: запуск ${runId}, задание агента ${job.url}`);
   return { issue: t.issue, title: t.title, jobId: job.id, jobUrl: job.url };
 }
@@ -98,6 +126,12 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
     d.runs.read(runId, 'secrets.json')?.toString('utf8'),
     d.runs.read(runId, 'tests.json')?.toString('utf8'),
   );
+  v.findings.push({
+    level: 'info',
+    message: meta.spec
+      ? `спецификация: изменение OpenSpec ${meta.spec} (утверждено слиянием в ${meta.baseBranch})`
+      : `изменения OpenSpec для задачи нет (openspec/changes/${t.issue.toLowerCase()}-...)`,
+  });
   if (v.state === 'blocked') {
     await d.tracker.addComment(t.issue, `Страж фабрики не пропустил изменение агента:\n${verdictText(v)}\nЖурнал: ${t.jobUrl}`);
     await relabel(d, t.issue, [d.labels.running], d.labels.failed);

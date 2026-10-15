@@ -20,6 +20,7 @@ export interface RunMeta {
   kind?: RunKind;
   subject?: string; // что проверяет проверка: PR и коммит, задача, коммит стенда
   reported?: boolean; // итог проверки уже разобран
+  spec?: string; // изменение OpenSpec задачи в базе (openspec/changes/<ключ>-<имя>)
 }
 
 export type RunKind = 'agent' | 'judge' | 'design' | 'e2e' | 'scan';
