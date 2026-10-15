@@ -196,7 +196,15 @@ const checkDeps = {
   pipeline: (kind: string) => (kind === 'e2e' ? 'e2e-stand' : cfg.job),
 };
 const judges = prJudge({ ...checkDeps, forge: deps.forge, tracker: deps.tracker, log });
-const checks = checkLoop({ runs, jobs: deps.jobs, handlers: { judge: judgeHandler(deps.forge) }, log });
+const checks = checkLoop({
+  runs,
+  jobs: deps.jobs,
+  handlers: { judge: judgeHandler(deps.forge) },
+  saveCodexAuth: (auth) => {
+    if (auth.trim()) writeFileSync(join(cfg.data, 'codex-auth.json'), auth, { mode: 0o600 });
+  },
+  log,
+});
 const tick = async () => {
   await loop.tick();
   await storyChecks.tick();

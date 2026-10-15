@@ -52,6 +52,7 @@ describe('посредник шага', () => {
   it('итог шага сдаётся один раз, лишние и большие файлы не принимаются', async () => {
     const { token } = runs.create('R-2', 'DRAW-2');
     expect((await call(token, 'PUT', '/v1/files/agent.patch', 'diff')).status).toBe(204);
+    expect((await call(token, 'PUT', '/v1/files/codex-auth.json', '{}')).status).toBe(204);
     expect((await call(token, 'PUT', '/v1/files/task.md', 'x')).status).toBe(400);
     expect((await call(token, 'PUT', '/v1/files/agent.log', 'x'.repeat(2048))).status).toBe(413);
     expect((await call(token, 'POST', '/v1/done', '{"exit_code":3}')).status).toBe(204);

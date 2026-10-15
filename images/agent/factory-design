@@ -41,4 +41,8 @@ gw="-e GATEWAY_URL -e GATEWAY_KEY -e TASK_ID"
 	exit 1
 }
 jq -e 'select(type == "object")' "$work/last.json" >"$out"
+# Codex обновил вход - новый вход рядом с ответом: вызвавший сдаёт его фабрике.
+if ! printf '%s' "$CODEX_AUTH_JSON" | cmp -s - "$auth"; then
+	(umask 077 && cp "$auth" "$(dirname "$out")/codex-auth.json")
+fi
 jq -c '{matches, score, n_remarks: (.remarks | length)}' "$out" >&2

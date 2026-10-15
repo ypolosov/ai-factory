@@ -21,7 +21,8 @@ export interface BrokerOptions {
   maxUpload?: number; // байт на файл, по умолчанию 10 МБ
 }
 
-const UPLOADS: RunFile[] = ['agent.patch', 'run.json', 'agent.log', 'secrets.json', 'result.json'];
+// codex-auth.json - вход Codex, обновлённый в шаге: фабрика хранит его и выдаёт следующим шагам.
+const UPLOADS: RunFile[] = ['agent.patch', 'run.json', 'agent.log', 'secrets.json', 'result.json', 'codex-auth.json'];
 
 class HttpError extends Error {
   readonly status: number;
@@ -72,7 +73,7 @@ export function broker(o: BrokerOptions): Server {
         return send(200, JSON.stringify(o.env(meta)), 'application/json');
       }
       if (meta.done) throw new HttpError(409, 'запуск уже закончен');
-      const upload = /^PUT \/v1\/files\/([a-z.]+)$/.exec(route)?.[1] as RunFile | undefined;
+      const upload = /^PUT \/v1\/files\/([a-z.-]+)$/.exec(route)?.[1] as RunFile | undefined;
       if (upload) {
         if (!UPLOADS.includes(upload)) throw new HttpError(400, `нельзя сдать файл ${upload}`);
         o.runs.write(meta.runId, upload, await body(req, limit));

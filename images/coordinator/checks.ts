@@ -41,6 +41,8 @@ export function checkLoop(d: {
   runs: RunStore;
   jobs: JobRunner;
   handlers: Partial<Record<CheckKind, CheckHandler>>;
+  // Вход Codex, обновлённый в шаге: сохранить для следующих шагов.
+  saveCodexAuth?(auth: string): void;
   log(m: string): void;
 }) {
   let busy = false;
@@ -60,6 +62,11 @@ export function checkLoop(d: {
             result = undefined;
           }
           d.runs.update(meta.runId, { reported: true });
+          const auth = d.runs.read(meta.runId, 'codex-auth.json');
+          if (auth?.length && d.saveCodexAuth) {
+            d.saveCodexAuth(auth.toString('utf8'));
+            d.runs.write(meta.runId, 'codex-auth.json', '');
+          }
           try {
             await d.handlers[meta.kind]?.(meta, result, job);
           } catch (e) {

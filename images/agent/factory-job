@@ -47,7 +47,7 @@ judge)
 		"$work/out/result.json" 2>"$work/out/agent.log"
 	rc=$?
 	set -e
-	upload result.json agent.log
+	upload result.json agent.log codex-auth.json
 	finish "$rc"
 	;;
 design)
@@ -57,7 +57,7 @@ design)
 	GATEWAY_KEY=$GATEWAY_KEY_SUB factory-design "$FACTORY_MODEL" "$work/task.md" "$work/input.png" "$work/out/result.json" 2>"$work/out/agent.log"
 	rc=$?
 	set -e
-	upload result.json agent.log
+	upload result.json agent.log codex-auth.json
 	finish "$rc"
 	;;
 esac

@@ -63,6 +63,10 @@ codex)
 		exit 1
 	}
 	jq -e 'select(type == "object")' "$work/last.json" >"$out"
+	# Codex обновил вход - новый вход рядом с ответом: вызвавший сдаёт его фабрике.
+	if ! printf '%s' "$CODEX_AUTH_JSON" | cmp -s - "$auth"; then
+		(umask 077 && cp "$auth" "$(dirname "$out")/codex-auth.json")
+	fi
 	;;
 *)
 	echo "судья: исполнитель $executor не поддерживается (claude, codex)" >&2

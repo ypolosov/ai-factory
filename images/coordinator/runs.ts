@@ -33,6 +33,7 @@ export type RunFile =
   | 'agent.log'
   | 'secrets.json'
   | 'result.json'
+  | 'codex-auth.json'
   | 'done.json';
 
 export interface RunStore {

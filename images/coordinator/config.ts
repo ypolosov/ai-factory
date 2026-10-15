@@ -205,7 +205,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       NO_PROXY: [new URL(gateway).hostname, new URL(brokerUrl).hostname].join(','),
     },
     judgeModel: env.JUDGE_CODEX_MODEL ?? 'default',
-    codexAuth: () => file('codex-auth.json').trim(),
+    // Вход Codex: обновлённый шагами (в данных координатора) или исходный из секретов.
+    codexAuth: () => {
+      const fresh = join(env.COORDINATOR_DATA ?? '/data', 'codex-auth.json');
+      return (existsSync(fresh) ? readFileSync(fresh, 'utf8') : file('codex-auth.json')).trim();
+    },
     e2eBaseUrl: env.E2E_BASE_URL ?? 'http://172.31.250.50:8082',
     proxy,
     stepSecrets: () => ({
