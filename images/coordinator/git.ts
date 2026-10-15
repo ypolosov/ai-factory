@@ -18,6 +18,8 @@ export interface Git {
   prepare(dir: string, branch: string): Promise<{ baseSha: string }>;
   // Патч КАТАЛОГ/agent.patch -> коммит в новой ветке поверх базы -> push. Возвращает голову ветки.
   publish(dir: string, p: { branch: string; message: string }): Promise<{ headSha: string }>;
+  // Архив tar.gz коммита из рабочей копии КАТАЛОГ.
+  archive(dir: string, sha: string): Promise<Buffer>;
   // Рабочая копия ветки в КАТАЛОГЕ - клон или обновление до вершины ветки.
   sync(dir: string, branch: string): Promise<{ sha: string }>;
   // Файлы -> коммит в новой ветке поверх клона КАТАЛОГ/repo (после prepare) -> push.
@@ -81,6 +83,11 @@ export function git(cfg: GitConfig): Git {
       await g(repo, [...who, 'commit', '--quiet', '-m', message]);
       await g(repo, ['push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`], cfg.write);
       return { headSha: await g(repo, ['rev-parse', 'HEAD']) };
+    },
+    async archive(dir, sha) {
+      if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error(`плохой коммит ${sha}`);
+      const r = await run('git', ['archive', '--format=tar.gz', sha], { cwd: dir, encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 });
+      return r.stdout;
     },
     async sync(dir, branch) {
       if (!existsSync(join(dir, '.git'))) {

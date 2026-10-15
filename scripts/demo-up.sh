@@ -45,7 +45,8 @@ done
 
 docker compose --profile bitbucket up -d bb-dind bb-registry bb-runner egress
 # Шаг агента берёт образ из реестра шагов: Docker заданий в интернет не ходит.
-scripts/bb-images.sh factory/agent:stand
+docker build -q -t factory/e2e:stand images/e2e >/dev/null
+scripts/bb-images.sh factory/agent:stand factory/e2e:stand
 # Шлюз входит в сеть шагов (172.31.250.30) - пересоздаётся, если настройки сети изменились.
 docker compose up -d gateway
 docker compose --profile bitbucket up -d --build coordinator cd

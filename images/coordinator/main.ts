@@ -37,6 +37,7 @@ import { releaseWorkflow } from './release-workflow.ts';
 import { proposeRule } from './rule-candidates.ts';
 import { runStore } from './runs.ts';
 import { slicer, sliceWorkflow } from './slice.ts';
+import { e2eHandler, startStandE2e } from './stand-e2e.ts';
 import type { StoryDeps } from './story.ts';
 import { storyLoop } from './story-loop.ts';
 import { storyCheckWorkflow } from './story-workflow.ts';
@@ -165,6 +166,13 @@ const incidents = cfg.incidents
       log,
     })
   : undefined;
+// Проверки на раннере: судья PR (Codex) и разбор итогов проверок.
+const checkDeps = {
+  runs,
+  jobs: deps.jobs,
+  brokerUrl: cfg.broker.url,
+  pipeline: (kind: string) => (kind === 'e2e' ? 'e2e-stand' : cfg.job),
+};
 const bot = chat
   ? chatBot({
       chat,
@@ -177,6 +185,18 @@ const bot = chat
       release: { draft: async () => (await notes(releases)).text, confirm: releaseChecks.confirm },
       account: async () => accountText(await account({ runs, forge: deps.forge, usage: gatewayUsage(cfg.gatewayLog) })),
       slice: slicer(mastra.getWorkflow('slice')),
+      e2e: (channel) =>
+        startStandE2e(
+          {
+            ...checkDeps,
+            forge: deps.forge,
+            git: deps.git,
+            knowledgeDir,
+            refreshKnowledge: stories.refreshKnowledge,
+            post: (ch, text) => chat.post(ch, text),
+          },
+          channel,
+        ),
       proposeRule: () =>
         proposeRule({
           forge: deps.forge,
@@ -188,18 +208,17 @@ const bot = chat
       log,
     })
   : undefined;
-// Проверки на раннере: судья PR (Codex) и разбор итогов проверок.
-const checkDeps = {
-  runs,
-  jobs: deps.jobs,
-  brokerUrl: cfg.broker.url,
-  pipeline: (kind: string) => (kind === 'e2e' ? 'e2e-stand' : cfg.job),
-};
 const judges = prJudge({ ...checkDeps, forge: deps.forge, tracker: deps.tracker, log });
 const checks = checkLoop({
   runs,
   jobs: deps.jobs,
-  handlers: { judge: judgeHandler(deps.forge) },
+  handlers: {
+    judge: judgeHandler(deps.forge),
+    e2e: e2eHandler(async (channel, text) => {
+      if (chat) await chat.post(channel, text);
+      else log(text);
+    }),
+  },
   saveCodexAuth: (auth) => {
     if (auth.trim()) writeFileSync(join(cfg.data, 'codex-auth.json'), auth, { mode: 0o600 });
   },

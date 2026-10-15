@@ -25,6 +25,16 @@ pipelines:
     # Задание агента. Bitbucket знает только адрес посредника координатора и разовый
     # ключ запуска RUN_TOKEN (скрытая переменная); задачу, рабочую копию и ключи шага
     # factory-job получает у посредника и туда же сдаёт итог.
+    # e2e на стенде: сквозные проверки цели с коммита стенда против стенда (172.31.250.50).
+    # Исходники и адрес даёт посредник координатора, как агенту.
+    e2e-stand:
+      - step:
+          name: e2e
+          runs-on: [self.hosted, linux, factory]
+          image: 172.31.250.20:5000/factory/e2e:stand
+          max-time: 20
+          script:
+            - node /usr/local/lib/factory/factory-e2e.ts
     agent-task:
       - step:
           name: agent

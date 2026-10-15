@@ -120,6 +120,12 @@ services:
   deploy-dind:
     <<: *dind
     command: ["dockerd", "--host=unix:///var/run/dind/docker.sock", "--group=1000"]
+    # В сети шагов Bitbucket по адресу: e2e на стенде с раннера (опубликованные порты
+    # приложений; API Docker - только сокетом, по сети не виден).
+    networks:
+      factory: {}
+      bb-jobs:
+        ipv4_address: 172.31.250.50
     ports:
       - "127.0.0.1:8080-8089:8080-8089"
     volumes:
