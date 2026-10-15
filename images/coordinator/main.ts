@@ -15,7 +15,7 @@ import {
   selectTracker,
   selectWiki,
 } from '../ports/select.ts';
-import { compositeKnowledge, trackerKnowledge } from '../ports/tracker-knowledge.ts';
+import { compositeKnowledge, trackerKnowledge, wikiKnowledge } from '../ports/tracker-knowledge.ts';
 import { account, accountText, gatewayUsage } from './accounting.ts';
 import type { Deps } from './actions.ts';
 import { chatBot, gatewayLibrarian } from './bot.ts';
@@ -41,6 +41,7 @@ import { e2eHandler, startStandE2e } from './stand-e2e.ts';
 import type { StoryDeps } from './story.ts';
 import { storyLoop } from './story-loop.ts';
 import { storyCheckWorkflow } from './story-workflow.ts';
+import { wikiStories } from './wiki-stories.ts';
 import { agentTaskWorkflow } from './workflow.ts';
 
 const log = (m: string) => console.log(`${new Date().toISOString()} ${m}`);
@@ -69,6 +70,7 @@ const stories: StoryDeps = {
     selectKnowledge({ kind: 'gitdocs', dir: knowledgeDir, web: cfg.knowledgeWeb, ref: () => knowledgeSha }),
     // Задачи на решение противоречий пересказывают противоречие - знанием они не считаются.
     trackerKnowledge(deps.tracker, (i) => i.labels.includes(cfg.storyLabels.decision)),
+    wikiKnowledge(selectWiki(cfg.wiki)),
   ]),
   refreshKnowledge: async () => {
     knowledgeSha = (await deps.git.sync(knowledgeDir, (await deps.forge.repo()).defaultBranch)).sha;
@@ -224,7 +226,17 @@ const checks = checkLoop({
   },
   log,
 });
+// Стори из Confluence (метка story) -> стори в Jira на сверку; итог - на страницу.
+const wikiStoryLoop = wikiStories({
+  wiki: releases.wiki,
+  tracker: deps.tracker,
+  labels: cfg.storyLabels,
+  pageLabel: cfg.storyLabels.trigger,
+  stateFile: join(cfg.data, 'wiki-stories.json'),
+  log,
+});
 const tick = async () => {
+  await wikiStoryLoop.tick();
   await loop.tick();
   await storyChecks.tick();
   await pulls.tick();

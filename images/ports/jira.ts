@@ -141,6 +141,11 @@ export function jiraTracker(cfg: JiraConfig): Tracker {
       touch(made.id);
       return toIssue(await getRaw(String(made.key)));
     },
+    async updateIssue(key, { title, body }) {
+      await call('PUT', `/issue/${encodeURIComponent(key)}`, {
+        fields: { ...(title !== undefined ? { summary: title } : {}), ...(body !== undefined ? { description: textToAdf(body) } : {}) },
+      });
+    },
     async addComment(key, body) {
       await call('POST', `/issue/${encodeURIComponent(key)}/comment`, { body: textToAdf(body) });
     },

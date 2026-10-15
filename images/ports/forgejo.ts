@@ -112,6 +112,9 @@ export function forgejoTracker(cfg: ForgejoConfig): Tracker {
       for (const l of labels) ids.push(await labelId(l, true));
       return toIssue(await api.json('POST', '/issues', { title, body, labels: ids }));
     },
+    async updateIssue(key, { title, body }) {
+      await api.json('PATCH', `/issues/${key}`, { ...(title !== undefined ? { title } : {}), ...(body !== undefined ? { body } : {}) });
+    },
     async addComment(key, body) {
       await api.json('POST', `/issues/${key}/comments`, { body });
     },

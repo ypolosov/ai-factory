@@ -50,6 +50,7 @@ export interface Tracker {
   getIssue(key: string): Promise<Issue>;
   listIssues(q?: IssueQuery): Promise<Issue[]>;
   createIssue(i: { title: string; body: string; labels?: string[] }): Promise<Issue>;
+  updateIssue(key: string, i: { title?: string; body?: string }): Promise<void>;
   addComment(key: string, body: string): Promise<void>;
   listComments(key: string): Promise<Comment[]>;
   addLabel(key: string, label: string): Promise<void>;
@@ -177,9 +178,22 @@ export interface Chat {
 
 // Вики команды (Confluence): страницы по названию в одном пространстве. Тело - простой текст
 // с разметкой "## заголовок" и "- пункт"; адаптер переводит её в формат носителя.
+export interface WikiPage {
+  id: string;
+  title: string;
+  url: string;
+  body: string;
+  version: number;
+}
+
 export interface Wiki {
   upsertPage(title: string, body: string): Promise<{ id: string; url: string }>;
   getPage(title: string): Promise<{ id: string; url: string; body: string } | undefined>;
+  // Страницы с меткой (например, стори от продукта) и поиск по тексту.
+  pagesByLabel(label: string): Promise<WikiPage[]>;
+  search(text: string, limit?: number): Promise<WikiPage[]>;
+  addLabel(pageId: string, label: string): Promise<void>;
+  comment(pageId: string, text: string): Promise<void>;
 }
 
 // Реестр образов цели: есть ли образ с тегом.

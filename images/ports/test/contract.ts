@@ -60,6 +60,14 @@ export function trackerContract(name: string, setup: () => Promise<TrackerFixtur
     });
     afterAll(async () => fx?.cleanup());
 
+    it('название и описание задачи меняются', async () => {
+      const i = await t.createIssue({ title: `было ${uniq()}`, body: 'старое описание' });
+      await t.updateIssue(i.key, { title: 'стало', body: 'новое описание' });
+      const got = await t.getIssue(i.key);
+      assert.equal(got.title, 'стало');
+      assert.equal(got.body, 'новое описание');
+    });
+
     it('поиск по тексту задачи', async () => {
       const word = `zx${uniq()}`;
       const i = await t.createIssue({ title: `поиск ${uniq()}`, body: `описание со словом ${word}` });
@@ -373,5 +381,27 @@ export function wikiContract(name: string, setup: () => Promise<WikiFixture>) {
       assert.match(p?.body ?? '', /второе/);
       assert.doesNotMatch(p?.body ?? '', /первое/);
     });
+
+    it('метка, поиск по метке и тексту, комментарий', async () => {
+      const word = `zx${uniq()}`;
+      const label = `fct-${uniq()}`;
+      const a = await w.upsertPage(`Проверка фабрики ${uniq()}`, `Стори со словом ${word}`);
+      await w.addLabel(a.id, label);
+      await w.comment(a.id, 'комментарий фабрики');
+      // Поиск носителя отстаёт от записи (индекс Confluence): ждём до 30 с.
+      let byLabel: { id: string; version: number }[] = [];
+      let byText: { id: string }[] = [];
+      for (let n = 0; n < 30 && (!byLabel.length || !byText.length); n++) {
+        byLabel = await w.pagesByLabel(label);
+        byText = await w.search(`слово ${word}`);
+        if (!byLabel.length || !byText.length) await new Promise((r) => setTimeout(r, 1000));
+      }
+      assert.equal(byLabel[0]?.id, a.id);
+      assert.ok((byLabel[0]?.version ?? 0) >= 1);
+      assert.ok(
+        byText.some((p) => p.id === a.id),
+        'нет поиска по тексту',
+      );
+    }, 60_000);
   });
 }

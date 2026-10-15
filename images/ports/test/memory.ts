@@ -69,6 +69,11 @@ export function memoryTracker(user = 'factory-bot', keyPrefix = ''): Tracker {
       for (const l of labels) label(key, l, 'added');
       return { ...i, labels: [...i.labels] };
     },
+    async updateIssue(key, { title, body }) {
+      const i = get(key);
+      if (title !== undefined) i.title = title;
+      if (body !== undefined) i.body = body;
+    },
     async addComment(key, body) {
       get(key);
       comments.set(key, [...(comments.get(key) ?? []), { author: user, body, createdAt: now() }]);
@@ -316,19 +321,50 @@ export function memoryChat() {
   };
 }
 
-export function memoryWiki(): Wiki & { pages: Map<string, { id: string; body: string }> } {
-  const pages = new Map<string, { id: string; body: string }>();
+export function memoryWiki(): Wiki & {
+  pages: Map<string, { id: string; body: string; labels: string[]; version: number; comments: string[] }>;
+} {
+  const pages = new Map<string, { id: string; body: string; labels: string[]; version: number; comments: string[] }>();
   let seq = 0;
+  const page = (title: string, p: { id: string; body: string; version: number }) => ({
+    id: p.id,
+    title,
+    url: `http://memory/wiki/${p.id}`,
+    body: p.body,
+    version: p.version,
+  });
+  const byId = (id: string) => [...pages.entries()].find(([, p]) => p.id === id);
   return {
     pages,
     async upsertPage(title, body) {
-      const id = pages.get(title)?.id ?? String(++seq);
-      pages.set(title, { id, body });
+      const old = pages.get(title);
+      const id = old?.id ?? String(++seq);
+      pages.set(title, { id, body, labels: old?.labels ?? [], version: (old?.version ?? 0) + 1, comments: old?.comments ?? [] });
       return { id, url: `http://memory/wiki/${id}` };
     },
     async getPage(title) {
       const p = pages.get(title);
-      return p ? { ...p, url: `http://memory/wiki/${p.id}` } : undefined;
+      return p ? { id: p.id, body: p.body, url: `http://memory/wiki/${p.id}` } : undefined;
+    },
+    async pagesByLabel(label) {
+      return [...pages.entries()].filter(([, p]) => p.labels.includes(label)).map(([t, p]) => page(t, p));
+    },
+    async search(text, limit = 8) {
+      const q = stems(text);
+      return [...pages.entries()]
+        .filter(([t, p]) => [...stems(`${t} ${p.body}`)].some((w) => q.has(w)))
+        .slice(0, limit)
+        .map(([t, p]) => page(t, p));
+    },
+    async addLabel(pageId, label) {
+      const e = byId(pageId);
+      if (!e) throw new PortError('not_found', `нет страницы ${pageId}`);
+      e[1].labels = [...new Set([...e[1].labels, label])];
+    },
+    async comment(pageId, text) {
+      const e = byId(pageId);
+      if (!e) throw new PortError('not_found', `нет страницы ${pageId}`);
+      e[1].comments.push(text);
     },
   };
 }

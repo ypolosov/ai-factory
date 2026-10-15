@@ -1,6 +1,6 @@
-// База знаний поверх трекера (Jira, Forgejo): задачи и их описания как отрывки со ссылкой на
-// задачу; и сборка нескольких носителей знаний в один поиск.
-import type { Issue, Knowledge, Passage, Tracker } from './ports.ts';
+// База знаний поверх трекера (Jira, Forgejo) и вики (Confluence): задачи и страницы как отрывки
+// со ссылкой на источник; и сборка нескольких носителей знаний в один поиск.
+import type { Issue, Knowledge, Passage, Tracker, Wiki } from './ports.ts';
 import { stem, words } from './text.ts';
 
 // Основы самых длинных слов вопроса с "*": трекеры ищут по словам, а не по смыслу фразы.
@@ -22,6 +22,20 @@ export function trackerKnowledge(tracker: Tracker, skip: (i: Issue) => boolean =
         .sort((a, b) => b.n - a.n)
         .slice(0, limit)
         .map(({ i }) => ({ source: i.key, title: i.title, text: `${i.title}\n${i.body}`.trim(), url: i.url }));
+    },
+  };
+}
+
+// Страницы вики - отрывки (начало текста страницы) со ссылкой на страницу.
+export function wikiKnowledge(wiki: Wiki): Knowledge {
+  return {
+    async search(query, limit = 8) {
+      return (await wiki.search(query, limit)).map((p) => ({
+        source: `wiki: ${p.title}`,
+        title: p.title,
+        text: p.body.slice(0, 2000),
+        url: p.url,
+      }));
     },
   };
 }

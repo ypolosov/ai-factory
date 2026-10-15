@@ -1,7 +1,8 @@
 // Адаптер Confluence Cloud для порта вики (REST API v1 через api.atlassian.com: токен с
 // классическими областями read:confluence-content.all и write:confluence-content; API v2
 // требует гранулярных областей). Страница ищется по названию в пространстве.
-import { PortError, type Wiki } from './ports.ts';
+import { PortError, type Wiki, type WikiPage } from './ports.ts';
+import { stem, words } from './text.ts';
 
 export interface ConfluenceConfig {
   site: string; // https://<сайт>.atlassian.net
@@ -116,7 +117,40 @@ export function confluenceWiki(cfg: ConfluenceConfig): Wiki {
     written.set(title, rec);
     return rec;
   }
+  const toPage = (p: Json): WikiPage => ({
+    id: String(p.id),
+    title: String(p.title ?? ''),
+    url: url(p),
+    body: fromStorage(String(((p.body as Json | undefined)?.storage as Json | undefined)?.value ?? '')),
+    version: Number((p.version as Json | undefined)?.number ?? 1),
+  });
+  const cqlSearch = async (cql: string, limit: number) => {
+    const q = new URLSearchParams({ cql, expand: 'body.storage,version', limit: String(limit) });
+    return (await call<{ results: Json[] }>('GET', `/content/search?${q}`)).results.map(toPage);
+  };
+  const space = `space = "${cfg.space}" and type = page`;
   return {
+    async pagesByLabel(label) {
+      return cqlSearch(`${space} and label = "${label.replace(/["\\]/g, '')}"`, 50);
+    },
+    async search(text, limit = 8) {
+      // Основы самых длинных слов с "*": поиск Confluence ищет по словам.
+      const ws = [...new Set(words(text).filter((w) => w.length >= 5))]
+        .sort((a, b) => b.length - a.length)
+        .slice(0, 4)
+        .map((w) => `text ~ "${stem(w, false)}*"`);
+      return ws.length ? cqlSearch(`${space} and (${ws.join(' or ')})`, limit) : [];
+    },
+    async addLabel(pageId, label) {
+      await call('POST', `/content/${encodeURIComponent(pageId)}/label`, [{ prefix: 'global', name: label }]);
+    },
+    async comment(pageId, text) {
+      await call('POST', '/content', {
+        type: 'comment',
+        container: { id: pageId, type: 'page', status: 'current' },
+        body: { storage: { value: toStorage(text), representation: 'storage' } },
+      });
+    },
     async getPage(title) {
       const p = await find(title);
       return p ? { id: p.id, url: p.url, body: p.body } : undefined;
