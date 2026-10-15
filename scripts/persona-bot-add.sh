@@ -21,12 +21,14 @@ api=https://discord.com/api/v10
 cat <<EOF
 Бот персонажа "$name" (роль $role):
 1. Откройте https://discord.com/developers/applications -> New Application -> имя "$name".
-2. Раздел Bot -> Reset Token -> скопируйте токен (он показывается один раз).
+2. Бот приватный: раздел Installation -> Install Link: None, затем раздел Bot -> Public Bot
+   выключить. Привилегированные намерения (Privileged Gateway Intents) не нужны.
+3. Раздел Bot -> Reset Token -> скопируйте токен (он показывается один раз).
 EOF
 if [ -f "$env" ]; then
-	echo "Токен уже сохранён в $env - шаги 1-2 пропустите, Enter - оставить его."
+	echo "Токен уже сохранён в $env - шаги 1-3 пропустите, Enter - оставить его."
 fi
-printf '3. Вставьте токен (ввод скрыт): '
+printf '4. Вставьте токен (ввод скрыт): '
 stty -echo 2>/dev/null || true
 read -r token
 stty echo 2>/dev/null || true
@@ -62,9 +64,9 @@ me=$(curl -fsS -H @"$hdr" "$api/users/@me") || {
 id=$(printf '%s' "$me" | jq -r .id)
 # Права бота на сервере: видеть каналы, писать, читать историю (1024 + 2048 + 65536).
 cat <<EOF
-4. Пригласите бота на сервер фабрики (откроется выбор сервера):
+5. Пригласите бота на сервер фабрики (откроется выбор сервера):
    https://discord.com/oauth2/authorize?client_id=$id&scope=bot&permissions=68608
-5. Строки для реестра ролей цели (.factory/roles.yml), PR сливает владелец:
+6. Строки для реестра ролей цели (.factory/roles.yml), PR сливает владелец:
    holders:
      $persona-bot:
        kind: ai
