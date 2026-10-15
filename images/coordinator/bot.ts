@@ -1,7 +1,7 @@
 // Бот фабрики в чате команды: библиотекарь отвечает на вопросы со ссылками на источники,
 // "!дейли" - сводка работы фабрики, "!задача" - задача агенту. Ответ - только на обращение
 // к боту или на команду.
-import type { Chat, ChatMessage, Forge, Knowledge, Passage, Tracker } from '../ports/ports.ts';
+import { type Chat, type ChatMessage, type Forge, type Knowledge, type Passage, PortError, type Tracker } from '../ports/ports.ts';
 import { VERDICT_KEY } from './actions.ts';
 import type { Ask } from './llm.ts';
 import { type Decision, type RoleRegistry, refusal } from './roles.ts';
@@ -124,9 +124,17 @@ export async function answer(d: BotDeps, m: ChatMessage): Promise<string | undef
   return d.librarian.answer(text, passages);
 }
 
+// Ответ на сбой команды - для человека: что не так и что сделать, без ответа API.
+export function failure(e: unknown): string {
+  if (e instanceof PortError && e.code === 'not_found') return 'Не нашлось: проверьте номер задачи или PR в команде.';
+  if (e instanceof PortError && e.code === 'unavailable') return 'Сервис сейчас недоступен - повторите команду через минуту.';
+  if (e instanceof PortError && e.code === 'auth') return 'Фабрике не хватает доступа к сервису - скажите владельцу фабрики.';
+  return `Не вышло: ${e instanceof Error ? e.message : String(e)}`;
+}
+
 export function chatBot(d: BotDeps) {
   return d.chat.listen(async (m) => {
-    const reply = await answer(d, m).catch((e) => `Не вышло: ${e instanceof Error ? e.message : String(e)}`);
+    const reply = await answer(d, m).catch(failure);
     if (!reply) return;
     await d.chat.reply(m, reply);
     d.log(`бот: ответ в #${m.channel}`);
