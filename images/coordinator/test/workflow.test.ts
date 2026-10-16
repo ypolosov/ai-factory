@@ -219,4 +219,14 @@ describe('координатор: задача -> агент -> страж -> PR
     expect(await settle(issue)).toEqual([labels.failed]);
     expect((await tracker.listComments(issue)).at(-1)?.body).toContain('без итога');
   });
+
+  it('повтор задачи после неудачи - старая метка неудачи снимается', async () => {
+    change = 'no-result';
+    const issue = (await tracker.createIssue({ title: 'Повтор', body: '', labels: ['agent'] })).key;
+    expect(await settle(issue)).toEqual([labels.failed]);
+    change = { file: 'src/retry.ts', text: 'export const retry = 1;\n' };
+    await tracker.addLabel(issue, 'agent');
+    await boot().tick(); // взял задачу снова и ждёт задание
+    expect((await tracker.getIssue(issue)).labels).toEqual([labels.running]);
+  });
 });
