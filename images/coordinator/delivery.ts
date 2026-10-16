@@ -1,5 +1,6 @@
-// Доставка (UC4): задача агента (метка agent-review) закрывается сама, когда выложенный на стенд
-// коммит ветки по умолчанию содержит её ключ, - со ссылками на коммит, PR и выкладку. Баги сбоев
+// Доставка (UC4): задача агента (метка agent-review) закрывается сама, когда PR агента слит и
+// выложенный на стенд коммит ветки по умолчанию содержит её ключ, - со ссылками на коммит, PR и
+// выкладку. Баги сбоев
 // (метка incident) закрывает свой проход вместе с ошибкой в сборщике (incidents.ts).
 import type { Forge, Tracker } from '../ports/ports.ts';
 import { message } from './errors.ts';
@@ -23,7 +24,11 @@ export function deliveryLoop(d: DeliveryDeps) {
     const deployed = (await d.forge.statuses(head)).find((s) => s.key === 'factory/deploy' && s.state === 'success');
     if (!deployed) return;
     const commits = await d.forge.commits(undefined, head);
+    // Пока PR агента открыт, задача не доставлена: выложенный коммит с её ключом может быть чужим
+    // (спецификация OpenSpec, правка документа).
+    const open = (await d.forge.listPulls({ state: 'open' })).map((p) => p.sourceBranch);
     for (const t of tasks) {
+      if (open.some((b) => b.startsWith(`agent/${t.key}-`))) continue;
       const c = commits.findLast((x) => new RegExp(`\\b${t.key}\\b`).test(x.message));
       if (!c) continue;
       const title = c.message.split('\n')[0] ?? '';

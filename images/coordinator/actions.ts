@@ -60,7 +60,8 @@ const relabel = async (d: Deps, issue: string, from: string[], to: string) => {
 
 export async function claim(d: Deps, issue: string, label = d.labels.trigger, role = 'dev'): Promise<Task> {
   const i = await d.tracker.getIssue(issue);
-  await relabel(d, issue, [label], d.labels.running);
+  // Повтор после неудачи: метка прошлой неудачи уходит, иначе задача выглядит упавшей и работающей сразу.
+  await relabel(d, issue, [label, ...(i.labels.includes(d.labels.failed) ? [d.labels.failed] : [])], d.labels.running);
   const who = await d.assignee?.(role).catch(() => undefined);
   if (who)
     await d.tracker.assign(issue, who).catch((e) => d.tracker.addComment(issue, `Исполнителя назначить не вышло: ${(e as Error).message}`));

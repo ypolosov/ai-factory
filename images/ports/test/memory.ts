@@ -252,6 +252,15 @@ export function memoryForge(user = 'factory-bot') {
       const p = await forge.openPull({ title: `PR ${b.branch}`, body: '', head: b.branch, base: defaultBranch });
       return { n: p.number, ...b };
     },
+    // PR из ветки branch (ветка создаётся) и его слияние - мимо адаптера, как это делает человек.
+    async openPullFrom(branch: string, title = `PR ${branch}`) {
+      if (!heads.has(branch)) this.setHead(branch, `sha-${branch}`);
+      return (await forge.openPull({ title, body: '', head: branch, base: defaultBranch })).number;
+    },
+    merge(n: number) {
+      const p = pulls.get(n);
+      if (p) p.state = 'merged';
+    },
   };
 }
 
