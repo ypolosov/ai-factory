@@ -4,6 +4,8 @@ export interface Persona {
   name: string; // как зритель видит участника на плашке
   kind: 'human' | 'ai';
   discord?: string; // бот персонажа: .state/discord-<id>.env
+  atlassian?: string; // учётка Atlassian персонажа: .state/atlassian-<id>.env
+  jira?: string; // accountId в Jira - для назначения исполнителем
   browser?: string; // вход браузера камеры: ключ в film.browsers
 }
 
@@ -16,6 +18,9 @@ export interface Step {
     discord?: { channel: string; text: string };
     wiki?: { title: string; body: string; label?: string };
     label?: { key: string; label: string };
+    comment?: { key: string; text: string };
+    assign?: { key: string; to: string }; // to - участник из film.personas
+    logWork?: { key: string; minutes: number; comment: string };
     decision?: string; // команда, которую человек выполняет сам вживую
   };
   wait?: {
