@@ -49,7 +49,7 @@ export interface Step {
   note?: string; // подзаголовок главы
   who: string;
   do?: {
-    discord?: { channel: string; text: string };
+    discord?: { channel: string; text: string; file?: string }; // file - картинка PNG из film-assets во вложении
     wiki?: { title: string; body: string; label?: string };
     label?: { key: string; label: string };
     comment?: { key: string; text: string };
@@ -69,14 +69,15 @@ export interface Step {
     webhook?: { channel: string; username: string; text: string }; // сообщение вебхука без учётки
     decision?: string; // команда, которую человек выполняет сам вживую
   };
-  // Итог шага: задача Jira - по метке (label), по ключу (key) или среди зависимостей задачи (deps,
-  // с отбором по метке и заголовку match); PR - по номеру или началу имени ветки, со статусом.
+  // Итог шага: задача Jira - по метке (label, с заголовком match), по ключу (key) или среди
+  // зависимостей задачи (deps, с отбором по метке и заголовку match); PR - по номеру или началу имени ветки, со статусом;
+  // newer - PR засчитывается, только когда на нём новый коммит (вершина уже не этот sha).
   // Метки через "|" - любая из них.
   wait?: {
     timeout?: number; // секунды
     discord?: { channel: string; contains?: string; retry?: number }; // retry - через сколько секунд повторить реплику шага
     jira?: { label?: string; comment?: string; key?: string; deps?: string; match?: string; count?: number; open?: boolean };
-    github?: { pr?: string; head?: string; status?: string; success?: boolean };
+    github?: { pr?: string; head?: string; status?: string; success?: boolean; newer?: string };
   };
   show?: Shot[];
 }
@@ -151,6 +152,8 @@ export function checkFilm(film: Film, assetExists: (name: string) => boolean): s
       if (!sh.url && !sh.card) out.push(`${s.id}: у кадра нет ни страницы, ни карточки`);
       if (sh.login && !film.browsers?.[sh.login]) out.push(`${s.id}: нет входа камеры ${sh.login} в film.browsers`);
     }
+    const file = s.do?.discord?.file;
+    if (file && !assetExists(file)) out.push(`${s.id}: нет заготовки ${file}`);
     for (const f of s.do?.github?.pr?.files ?? []) if (f.from && !assetExists(f.from)) out.push(`${s.id}: нет заготовки ${f.from}`);
   }
   return out;

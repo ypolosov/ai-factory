@@ -217,10 +217,10 @@ steps:
 
   - id: design
     chapter: Макет сверяется с задачей
-    note: Designer просит фабрику сверить экран из Figma с задачей и правилами - судит модель другого семейства
+    note: Designer выгружает экран из Figma и просит фабрику сверить его с задачей и правилами - судит модель другого семейства
     who: designer
     do:
-      discord: { channel: продукт, text: "!макет {fe.issue.key} https://www.figma.com/design/fAmgtG3ZDdllvl0XZFiKvU/?node-id=6-3" }
+      discord: { channel: продукт, text: "!макет {fe.issue.key} https://www.figma.com/design/fAmgtG3ZDdllvl0XZFiKvU/?node-id=6-3", file: redraw-screen.png }
     wait:
       timeout: 900
       jira: { key: "{fe.issue.key}", label: "design-ok|design-changes", comment: "Сверка макета" }
@@ -308,7 +308,7 @@ steps:
       label: { key: "{fe.issue.key}", label: "agent:frontend" }
     wait:
       timeout: 2700
-      github: { pr: "{frontend.pr.number}", status: factory/verdict, success: true }
+      github: { pr: "{frontend.pr.number}", newer: "{frontend.pr.sha}", status: factory/verdict, success: true }
     show:
       - { who: frontend, url: "{frontend.pr.url}", caption: "Агент дописал тесты - вердикт стража зелёный", seconds: 3, scroll: 8 }
 
@@ -368,7 +368,7 @@ steps:
       http: { method: POST, url: "http://127.0.0.1:8082/api/draws/{draw.json.id}/entries", body: { participant: "Гость стенда", birthDate: "2000-13-45" } }
     wait:
       timeout: 600
-      jira: { label: incident, open: true }
+      jira: { label: incident, open: true, match: "date/time field value out of range" }
     show:
       - { who: devops, card: { title: "POST /api/draws/{draw.json.id}/entries", note: "дата рождения 2000-13-45 - стенд ответил {crash.status}" }, caption: "Клиент API отправил заявку с несуществующей датой", seconds: 4 }
       - { who: devops, url: "http://127.0.0.1:8200/factory/issues", login: glitchtip, caption: "GlitchTip поймал сбой стенда", seconds: 6, focus: "date/time field value out of range" }
