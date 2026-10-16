@@ -4,8 +4,12 @@
 # - страницы Confluence с меткой film теряют метку story (сверщик их больше не берёт), получают
 #   в заголовок пометку архива (заголовок снова свободен для дубля) и уходят под "Архив съёмок";
 # - незакрытые задачи Jira с меткой film закрываются;
-# - открытые PR агентов по задачам с меткой film закрываются, ветки остаются.
-# -n - только показать, что будет сделано. Ключи - .state/atlassian.env и .state/github-target.env.
+# - открытые PR агентов по задачам с меткой film и PR участников съёмки (ветки film/...)
+#   закрываются, ветки остаются;
+# - код и правила цели возвращаются к тегу demo-baseline (реестр ролей остаётся как в main):
+#   PR открывает и сливает DevOps (ИИ) своим приложением GitHub, служба выкладки выкладывает main.
+# -n - только показать, что будет сделано. Ключи - .state/atlassian.env, .state/github-target.env
+# и .state/github-app-devops.env (.pem); нет приложения или тега - возврат кода пропускается.
 # Запуск из корня репозитория.
 set -eu
 
@@ -78,13 +82,52 @@ while IFS="$(printf '\t')" read -r key cat; do
 	api jira POST "$J/issue/$key/transitions" "{\"transition\":{\"id\":\"$t\"}}" >/dev/null
 done <"$tmp/issues"
 
-# GitHub: открытые PR агентов по этим задачам (ветка agent/КЛЮЧ-...) - закрыть, ветки остаются.
+# GitHub: открытые PR агентов по этим задачам (ветка agent/КЛЮЧ-...) и PR участников съёмки
+# (ветка film/...) - закрыть, ветки остаются.
 cut -f1 "$tmp/issues" >"$tmp/keys"
 api gh GET "$G/pulls?state=open&per_page=100" | jq -r '.[] | [.number, .head.ref] | @tsv' >"$tmp/prs"
 while IFS="$(printf '\t')" read -r n ref; do
 	key=$(printf '%s' "$ref" | sed -n 's#^agent/\([A-Z][A-Z0-9]*-[0-9]*\)-.*#\1#p')
-	if [ -z "$key" ] || ! grep -qx "$key" "$tmp/keys"; then continue; fi
+	case $ref in film/*) ;; *) if [ -z "$key" ] || ! grep -qx "$key" "$tmp/keys"; then continue; fi ;; esac
 	plan "GitHub: PR $n ($ref) - закрыть" && continue
 	api gh PATCH "$G/pulls/$n" '{"state":"closed"}' >/dev/null
 done <"$tmp/prs"
+
+# Код цели: дерево тега demo-baseline с реестром ролей из main. Совпадает с main - делать нечего.
+app=$state/github-app-devops
+if [ ! -f "$app.env" ]; then
+	echo "код цели: у DevOps нет приложения GitHub (scripts/persona-github-app-add.sh devops) - возврат к базе пропущен"
+else
+	b64url() { base64 | tr -d '=\n' | tr '/+' '_-'; }
+	id=$(sed -n 's/^GITHUB_APP_ID=//p' "$app.env" | tr -d '\r"')
+	inst=$(sed -n 's/^GITHUB_APP_INSTALLATION=//p' "$app.env" | tr -d '\r"')
+	now=$(date +%s)
+	jwt="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url).$(printf '{"iat":%s,"exp":%s,"iss":"%s"}' $((now - 60)) $((now + 540)) "$id" | b64url)"
+	printf 'Authorization: Bearer %s.%s\n' "$jwt" "$(printf '%s' "$jwt" | openssl dgst -sha256 -sign "$app.pem" -binary | b64url)" >"$tmp/jwt"
+	api jwt POST "https://api.github.com/app/installations/$inst/access_tokens" | jq -r '"Authorization: Bearer " + .token' >"$tmp/app"
+	base=$(api app GET "$G/git/ref/tags/demo-baseline" | jq -r .object.sha) || base=
+	if [ -z "$base" ]; then
+		echo "код цели: нет тега demo-baseline - возврат к базе пропущен"
+	else
+		main=$(api app GET "$G/git/ref/heads/main" | jq -r .object.sha)
+		mtree=$(api app GET "$G/git/commits/$main" | jq -r .tree.sha)
+		btree=$(api app GET "$G/git/commits/$base" | jq -r .tree.sha)
+		roles=$(api app GET "$G/contents/.factory/roles.yml?ref=$main" | jq -r .sha)
+		tree=$(api app POST "$G/git/trees" "$(jq -cn --arg b "$btree" --arg r "$roles" \
+			'{base_tree: $b, tree: [{path: ".factory/roles.yml", mode: "100644", type: "blob", sha: $r}]}')" | jq -r .sha)
+		if [ "$tree" = "$mtree" ]; then
+			echo "код цели: уже на базе демо"
+		elif ! plan "GitHub: код цели - вернуть к demo-baseline (PR и слияние - DevOps)"; then
+			title="Возврат к базе демо перед дублем"
+			commit=$(api app POST "$G/git/commits" "$(jq -cn --arg t "$title" --arg tr "$tree" --arg p "$main" \
+				'{message: ($t + "\n\nКод и правила - как в теге demo-baseline, реестр ролей - как в main (scripts/demo-reset.sh)."), tree: $tr, parents: [$p]}')" | jq -r .sha)
+			branch=film/reset-$(date +%m%d-%H%M%S)
+			api app POST "$G/git/refs" "{\"ref\":\"refs/heads/$branch\",\"sha\":\"$commit\"}" >/dev/null
+			n=$(api app POST "$G/pulls" "$(jq -cn --arg t "$title" --arg h "$branch" \
+				'{title: $t, head: $h, base: "main", body: "Сброс стенда перед дублем видео-демо: код и правила цели - как в теге demo-baseline, реестр ролей - как в main."}')" | jq -r .number)
+			api app PUT "$G/pulls/$n/merge" "{\"merge_method\":\"squash\",\"commit_title\":\"$title (#$n)\"}" >/dev/null
+			echo "код цели: PR $n слит - служба выкладки выложит main"
+		fi
+	fi
+fi
 echo "стенд готов к дублю${dry:+ (проверка без изменений)}"

@@ -1,15 +1,16 @@
 // Режиссёр видео-демо: шаги сценария съёмки выполняют участники через API под своими учётками
-// (боты Discord у ИИ-персонажей, учётка Atlassian у человека), итог шага ждётся по наблюдаемому
-// признаку, камера - Playwright без окна - снимает экран браузера участника с его плашкой.
-// Решения в точках решения принимает человек вживую: режиссёр называет команду и ждёт её итога.
+// (у ИИ-персонажа - бот Discord, учётка Atlassian и приложение GitHub), итог шага ждётся по
+// наблюдаемому признаку, камера - Playwright без окна - снимает экран браузера участника с его
+// плашкой. Шаг с do.decision называет команду, которую человек выполняет вживую, и ждёт её итога.
 // Ключи - из каталога состояния (только чтение); в журнал, манифест и клипы они не попадают.
 // Использование: node film.ts СЦЕНАРИЙ.yml КАТАЛОГ_КЛИПОВ [--only шаг,шаг] [--state /state]
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Browser, type BrowserContext, chromium } from 'playwright';
 import { parse } from 'yaml';
-import { selectTracker, selectWiki } from '../ports/select.ts';
-import { badge, chapterHtml, FILM_LABEL, type Film, fill, parseEnv, type Step, takeName } from './script.ts';
+import { selectForge, selectTracker, selectWiki } from '../ports/select.ts';
+import { persona as githubPersona } from './github.ts';
+import { applyEdit, badge, chapterHtml, checkFilm, FILM_LABEL, type Film, fill, parseEnv, type Step, takeName } from './script.ts';
 
 const API = 'https://discord.com/api/v10';
 const [filmPath = '', out = ''] = process.argv.slice(2);
@@ -58,6 +59,22 @@ const as = (who: string) => {
   if (!accounts.has(id)) accounts.set(id, atlassian(`atlassian-${id}.env`));
   return accounts.get(id) ?? factory;
 };
+
+// GitHub: итоги (PR, статусы) читаются токеном фабрики на чтение, персонаж действует своим приложением.
+const githubTarget = env('github-target.env');
+const forge = selectForge({ kind: 'github', repo: githubTarget.GITHUB_TARGET_REPO ?? '', token: githubTarget.GITHUB_READ_TOKEN ?? '' });
+const apps = new Map<string, ReturnType<typeof githubPersona>>();
+const app = (who: string) => {
+  const id = film.personas[who]?.github;
+  if (!id) throw new Error(`у участника ${who} нет приложения GitHub`);
+  if (!apps.has(id)) apps.set(id, githubPersona(state, id));
+  return apps.get(id) as ReturnType<typeof githubPersona>;
+};
+const assetsDir = join(filmPath, '..', 'film-assets');
+const asset = (name: string) => fill(readFileSync(join(assetsDir, name), 'utf8'), ctx);
+// Сценарий проверяется до первого действия: ошибка в нём не оставит стенд на полпути.
+const problems = checkFilm(film, (n) => existsSync(join(assetsDir, n)));
+if (problems.length) throw new Error(`сценарий съёмки:\n${problems.join('\n')}`);
 
 // Discord: бот фабрики читает ответы, бот персонажа пишет реплику.
 const factoryToken = env('discord.env').DISCORD_BOT_TOKEN ?? '';
@@ -132,7 +149,88 @@ async function act(step: Step): Promise<void> {
     await as(step.who).tracker.logWork(fill(d.logWork.key, ctx), d.logWork.minutes * 60, fill(d.logWork.comment, ctx));
     log(`${step.id}: списано ${d.logWork.minutes} мин на ${fill(d.logWork.key, ctx)}`);
   }
+  if (d.close) {
+    await as(step.who).tracker.close(fill(d.close.key, ctx));
+    log(`${step.id}: ${fill(d.close.key, ctx)} закрыта`);
+  }
+  if (d.github?.pr) {
+    const p = d.github.pr;
+    const gh = app(step.who);
+    const base = p.base ?? 'main';
+    const files: Record<string, string> = {};
+    for (const e of p.files) {
+      const path = fill(e.path, ctx);
+      const edit = {
+        path,
+        ...(e.from ? { from: e.from } : {}),
+        ...(e.replace ? { replace: e.replace.map((r) => ({ find: fill(r.find, ctx), with: fill(r.with, ctx) })) } : {}),
+        ...(e.append !== undefined ? { append: fill(e.append, ctx) } : {}),
+      };
+      files[path] = applyEdit(await gh.read(path, base), edit, asset);
+    }
+    const pr = await gh.openPull({ base, branch: fill(p.branch, ctx), title: fill(p.title, ctx), body: fill(p.body, ctx), files });
+    did.pr = pr;
+    log(`${step.id}: ${gh.slug} открыл PR ${pr.number}: ${pr.url}`);
+  }
+  if (d.github?.merge) {
+    const n = Number(fill(d.github.merge.pr, ctx));
+    await app(step.who).merge(n, fill(d.github.merge.title, ctx));
+    log(`${step.id}: PR ${n} слит`);
+  }
+  if (d.github?.comment) {
+    const n = Number(fill(d.github.comment.pr, ctx));
+    await app(step.who).comment(n, fill(d.github.comment.text, ctx));
+    log(`${step.id}: замечание в PR ${n}`);
+  }
   if (d.decision) log(`${step.id}: РЕШЕНИЕ ЧЕЛОВЕКА - ${fill(d.decision, ctx)}`);
+}
+
+const anyOf = (labels: string[], want: string) => want.split('|').some((l) => labels.includes(l));
+const seen = async (key: string) => {
+  for (const l of [FILM_LABEL, take]) await tracker.addLabel(key, l);
+};
+
+// Задача Jira, которой ждёт шаг: найдена - в итог шага (issue, а для deps - ещё issues).
+async function jiraDone(w: NonNullable<NonNullable<Step['wait']>['jira']>, did: Record<string, unknown>): Promise<boolean> {
+  const label = w.label ? fill(w.label, ctx) : undefined;
+  const hasComment = async (key: string) =>
+    !w.comment || (await tracker.listComments(key)).some((c) => c.body.includes(fill(w.comment ?? '', ctx)));
+  let found: { key: string; url: string; title: string }[] = [];
+  if (w.key) {
+    const i = await tracker.getIssue(fill(w.key, ctx));
+    if ((!label || anyOf(i.labels, label)) && (await hasComment(i.key))) found = [i];
+  } else if (w.deps) {
+    const match = w.match ? new RegExp(fill(w.match, ctx), 'i') : undefined;
+    for (const k of await tracker.listDependencies(fill(w.deps, ctx))) {
+      const i = await tracker.getIssue(k);
+      if ((!label || anyOf(i.labels, label)) && (!match || match.test(i.title)) && (await hasComment(i.key))) found.push(i);
+    }
+    if (found.length < (w.count ?? 1)) found = [];
+  } else if (label) {
+    const [i] = await tracker.listIssues({ label, state: 'all', limit: 1 });
+    if (i && (await hasComment(i.key))) found = [i];
+  }
+  if (!found.length) return false;
+  for (const i of found) await seen(i.key);
+  did.issue = { key: found[0]?.key, url: found[0]?.url, title: found[0]?.title };
+  if (w.deps) did.issues = found.map((i) => ({ key: i.key, url: i.url, title: i.title }));
+  return true;
+}
+
+// PR, которого ждёт шаг: по номеру или по началу имени ветки; со статусом - когда статус готов.
+async function githubDone(w: NonNullable<NonNullable<Step['wait']>['github']>, did: Record<string, unknown>): Promise<boolean> {
+  const head = w.head ? fill(w.head, ctx) : undefined;
+  const p = w.pr
+    ? await forge.getPull(Number(fill(w.pr, ctx)))
+    : (await forge.listPulls({ state: 'all', limit: 30 })).find((x) => head && x.sourceBranch.startsWith(head));
+  if (!p) return false;
+  if (w.status) {
+    const s = (await forge.statuses(p.headSha)).find((x) => x.key === w.status);
+    if (!s || s.state === 'pending' || (w.success && s.state !== 'success')) return false;
+    did.status = { key: s.key, state: s.state, description: s.description };
+  }
+  did.pr = { number: p.number, url: p.url, head: p.sourceBranch, sha: p.headSha };
+  return true;
 }
 
 async function waitFor(step: Step): Promise<void> {
@@ -140,30 +238,35 @@ async function waitFor(step: Step): Promise<void> {
   if (!w) return;
   const deadline = Date.now() + (w.timeout ?? 300) * 1000;
   const did = (ctx[step.id] ?? {}) as Record<string, unknown>;
+  ctx[step.id] = did;
+  const done = { discord: !w.discord, jira: !w.jira, github: !w.github };
   while (Date.now() < deadline) {
-    if (w.discord) {
+    if (w.discord && !done.discord) {
       const after = (did.message as { id: string } | undefined)?.id ?? '0';
       const msgs = await discord<{ id: string; author: { id: string }; content: string }[]>(
         factoryToken,
         `/channels/${channelId(w.discord.channel)}/messages?after=${after}&limit=20`,
       );
-      const reply = msgs.find((m) => m.author.id === factoryId && (!w.discord?.contains || m.content.includes(w.discord.contains)));
+      const reply = msgs.find(
+        (m) => m.author.id === factoryId && (!w.discord?.contains || m.content.includes(fill(w.discord.contains, ctx))),
+      );
       if (reply) {
         did.reply = { text: reply.content };
+        done.discord = true;
         log(`${step.id}: ответ фабрики получен`);
-        return;
       }
     }
-    if (w.jira) {
-      const [i] = await tracker.listIssues({ label: fill(w.jira.label, ctx), state: 'all', limit: 1 });
-      const comments = i && w.jira.comment ? await tracker.listComments(i.key) : [];
-      if (i && (!w.jira.comment || comments.some((c) => c.body.includes(w.jira?.comment ?? '')))) {
-        did.issue = { key: i.key, url: i.url };
-        for (const l of [FILM_LABEL, take]) await tracker.addLabel(i.key, l);
-        log(`${step.id}: задача ${i.key}`);
-        return;
-      }
+    if (w.jira && !done.jira && (await jiraDone(w.jira, did))) {
+      done.jira = true;
+      log(`${step.id}: задача ${(did.issue as { key: string }).key}`);
     }
+    if (w.github && !done.github && (await githubDone(w.github, did))) {
+      done.github = true;
+      log(
+        `${step.id}: PR ${(did.pr as { number: number }).number}${w.github.status ? ` - ${w.github.status}: ${(did.status as { state: string }).state}` : ''}`,
+      );
+    }
+    if (done.discord && done.jira && done.github) return;
     await sleep(5000);
   }
   throw new Error(`${step.id}: итог не наступил за ${w.timeout ?? 300} с`);
@@ -183,7 +286,7 @@ async function shoot(browser: Browser, step: Step): Promise<void> {
     });
     await context.addInitScript(badge, { name: who.name, ai: who.kind === 'ai' });
     const page = await context.newPage();
-    if (n === 0) {
+    if (n === 0 && step.chapter) {
       await page.setContent(chapterHtml(step.chapter, step.note ?? ''));
       await page.waitForTimeout(2500);
     }
@@ -200,7 +303,7 @@ async function shoot(browser: Browser, step: Step): Promise<void> {
     await video?.saveAs(join(out, file));
     clips.push({
       step: step.id,
-      chapter: step.chapter,
+      chapter: step.chapter ?? '',
       who: who.name,
       caption: fill(shot.caption, ctx),
       file,
@@ -214,7 +317,7 @@ mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 try {
   for (const step of film.steps.filter((s) => !only || only.includes(s.id))) {
-    log(`== ${step.id}: ${step.chapter}`);
+    log(`== ${step.id}${step.chapter ? `: ${step.chapter}` : ''}`);
     await act(step);
     await waitFor(step);
     await shoot(browser, step);
