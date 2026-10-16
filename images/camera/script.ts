@@ -19,6 +19,29 @@ export interface FileEdit {
   append?: string;
 }
 
+// Кадр: страница (url) или карточка (card); focus - текст, до которого прокрутить; scroll - секунды
+// плавной прокрутки от этой точки до конца страницы; play - действия на странице (стенд); login -
+// вход камеры из film.browsers вместо входа участника (Figma, GlitchTip, Bitbucket).
+export type PlayAction = { click: string } | { fill: { label: string; value: string } } | { press: string } | { wait: number };
+export interface Shot {
+  who: string;
+  url?: string;
+  card?: { title: string; note?: string };
+  caption: string;
+  seconds?: number;
+  focus?: string;
+  scroll?: number;
+  play?: PlayAction[];
+  login?: string;
+}
+
+export interface HttpCall {
+  method?: string;
+  url: string;
+  body?: unknown;
+  as?: string;
+}
+
 export interface Step {
   id: string;
   chapter?: string; // заголовок главы языком зрителя; нет - шаг продолжает прошлую главу
@@ -39,7 +62,9 @@ export interface Step {
       closePr?: { pr: string }; // закрыть PR без слияния
       tag?: { bump: 'minor' | 'patch' }; // тег следующего выпуска на вершине main: итог - tag
     };
-    http?: { method?: string; url: string; body?: unknown }; // запрос к стенду: итог - status и json
+    // Запрос к стенду: итог - status и json; список запросов идёт по порядку, as - имя итога запроса
+    // в итоге шага ({шаг.имя.json.id} - в следующих запросах того же шага).
+    http?: HttpCall | HttpCall[];
     webhook?: { channel: string; username: string; text: string }; // сообщение вебхука без учётки
     decision?: string; // команда, которую человек выполняет сам вживую
   };
@@ -52,7 +77,7 @@ export interface Step {
     jira?: { label?: string; comment?: string; key?: string; deps?: string; match?: string; count?: number; open?: boolean };
     github?: { pr?: string; head?: string; status?: string; success?: boolean };
   };
-  show?: { who: string; url: string; caption: string; seconds?: number; focus?: string }[]; // focus - текст, до которого прокрутить
+  show?: Shot[];
 }
 
 export interface Film {
@@ -114,12 +139,17 @@ export function checkFilm(film: Film, assetExists: (name: string) => boolean): s
   for (const s of film.steps) {
     const who = film.personas[s.who];
     if (!who) out.push(`${s.id}: нет участника ${s.who}`);
-    unknown(s.id, s.do);
+    // Запросы к стенду в шаге могут ссылаться на итоги прошлых запросов того же шага.
+    unknown(s.id, { ...s.do, http: undefined });
     known.add(s.id);
-    unknown(s.id, [s.wait, s.show]);
+    unknown(s.id, [s.do?.http, s.wait, s.show]);
     if (s.do?.discord && !who?.discord) out.push(`${s.id}: у участника ${s.who} нет бота Discord`);
     if (s.do?.github && !who?.github) out.push(`${s.id}: у участника ${s.who} нет приложения GitHub`);
-    for (const sh of s.show ?? []) if (!film.personas[sh.who]) out.push(`${s.id}: в кадре нет участника ${sh.who}`);
+    for (const sh of s.show ?? []) {
+      if (!film.personas[sh.who]) out.push(`${s.id}: в кадре нет участника ${sh.who}`);
+      if (!sh.url && !sh.card) out.push(`${s.id}: у кадра нет ни страницы, ни карточки`);
+      if (sh.login && !film.browsers?.[sh.login]) out.push(`${s.id}: нет входа камеры ${sh.login} в film.browsers`);
+    }
     for (const f of s.do?.github?.pr?.files ?? []) if (f.from && !assetExists(f.from)) out.push(`${s.id}: нет заготовки ${f.from}`);
   }
   return out;
