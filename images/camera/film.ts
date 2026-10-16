@@ -308,7 +308,11 @@ async function jiraDone(w: NonNullable<NonNullable<Step['wait']>['jira']>, did: 
     }
     if (found.length < (w.count ?? 1)) found = [];
   } else if (label) {
-    const [i] = await tracker.listIssues({ label, state: w.open ? 'open' : 'all', limit: 1 });
+    // С match - первая задача с подходящим заголовком: чужой баг сбоя не заменит баг шага.
+    const match = w.match ? new RegExp(fill(w.match, ctx), 'i') : undefined;
+    const i = (await tracker.listIssues({ label, state: w.open ? 'open' : 'all', limit: match ? 20 : 1 })).find(
+      (x) => !match || match.test(x.title),
+    );
     if (i && (await hasComment(i.key))) found = [i];
   }
   if (!found.length) return false;

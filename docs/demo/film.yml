@@ -368,7 +368,7 @@ steps:
       http: { method: POST, url: "http://127.0.0.1:8082/api/draws/{draw.json.id}/entries", body: { participant: "Гость стенда", birthDate: "2000-13-45" } }
     wait:
       timeout: 600
-      jira: { label: incident, open: true }
+      jira: { label: incident, open: true, match: "date/time field value out of range" }
     show:
       - { who: devops, card: { title: "POST /api/draws/{draw.json.id}/entries", note: "дата рождения 2000-13-45 - стенд ответил {crash.status}" }, caption: "Клиент API отправил заявку с несуществующей датой", seconds: 4 }
       - { who: devops, url: "http://127.0.0.1:8200/factory/issues", login: glitchtip, caption: "GlitchTip поймал сбой стенда", seconds: 6, focus: "date/time field value out of range" }
