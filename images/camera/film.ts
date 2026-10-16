@@ -5,7 +5,7 @@
 // Ключи - из каталога состояния (только чтение); в журнал, манифест и клипы они не попадают.
 // Использование: node film.ts СЦЕНАРИЙ.yml КАТАЛОГ_КЛИПОВ [--only шаг,шаг] [--ctx МАНИФЕСТ] [--state /state]
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { type Browser, type BrowserContext, chromium } from 'playwright';
 import { parse } from 'yaml';
 import { selectForge, selectTracker, selectWiki } from '../ports/select.ts';
@@ -97,10 +97,12 @@ const personaToken = (id: string) => {
   return e.DISCORD_BOT_TOKEN ?? e[`DISCORD_${id.toUpperCase().replace(/-/g, '_')}_TOKEN`] ?? '';
 };
 async function discord<T>(token: string, path: string, body?: unknown): Promise<T> {
+  // Сообщение с вложением - форма (multipart): тип с границей ставит fetch.
+  const form = body instanceof FormData;
   const r = await fetch(`${API}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { authorization: `Bot ${token}`, 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: { authorization: `Bot ${token}`, ...(form ? {} : { 'content-type': 'application/json' }) },
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   });
   if (!r.ok) throw new Error(`Discord ${path.split('?')[0]}: ${r.status}`);
   return (await r.json()) as T;
@@ -133,7 +135,15 @@ async function say(step: Step, did: Record<string, unknown>): Promise<void> {
   if (!d) return;
   if (!who?.discord) throw new Error(`у участника ${step.who} нет бота Discord`);
   const text = fill(d.text, ctx).replaceAll('@factory', `<@${factoryId}>`);
-  const m = await discord<{ id: string }>(personaToken(who.discord), `/channels/${channelId(d.channel)}/messages`, { content: text });
+  let body: unknown = { content: text };
+  if (d.file) {
+    // Картинка во вложении, например макет экрана, выгруженный из Figma.
+    const form = new FormData();
+    form.set('payload_json', JSON.stringify({ content: text }));
+    form.set('files[0]', new Blob([readFileSync(join(assetsDir, d.file))], { type: 'image/png' }), basename(d.file));
+    body = form;
+  }
+  const m = await discord<{ id: string }>(personaToken(who.discord), `/channels/${channelId(d.channel)}/messages`, body);
   did.message = { id: m.id, channel: d.channel };
   did.said = Date.now();
   log(`${step.id}: ${who.name} пишет в #${d.channel}`);

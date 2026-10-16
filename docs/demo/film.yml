@@ -217,10 +217,10 @@ steps:
 
   - id: design
     chapter: Макет сверяется с задачей
-    note: Designer просит фабрику сверить экран из Figma с задачей и правилами - судит модель другого семейства
+    note: Designer выгружает экран из Figma и просит фабрику сверить его с задачей и правилами - судит модель другого семейства
     who: designer
     do:
-      discord: { channel: продукт, text: "!макет {fe.issue.key} https://www.figma.com/design/fAmgtG3ZDdllvl0XZFiKvU/?node-id=6-3" }
+      discord: { channel: продукт, text: "!макет {fe.issue.key} https://www.figma.com/design/fAmgtG3ZDdllvl0XZFiKvU/?node-id=6-3", file: redraw-screen.png }
     wait:
       timeout: 900
       jira: { key: "{fe.issue.key}", label: "design-ok|design-changes", comment: "Сверка макета" }
