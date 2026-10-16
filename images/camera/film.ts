@@ -261,8 +261,11 @@ const seen = async (key: string) => {
 // Задача Jira, которой ждёт шаг: найдена - в итог шага (issue, а для deps - ещё issues).
 async function jiraDone(w: NonNullable<NonNullable<Step['wait']>['jira']>, did: Record<string, unknown>): Promise<boolean> {
   const label = w.label ? fill(w.label, ctx) : undefined;
+  // Комментарий - только написанный после начала шага: старый из прошлого дубля итогом не считается.
+  const since = Number(did.since ?? t0);
   const hasComment = async (key: string) =>
-    !w.comment || (await tracker.listComments(key)).some((c) => c.body.includes(fill(w.comment ?? '', ctx)));
+    !w.comment ||
+    (await tracker.listComments(key)).some((c) => Date.parse(c.createdAt) >= since - 5000 && c.body.includes(fill(w.comment ?? '', ctx)));
   let found: { key: string; url: string; title: string }[] = [];
   // Все зависимости задачи (deps), не только отобранные: сброс стенда закроет и остальные задачи нарезки.
   const deps: string[] = [];
