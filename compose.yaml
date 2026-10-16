@@ -427,7 +427,8 @@ services:
       DOCKER_HOST: unix:///var/run/dind/docker.sock
       CD_IMAGES: prize-draw-api prize-draw-web
       CD_PROJECT: prize-draw
-      CD_ENV: WEB_PORT=8082 WEB_BIND=0.0.0.0
+      # DEMO_CLOCK=on - часы стенда демо цели: время можно сдвинуть (POST /api/demo/clock).
+      CD_ENV: WEB_PORT=8082 WEB_BIND=0.0.0.0 DEMO_CLOCK=on
     volumes:
       - deploy-dind-sock:/var/run/dind
       - ./.state/cd:/secrets:ro

@@ -7,7 +7,7 @@
 #   Jira с меткой film закрываются - следующий дубль покажет сбой заново;
 # - открытые PR агентов по задачам с меткой film, PR участников съёмки (ветки film/...) и
 #   правила-кандидаты (ветки factory/rule-...) закрываются, ветки остаются;
-# - код и правила цели возвращаются к тегу demo-baseline (реестр ролей остаётся как в main):
+# - код и правила цели возвращаются к последнему тегу demo-baseline[-N] (реестр ролей - как в main):
 #   PR открывает и сливает DevOps (ИИ) своим приложением GitHub, служба выкладки выкладывает main;
 #   вершина main получает служебный тег выпуска (следующий патч), чтобы заметки выпуска в дубле
 #   показывали только его работу;
@@ -132,7 +132,9 @@ else
 	jwt="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url).$(printf '{"iat":%s,"exp":%s,"iss":"%s"}' $((now - 60)) $((now + 540)) "$id" | b64url)"
 	printf 'Authorization: Bearer %s.%s\n' "$jwt" "$(printf '%s' "$jwt" | openssl dgst -sha256 -sign "$app.pem" -binary | b64url)" >"$tmp/jwt"
 	api jwt POST "https://api.github.com/app/installations/$inst/access_tokens" | jq -r '"Authorization: Bearer " + .token' >"$tmp/app"
-	base=$(api app GET "$G/git/ref/tags/demo-baseline" | jq -r .object.sha) || base=
+	# База демо - последний тег demo-baseline[-N]: новая база (например, с часами стенда) - новый тег.
+	base=$(api app GET "$G/tags?per_page=100" | jq -r '[.[] | select(.name | test("^demo-baseline(-[0-9]+)?$"))
+		| {n: ((.name | capture("-(?<n>[0-9]+)$").n) // "1" | tonumber), sha: .commit.sha}] | sort_by(.n) | last | .sha // empty') || base=
 	if [ -z "$base" ]; then
 		echo "код цели: нет тега demo-baseline - возврат к базе пропущен"
 	else
@@ -159,7 +161,8 @@ else
 		# работу прошлых дублей. Вершина main уже с тегом - ничего не делать.
 		head=$(api app GET "$G/git/ref/heads/main" | jq -r .object.sha)
 		api app GET "$G/tags?per_page=100" >"$tmp/tags"
-		if ! jq -e --arg h "$head" 'any(.[]; .commit.sha == $h)' "$tmp/tags" >/dev/null; then
+		# Считаются только теги выпусков vX.Y.Z: тег базы demo-baseline-N заметки выпуска не отсчитывает.
+		if ! jq -e --arg h "$head" 'any(.[]; .commit.sha == $h and (.name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")))' "$tmp/tags" >/dev/null; then
 			next=$(jq -r '[.[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | ltrimstr("v") | split(".") | map(tonumber)]
 				| sort | last // [1, 0, -1] | "v\(.[0]).\(.[1]).\(.[2] + 1)"' "$tmp/tags")
 			if ! plan "GitHub: служебный тег $next на базе дубля - заметки выпуска начнутся с него"; then

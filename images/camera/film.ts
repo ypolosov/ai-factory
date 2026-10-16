@@ -409,7 +409,9 @@ async function shoot(browser: Browser, step: Step): Promise<void> {
       recordVideo: { dir: join(out, 'raw'), size: { width: 1280, height: 720 } },
     });
     await context.addInitScript(badge, { name: who.name, ai: who.kind === 'ai' });
+    if (shot.clockDays) await context.clock.install({ time: new Date(Date.now() + shot.clockDays * 86_400_000) });
     const page = await context.newPage();
+    page.on('dialog', (d) => void d.accept()); // подтверждения на стенде - да
     if (n === 0 && step.chapter) {
       await page.setContent(chapterHtml(step.chapter, step.note ?? ''));
       await page.waitForTimeout(2500);
@@ -435,10 +437,15 @@ async function shoot(browser: Browser, step: Step): Promise<void> {
         .scrollIntoViewIfNeeded()
         .catch(() => {});
     }
+    // Действия на странице: нет элемента - кадр продолжается, а режиссёр называет пропуск в журнале.
     for (const a of shot.play ?? []) {
-      if ('click' in a) await page.getByText(fill(a.click, ctx)).first().click();
-      if ('fill' in a) await page.getByLabel(fill(a.fill.label, ctx)).first().fill(fill(a.fill.value, ctx));
-      if ('press' in a) await page.keyboard.press(a.press);
+      try {
+        if ('click' in a) await page.getByText(fill(a.click, ctx)).first().click({ timeout: 10_000 });
+        if ('fill' in a) await page.getByLabel(fill(a.fill.label, ctx)).first().fill(fill(a.fill.value, ctx), { timeout: 10_000 });
+        if ('press' in a) await page.keyboard.press(a.press);
+      } catch (e) {
+        log(`${step.id}: действие ${JSON.stringify(a)} не вышло: ${(e as Error).message.split('\n')[0]}`);
+      }
       await page.waitForTimeout('wait' in a ? a.wait * 1000 : 800);
     }
     if (shot.scroll) await page.evaluate(scrollToEnd, shot.scroll);
