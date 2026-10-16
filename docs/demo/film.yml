@@ -10,10 +10,10 @@ personas:
   owner: { name: Юрий - владелец продукта, kind: human, browser: atlassian }
   po: { name: PO, kind: ai, discord: po, atlassian: po, jira: "712020:d3f88f83-dcbc-47dd-a6ce-032bd266ee21", browser: atlassian }
   pm: { name: PM, kind: ai, discord: pm, atlassian: pm, jira: "712020:63480dfc-cc04-4e6b-8f57-f1c9929f0c89", browser: atlassian }
-  architect: { name: Архитектор, kind: ai, discord: architect, atlassian: architect, jira: "712020:60a01f69-2ed8-4e0b-a353-b5cdebb46f2e", browser: atlassian }
-  designer: { name: Дизайнер, kind: ai, discord: designer, atlassian: designer, jira: "712020:28c9e50f-44b7-4de5-8f75-5b4e5b245871", browser: atlassian }
-  frontend: { name: Фронтенд, kind: ai, discord: frontend, atlassian: frontend, jira: "712020:47ae87fe-7e13-4728-8ea0-f21c42af68bb", browser: atlassian }
-  backend: { name: Бэкенд, kind: ai, discord: backend, atlassian: backend, jira: "712020:41e37ff7-488f-49d0-84fc-78be0d419a58", browser: atlassian }
+  architect: { name: Architect, kind: ai, discord: architect, atlassian: architect, jira: "712020:60a01f69-2ed8-4e0b-a353-b5cdebb46f2e", browser: atlassian }
+  designer: { name: Designer, kind: ai, discord: designer, atlassian: designer, jira: "712020:28c9e50f-44b7-4de5-8f75-5b4e5b245871", browser: atlassian }
+  frontend: { name: Frontend, kind: ai, discord: frontend, atlassian: frontend, jira: "712020:47ae87fe-7e13-4728-8ea0-f21c42af68bb", browser: atlassian }
+  backend: { name: Backend, kind: ai, discord: backend, atlassian: backend, jira: "712020:41e37ff7-488f-49d0-84fc-78be0d419a58", browser: atlassian }
   qa: { name: QA, kind: ai, discord: qa, atlassian: qa, jira: "712020:4246dca1-3b5d-4ded-8888-7c30d2cadc6c", browser: atlassian }
   devops: { name: DevOps, kind: ai, discord: devops, atlassian: devops, jira: "712020:3f787141-f967-45cc-bf8b-9eb71e7c01b4", browser: atlassian }
 
