@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { type Browser, type BrowserContext, chromium } from 'playwright';
 import { parse } from 'yaml';
 import { selectTracker, selectWiki } from '../ports/select.ts';
-import { badge, chapterHtml, type Film, fill, parseEnv, type Step } from './script.ts';
+import { badge, chapterHtml, FILM_LABEL, type Film, fill, parseEnv, type Step, takeName } from './script.ts';
 
 const API = 'https://discord.com/api/v10';
 const [filmPath = '', out = ''] = process.argv.slice(2);
@@ -85,8 +85,11 @@ const channelId = (name: string) => {
   return id;
 };
 
-type Ctx = Record<string, Record<string, unknown>>;
-const ctx: Ctx = {};
+// Итоги шагов для подстановок {шаг.поле}; {take} - имя дубля. Всё, что создаёт съёмка, получает
+// метки film и имени дубля: прошлые дубли уводит в архив scripts/demo-reset.sh.
+const take = takeName(new Date(t0));
+const ctx: Record<string, unknown> = { take };
+if (film.steps.some((s) => s.id === 'take')) throw new Error('шаг не может называться take');
 
 async function act(step: Step): Promise<void> {
   const did: Record<string, unknown> = {};
@@ -107,7 +110,7 @@ async function act(step: Step): Promise<void> {
     const wiki = as(step.who).wiki ?? factory.wiki;
     if (!wiki) throw new Error(`у участника ${step.who} нет учётки Confluence`);
     const page = await wiki.upsertPage(fill(d.wiki.title, ctx), fill(d.wiki.body, ctx));
-    if (d.wiki.label) await wiki.addLabel(page.id, d.wiki.label);
+    for (const l of [FILM_LABEL, take, d.wiki.label]) if (l) await wiki.addLabel(page.id, l);
     did.page = page;
     log(`${step.id}: страница ${page.url}`);
   }
@@ -136,7 +139,7 @@ async function waitFor(step: Step): Promise<void> {
   const w = step.wait;
   if (!w) return;
   const deadline = Date.now() + (w.timeout ?? 300) * 1000;
-  const did = ctx[step.id] ?? {};
+  const did = (ctx[step.id] ?? {}) as Record<string, unknown>;
   while (Date.now() < deadline) {
     if (w.discord) {
       const after = (did.message as { id: string } | undefined)?.id ?? '0';
@@ -156,6 +159,7 @@ async function waitFor(step: Step): Promise<void> {
       const comments = i && w.jira.comment ? await tracker.listComments(i.key) : [];
       if (i && (!w.jira.comment || comments.some((c) => c.body.includes(w.jira?.comment ?? '')))) {
         did.issue = { key: i.key, url: i.url };
+        for (const l of [FILM_LABEL, take]) await tracker.addLabel(i.key, l);
         log(`${step.id}: задача ${i.key}`);
         return;
       }
@@ -220,7 +224,7 @@ try {
   // Манифест прогона: шаги, клипы, ссылки на задачи и страницы - без ключей и куки.
   writeFileSync(
     join(out, 'manifest.json'),
-    JSON.stringify({ title: film.title, started: new Date(t0).toISOString(), ctx, clips }, null, 2),
+    JSON.stringify({ title: film.title, take, started: new Date(t0).toISOString(), ctx, clips }, null, 2),
   );
   log(`манифест: ${join(out, 'manifest.json')}`);
 }

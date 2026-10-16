@@ -64,6 +64,15 @@ export function fill(text: string, ctx: Record<string, unknown>): string {
   });
 }
 
+// Метка всего, что создаёт съёмка: по ней scripts/demo-reset.sh уводит прошлые дубли в архив.
+export const FILM_LABEL = 'film';
+
+// Имя дубля по местному времени начала: take-ММДД-ЧЧММ - годится в метку Jira и Confluence.
+export function takeName(d: Date): string {
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `take-${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}`;
+}
+
 // Плашка участника в углу экрана: кто сейчас действует; ИИ-персонаж помечен.
 export function badge(p: { name: string; ai: boolean }): void {
   const put = () => {

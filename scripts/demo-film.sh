@@ -3,9 +3,11 @@
 # действуют через API под своими учётками, камера (Playwright без окна, образ factory/camera)
 # снимает экраны. Клипы и манифест - в .state/films/<время>/ (рядом с ключами и входами камеры:
 # трассы браузера хранят куки). Ключи и входы монтируются только для чтения.
+# Перед съёмкой стенд сбрасывается (scripts/demo-reset.sh): прошлые дубли уходят из кадра.
 # Запуск из корня репозитория после scripts/demo-up.sh.
 set -eu
 
+"$(dirname "$0")/demo-reset.sh"
 out=.state/films/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$out"
 docker build -q -t factory/camera:stand -f images/camera/Dockerfile images >/dev/null
