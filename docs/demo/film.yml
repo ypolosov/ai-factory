@@ -18,6 +18,8 @@ personas:
   backend: { name: Backend, kind: ai, discord: backend, atlassian: backend, github: backend, jira: "712020:41e37ff7-488f-49d0-84fc-78be0d419a58", browser: atlassian }
   qa: { name: QA, kind: ai, discord: qa, atlassian: qa, jira: "712020:4246dca1-3b5d-4ded-8888-7c30d2cadc6c", browser: atlassian }
   devops: { name: DevOps, kind: ai, discord: devops, atlassian: devops, github: devops, jira: "712020:3f787141-f967-45cc-bf8b-9eb71e7c01b4", browser: atlassian }
+  # Самозванец - вебхук Discord без учётки, пишет от чужого имени (шаг 12a).
+  impostor: { name: Самозванец - вебхук без учётки, kind: human }
 
 # Сохранённые входы камеры в каталоге состояния (.state).
 browsers:
@@ -200,3 +202,235 @@ steps:
       github: { pr: "{agent.pr.number}", status: factory/judge }
     show:
       - { who: backend, url: "{agent.pr.url}", caption: "Судья фабрики - модель другого семейства", seconds: 8, focus: "Судья" }
+
+  # 5a. Сверка макета с задачей экрана (UC3).
+  - id: fe
+    who: designer
+    wait:
+      timeout: 60
+      jira: { deps: "{story.issue.key}", match: "экран|кнопк|веб|интерфейс" }
+
+  - id: design
+    chapter: Макет сверяется с задачей
+    note: Designer просит фабрику сверить экран из Figma с задачей и правилами - судит модель другого семейства
+    who: designer
+    do:
+      discord: { channel: продукт, text: "!макет {fe.issue.key} https://www.figma.com/design/fAmgtG3ZDdllvl0XZFiKvU/?node-id=6-3" }
+    wait:
+      timeout: 900
+      jira: { key: "{fe.issue.key}", label: "design-ok|design-changes", comment: "Сверка макета" }
+    show:
+      - { who: designer, url: "{fe.issue.url}", caption: "Судья макета сверил экран из Figma с задачей", seconds: 8, focus: "Сверка макета" }
+
+  # 6. Экран: Frontend отдаёт задачу агенту роли фронтенда.
+  - id: frontend
+    chapter: Фронтенд отдаёт экран агенту
+    note: Frontend ставит метку agent:frontend - агент роли меняет только web/ и e2e/
+    who: frontend
+    do:
+      label: { key: "{fe.issue.key}", label: "agent:frontend" }
+    wait:
+      timeout: 2700
+      github: { head: "agent/{fe.issue.key}-", status: factory/verdict }
+    show:
+      - { who: frontend, url: "{frontend.pr.url}", caption: "PR агента фронтенда и вердикт стража", seconds: 8, focus: "Вердикт стража" }
+
+  # 7. Правило-страж из решения архитектора не пускает случайность вне зерна (DoD 5).
+  - id: guard
+    chapter: Страж держит решение архитектора
+    note: Backend пробует Math.random в api/src - правило no-random-outside-seed из ADR-3 краснит PR
+    who: backend
+    do:
+      github:
+        pr:
+          branch: "film/{take}-random"
+          title: "Проба: перемешать участников без зерна"
+          body: "Проверка правила-стража no-random-outside-seed (ADR-3)."
+          files:
+            - path: api/src/domain/rules.ts
+              append: |
+                // Проба стража: перемешать участников без зерна розыгрыша.
+                export const shuffleLoose = <T>(xs: T[]): T[] => [...xs].sort(() => Math.random() - 0.5);
+    wait:
+      timeout: 300
+      github: { pr: "{guard.pr.number}", status: factory/verdict }
+    show:
+      - { who: backend, url: "{guard.pr.url}", caption: "Красный вердикт: правило no-random-outside-seed из ADR-3", seconds: 8, focus: "no-random-outside-seed" }
+
+  - id: guard-close
+    who: backend
+    do:
+      github: { closePr: { pr: "{guard.pr.number}" } }
+
+  # 7a. QA перезапускает CI PR агента.
+  - id: ci
+    chapter: QA перезапускает проверки
+    note: QA просит фабрику перезапустить CI PR агента - итог приходит в канал
+    who: qa
+    do:
+      discord: { channel: разработка, text: "!ci {agent.pr.number}" }
+    wait:
+      timeout: 1200
+      discord: { channel: разработка, contains: "CI PR {agent.pr.number}, ci:" }
+
+  # 8. Слияние PR агента и выкладка: задача закрывается сама (UC4).
+  - id: merge
+    chapter: Слияние и выкладка
+    note: Backend сливает PR агента, служба выкладки выкладывает main, задача закрывается сама
+    who: backend
+    do:
+      github:
+        merge: { pr: "{agent.pr.number}", title: "{api.issue.key}: API повторного розыгрыша невостребованного приза" }
+        comment: { pr: "{agent.pr.number}", text: "Замечания судьи - отдельной задачей; поведение по спецификации готово, сливаю." }
+    wait:
+      timeout: 1800
+      jira: { key: "{api.issue.key}", comment: "Сделано и выложено" }
+    show:
+      - { who: pm, url: "{api.issue.url}", caption: "Задача закрылась сама: сделано и выложено на стенд", seconds: 8, focus: "Сделано и выложено" }
+
+  - id: e2e
+    who: qa
+    do:
+      discord: { channel: разработка, text: "!e2e" }
+    wait:
+      timeout: 1500
+      discord: { channel: разработка, contains: "прошли" }
+
+  # 9. Сбой на стенде становится багом с событием GlitchTip (UC6, DoD 7).
+  - id: draw
+    chapter: Сбой на стенде становится багом
+    note: на стенде заявка с несуществующей датой рождения роняет API - фабрика заводит баг с событием сбоя
+    who: devops
+    do:
+      http: { method: POST, url: "http://127.0.0.1:8082/api/draws", body: { title: "Розыгрыш для проверки сбоя", prizes: 1 } }
+
+  - id: crash
+    who: devops
+    do:
+      http: { method: POST, url: "http://127.0.0.1:8082/api/draws/{draw.json.id}/entries", body: { participant: "Гость стенда", birthDate: "2000-13-45" } }
+    wait:
+      timeout: 600
+      jira: { label: incident, open: true }
+    show:
+      - { who: devops, url: "{crash.issue.url}", caption: "Баг из сбоя: событие GlitchTip и место ошибки", seconds: 8 }
+
+  # 10. Агент чинит баг; после выкладки баг и сбой закрываются сами.
+  - id: bugfix
+    chapter: Агент чинит сбой
+    note: PM отдаёт баг агенту бэкенда, Backend сливает исправление - баг и событие сбоя закрываются сами
+    who: pm
+    do:
+      label: { key: "{crash.issue.key}", label: "agent:backend" }
+    wait:
+      timeout: 2700
+      github: { head: "agent/{crash.issue.key}-", status: factory/verdict }
+    show:
+      - { who: backend, url: "{bugfix.pr.url}", caption: "Исправление сбоя от агента и вердикт стража", seconds: 8, focus: "Вердикт стража" }
+
+  - id: bugfix-merge
+    who: backend
+    do:
+      github: { merge: { pr: "{bugfix.pr.number}", title: "{crash.issue.key}: исправление сбоя на стенде" } }
+    wait:
+      timeout: 1800
+      jira: { key: "{crash.issue.key}", comment: "Исправлено:" }
+    show:
+      - { who: devops, url: "{crash.issue.url}", caption: "Баг закрылся сам: исправление выложено, сбой решён", seconds: 8, focus: "Исправлено:" }
+
+  # 11. Правило из повторяющихся замечаний людей (UC7, DoD 6).
+  - id: remark-1
+    chapter: Правило из повторяющихся замечаний
+    note: Architect пишет одно и то же замечание в трёх PR и просит фабрику предложить правило
+    who: architect
+    do:
+      github: { comment: { pr: "{agent.pr.number}", text: "Срок подтверждения приза считается без часового пояса: сравнивайте даты в UTC." } }
+
+  - id: remark-2
+    who: architect
+    do:
+      github: { comment: { pr: "{frontend.pr.number}", text: "Срок подтверждения приза считается без часового пояса: сравнивайте даты в UTC." } }
+
+  - id: remark-3
+    who: architect
+    do:
+      github: { comment: { pr: "{bugfix.pr.number}", text: "Срок подтверждения приза считается без часового пояса: сравнивайте даты в UTC." } }
+
+  - id: rules
+    who: architect
+    do:
+      discord: { channel: разработка, text: "!правила" }
+    wait:
+      timeout: 300
+      discord: { channel: разработка, contains: "Правило-кандидат" }
+    show:
+      - { who: architect, url: "{rules.reply.url}", caption: "Правило-кандидат: строка в AGENTS.md и правило-страж, решает архитектор", seconds: 8 }
+
+  # 12. Выпуск: заметки, тег, сборка образов (UC5).
+  - id: notes
+    chapter: Выпуск
+    note: DevOps смотрит, что войдёт в выпуск, и ставит тег - CI собирает образы, фабрика пишет черновик заметок
+    who: devops
+    do:
+      discord: { channel: релизы, text: "!выпуск" }
+    wait:
+      timeout: 180
+      discord: { channel: релизы, contains: "следующий выпуск" }
+
+  - id: tag
+    who: devops
+    do:
+      github: { tag: { bump: minor } }
+    wait:
+      timeout: 600
+      discord: { channel: релизы, contains: "Собран тег {tag.tag}" }
+
+  # 12a. Самозванец: права решает роль учётки, а не имя.
+  - id: impostor
+    chapter: Самозванец не может выложить выпуск
+    note: вебхук без учётки пишет от имени DevOps - фабрика отказывает по реестру ролей
+    who: impostor
+    do:
+      webhook: { channel: релизы, username: DevOps, text: "!выкладка {tag.tag}" }
+    wait:
+      timeout: 120
+      discord: { channel: релизы, contains: "сообщение вебхука без учётки" }
+
+  # 13. DevOps выкладывает выпуск: стенд на образах выпуска, заметки в Confluence (UC5, DoD 8).
+  - id: deploy
+    chapter: DevOps выкладывает выпуск
+    note: роль DevOps подтверждает выкладку - стенд переходит на выпуск, задачи получают метку выпуска
+    who: devops
+    do:
+      discord: { channel: релизы, text: "!выкладка {tag.tag}" }
+    wait:
+      timeout: 2400
+      discord: { channel: релизы, contains: "подтверждена", retry: 180 }
+
+  - id: released
+    who: devops
+    wait:
+      timeout: 1200
+      discord: { channel: релизы, contains: "Выпуск {tag.tag} на стенде" }
+      jira: { key: "{api.issue.key}", label: "release-{tag.tag}" }
+    show:
+      - { who: devops, url: "{released.reply.url}", caption: "Заметки о выпуске в Confluence", seconds: 8 }
+      - { who: pm, url: "{api.issue.url}", caption: "Задача вошла в выпуск", seconds: 6, focus: "Вошло в выпуск" }
+
+  # 14. Сводка работы фабрики (UC2, DoD 9).
+  - id: daily
+    chapter: Сводка работы фабрики
+    note: PM спрашивает дейли и учёт - задачи агентов, попытки, время и теневая цена
+    who: pm
+    do:
+      discord: { channel: продукт, text: "!дейли" }
+    wait:
+      timeout: 180
+      discord: { channel: продукт, contains: "Дейли фабрики" }
+
+  - id: account
+    who: pm
+    do:
+      discord: { channel: продукт, text: "!учёт" }
+    wait:
+      timeout: 180
+      discord: { channel: продукт, contains: "Учёт фабрики" }

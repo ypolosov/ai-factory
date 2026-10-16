@@ -47,8 +47,9 @@ export function glitchtipIncidents(cfg: GlitchtipConfig): Incidents {
         }),
       );
     },
+    // Закрытие - через список задач организации: PUT на список проекта GlitchTip отвечает 405.
     async resolve(id) {
-      await call('PUT', `${project}?id=${encodeURIComponent(id)}`, { status: 'resolved' });
+      await call('PUT', `/api/0/organizations/${cfg.org}/issues/?id=${encodeURIComponent(id)}`, { status: 'resolved' });
     },
   };
 }
