@@ -49,7 +49,7 @@ const atlassian = (file: string) => {
       : undefined,
   };
 };
-const factory = atlassian('atlassian.env');
+const factory = atlassian(existsSync(join(state, 'atlassian-factory.env')) ? 'atlassian-factory.env' : 'atlassian.env');
 const tracker = factory.tracker;
 const accounts = new Map<string, ReturnType<typeof atlassian>>();
 // Учётка, под которой действует участник: своя, если заведена, иначе - фабрики.
