@@ -229,13 +229,20 @@ async function act(step: Step): Promise<void> {
     log(`${step.id}: ${d.http.method ?? 'GET'} ${fill(d.http.url, ctx)} - ${r.status}`);
   }
   if (d.webhook) {
-    // Вебхук без учётки: самозванец пишет от чужого имени. Вебхук канала заводит бот фабрики.
-    const ch = channelId(d.webhook.channel);
-    const hooks = await discord<{ id: string; token?: string; name: string }[]>(factoryToken, `/channels/${ch}/webhooks`);
-    const hook =
-      hooks.find((h) => h.name === 'film-webhook' && h.token) ??
-      (await discord<{ id: string; token: string; name: string }>(factoryToken, `/channels/${ch}/webhooks`, { name: 'film-webhook' }));
-    const r = await fetch(`${API}/webhooks/${hook.id}/${hook.token}?wait=true`, {
+    // Вебхук без учётки: самозванец пишет от чужого имени. Адрес вебхука канала - из
+    // .state/discord-webhook-<канал>.env (scripts/film-webhook-add.sh); нет файла - вебхук заводит
+    // бот фабрики (нужно право Manage Webhooks).
+    const file = `discord-webhook-${d.webhook.channel}.env`;
+    let url = existsSync(join(state, file)) ? env(file).DISCORD_WEBHOOK_URL : undefined;
+    if (!url) {
+      const ch = channelId(d.webhook.channel);
+      const hooks = await discord<{ id: string; token?: string; name: string }[]>(factoryToken, `/channels/${ch}/webhooks`);
+      const hook =
+        hooks.find((h) => h.name === 'film-webhook' && h.token) ??
+        (await discord<{ id: string; token: string; name: string }>(factoryToken, `/channels/${ch}/webhooks`, { name: 'film-webhook' }));
+      url = `${API}/webhooks/${hook.id}/${hook.token}`;
+    }
+    const r = await fetch(`${url}?wait=true`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ content: fill(d.webhook.text, ctx), username: d.webhook.username }),
