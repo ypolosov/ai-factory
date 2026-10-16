@@ -1,49 +1,202 @@
 # Сценарий съёмки видео-демо: шаги сценария демо (scenario.md) - кто действует, как и что показать.
-# Действуют участники через API под своими учётками; камера только снимает экраны.
-# Решения в точках решения человек принимает вживую: шаг с do.decision называет команду и ждёт итога.
-# Запуск: scripts/demo-film.sh [--only шаг,шаг]
+# Все роли играют ИИ-персонажи (состав 3, docs/compositions): реплики и правки персонажей заданы
+# сценарием, работу фабрики (библиотекарь, сверщик, нарезка, агент, страж, судья) делает ИИ вживую.
+# Решения своей области персонажи принимают по реестру ролей цели. Камера только снимает экраны.
+# Запуск: scripts/demo-film.sh [--only шаг,шаг]; заготовки PR - film-assets/.
 title: Повторный розыгрыш невостребованного приза
 
-# Участники: человек действует учёткой фабрики, ИИ-персонажи - своими учётками бота Discord и
-# Atlassian (.state/discord-<id>.env, .state/atlassian-<id>.env; jira - accountId для назначения).
+# Участники - ИИ-персонажи со своими учётками: бот Discord (.state/discord-<id>.env), Atlassian
+# (.state/atlassian-<id>.env; jira - accountId для назначения) и приложение GitHub
+# (.state/github-app-<id>.env и .pem). owner - человек, учётка фабрики; в сценарии не действует.
 personas:
   owner: { name: Юрий - владелец продукта, kind: human, browser: atlassian }
   po: { name: PO, kind: ai, discord: po, atlassian: po, jira: "712020:d3f88f83-dcbc-47dd-a6ce-032bd266ee21", browser: atlassian }
   pm: { name: PM, kind: ai, discord: pm, atlassian: pm, jira: "712020:63480dfc-cc04-4e6b-8f57-f1c9929f0c89", browser: atlassian }
-  architect: { name: Architect, kind: ai, discord: architect, atlassian: architect, jira: "712020:60a01f69-2ed8-4e0b-a353-b5cdebb46f2e", browser: atlassian }
+  architect: { name: Architect, kind: ai, discord: architect, atlassian: architect, github: architect, jira: "712020:60a01f69-2ed8-4e0b-a353-b5cdebb46f2e", browser: atlassian }
   designer: { name: Designer, kind: ai, discord: designer, atlassian: designer, jira: "712020:28c9e50f-44b7-4de5-8f75-5b4e5b245871", browser: atlassian }
   frontend: { name: Frontend, kind: ai, discord: frontend, atlassian: frontend, jira: "712020:47ae87fe-7e13-4728-8ea0-f21c42af68bb", browser: atlassian }
-  backend: { name: Backend, kind: ai, discord: backend, atlassian: backend, jira: "712020:41e37ff7-488f-49d0-84fc-78be0d419a58", browser: atlassian }
+  backend: { name: Backend, kind: ai, discord: backend, atlassian: backend, github: backend, jira: "712020:41e37ff7-488f-49d0-84fc-78be0d419a58", browser: atlassian }
   qa: { name: QA, kind: ai, discord: qa, atlassian: qa, jira: "712020:4246dca1-3b5d-4ded-8888-7c30d2cadc6c", browser: atlassian }
-  devops: { name: DevOps, kind: ai, discord: devops, atlassian: devops, jira: "712020:3f787141-f967-45cc-bf8b-9eb71e7c01b4", browser: atlassian }
+  devops: { name: DevOps, kind: ai, discord: devops, atlassian: devops, github: devops, jira: "712020:3f787141-f967-45cc-bf8b-9eb71e7c01b4", browser: atlassian }
 
 # Сохранённые входы камеры в каталоге состояния (.state).
 browsers:
   atlassian: camera/jira.json
 
 steps:
+  # 1. Библиотекарь (UC1, DoD 2).
   - id: librarian
     chapter: База знаний отвечает команде
-    note: PM спрашивает фабрику в Discord, ответ - со ссылками на правила и решения проекта
-    who: pm
+    note: PO спрашивает фабрику в Discord - ответ со ссылками на правила и решения проекта
+    who: po
     do:
       discord: { channel: продукт, text: "@factory что известно про невостребованные призы?" }
     wait:
       timeout: 180
       discord: { channel: продукт, contains: "Источники" }
 
+  # 2. Стори из Confluence и сверка со знаниями проекта (UC1, DoD 5).
   - id: story
     chapter: Требование сверяется со знаниями проекта
-    note: Владелец продукта пишет стори в Confluence, фабрика заводит её в Jira и сверяет
-    who: owner
+    note: PO пишет стори в Confluence, фабрика заводит её в Jira и сверяет с правилами и решениями
+    who: po
     do:
       wiki:
-        title: "Проба съёмки: сколько дней осталось подтвердить приз"
-        body: "Победитель видит, сколько дней у него осталось, чтобы подтвердить приз. Когда срок истёк, приз становится невостребованным."
+        title: Разыграть невостребованный приз заново среди всех участников
+        body: Если победитель не подтвердил приз за 3 дня, приз разыгрывается заново среди всех участников розыгрыша. Так приз не пропадает, а участники получают ещё один шанс.
         label: story
     wait:
-      timeout: 300
+      timeout: 420
       jira: { label: "wiki-{story.page.id}", comment: "Сверщик фабрики" }
     show:
-      - { who: owner, url: "{story.page.url}", caption: "Стори в Confluence", seconds: 6 }
-      - { who: pm, url: "{story.issue.url}", caption: "Фабрика завела стори и сверила её", seconds: 8, focus: "Сверщик фабрики" }
+      - { who: po, url: "{story.page.url}", caption: "Стори PO в Confluence", seconds: 6 }
+      - { who: po, url: "{story.issue.url}", caption: "Сверщик нашёл противоречие с ADR-3", seconds: 8, focus: "Сверщик фабрики" }
+
+  - id: decision
+    who: architect
+    wait:
+      timeout: 120
+      jira: { deps: "{story.issue.key}", label: decision }
+
+  # 3. Архитектор снимает противоречие: уточнение ADR-3 и правило-страж (UC1).
+  - id: adr
+    chapter: Архитектор решает противоречие
+    note: Architect уточняет ADR-3 и добавляет правило-страж; слить PR - решение его роли
+    who: architect
+    do:
+      comment:
+        key: "{decision.issue.key}"
+        text: "Предлагаю уточнить ADR-3: повтор невостребованного приза продолжает ту же последовательность из зерна - следующий кандидат среди ещё не выбранных. Новое зерно сломало бы проверку R4. Правило-страж no-random-outside-seed закроет другие источники случайности в api/src/."
+      github:
+        pr:
+          branch: "film/{take}-adr-3"
+          title: "ADR-3: повтор невостребованного приза продолжает последовательность ({decision.issue.key})"
+          body: "Решение по задаче {decision.issue.key}: повтор невостребованного приза - следующий шаг той же последовательности из зерна (ADR-3), без нового зерна. Правило-страж no-random-outside-seed не пускает в api/src/ другие источники случайности."
+          files:
+            - path: docs/adr/ADR-3-reproducible-draw.md
+              replace:
+                - find: 'Повторный выбор с другим зерном или "заново среди всех" этому решению противоречит.'
+                  with: "Повторный выбор с другим зерном этому решению противоречит; повтор невостребованного приза - в уточнении ниже."
+              append: |
+
+                ## Уточнение: повтор невостребованного приза ({decision.issue.key})
+
+                Статус: принято.
+
+                Проблема: победитель не подтвердил приз за 3 дня (R6), приз нужно разыграть снова, сохранив проверяемость выбора (R4) и правило одного приза (R5).
+
+                Решение: повтор не берёт новое зерно. "Заново среди всех участников" значит: среди всех участников розыгрыша, кроме уже выбранных победителей, следующим шагом той же последовательности - индекс из HMAC-SHA256(зерно, "pick:i") по модулю числа оставшихся, где i - число уже сделанных выборов. Не подтвердивший приз победитель из кандидатов уже вышел.
+
+                Последствия: повтор воспроизводим из опубликованного зерна так же, как исходный выбор; веб-приложение пересчитывает и его. Других источников случайности в `api/src/` нет: правило-страж `no-random-outside-seed` в `.factory/config.yml`.
+            - path: .factory/config.yml
+              append: |
+
+                # Правила-стражи: добавленные строки изменения в paths не должны совпадать с forbid.
+                rules:
+                  - id: no-random-outside-seed
+                    source: docs/adr/ADR-3-reproducible-draw.md
+                    message: "случайность в api/src/ - только из зерна розыгрыша (ADR-3): Math.random и randomInt запрещены"
+                    forbid: 'Math\.random|randomInt\('
+                    paths: [api/src/]
+    wait:
+      timeout: 300
+      github: { pr: "{adr.pr.number}", status: factory/verdict }
+    show:
+      - { who: architect, url: "{adr.pr.url}", caption: "PR архитектора и вердикт стража", seconds: 8, focus: "Вердикт стража" }
+
+  - id: adr-merge
+    who: architect
+    do:
+      github: { merge: { pr: "{adr.pr.number}", title: "ADR-3: повтор невостребованного приза продолжает последовательность" } }
+      close: { key: "{decision.issue.key}" }
+    wait:
+      timeout: 600
+      jira: { key: "{story.issue.key}", label: story-ok, comment: "Противоречие снято" }
+    show:
+      - { who: po, url: "{story.issue.url}", caption: "Сверщик: противоречие снято решением архитектора", seconds: 8, focus: "Противоречие снято" }
+
+  # 4. Нарезка: предлагает PM, утверждает PO (UC2).
+  - id: slice
+    chapter: Стори нарезается на задачи
+    note: PM просит нарезку, PO утверждает - задачи по одному шаблону со сценариями приёмки
+    who: pm
+    do:
+      discord: { channel: продукт, text: "!нарезка {story.issue.key}" }
+    wait:
+      timeout: 300
+      discord: { channel: продукт, contains: "Сверщик предлагает нарезку" }
+
+  - id: approve
+    who: po
+    do:
+      discord: { channel: продукт, text: "!утвердить {story.issue.key}" }
+    wait:
+      timeout: 180
+      discord: { channel: продукт, contains: "Задачи заведены" }
+
+  - id: api
+    who: backend
+    wait:
+      timeout: 120
+      jira: { deps: "{story.issue.key}", match: "API|запрос|эндпоинт|сервер" }
+    show:
+      - { who: pm, url: "{story.issue.url}", caption: "Нарезка утверждена PO", seconds: 6, focus: "Нарезка утверждена" }
+      - { who: backend, url: "{api.issue.url}", caption: "Задача API: цель, сценарии приёмки, вне рамок, основания", seconds: 8 }
+
+  # 4a. Спецификация OpenSpec перед работой агента (DoD изменения).
+  - id: spec
+    chapter: Спецификация перед работой агента
+    note: Backend описывает изменение по OpenSpec; слияние PR утверждает требования и сценарии
+    who: backend
+    do:
+      github:
+        pr:
+          branch: "film/{take}-{api.issue.key|lower}-spec"
+          title: "{api.issue.key}: спецификация повтора невостребованного приза"
+          body: "Изменение OpenSpec по задаче {api.issue.key}: замысел, требования со сценариями, решение, задачи, план проверки. После слияния задача уходит агенту фабрики."
+          files:
+            - { path: "openspec/changes/{api.issue.key|lower}-redraw-unclaimed-prize/.openspec.yaml", from: redraw/.openspec.yaml }
+            - { path: "openspec/changes/{api.issue.key|lower}-redraw-unclaimed-prize/proposal.md", from: redraw/proposal.md }
+            - { path: "openspec/changes/{api.issue.key|lower}-redraw-unclaimed-prize/specs/redraw-unclaimed-prize/spec.md", from: redraw/specs/redraw-unclaimed-prize/spec.md }
+            - { path: "openspec/changes/{api.issue.key|lower}-redraw-unclaimed-prize/design.md", from: redraw/design.md }
+            - { path: "openspec/changes/{api.issue.key|lower}-redraw-unclaimed-prize/tasks.md", from: redraw/tasks.md }
+            - { path: "openspec/changes/{api.issue.key|lower}-redraw-unclaimed-prize/test-plan.md", from: redraw/test-plan.md }
+    wait:
+      timeout: 300
+      github: { pr: "{spec.pr.number}", status: factory/verdict, success: true }
+    show:
+      - { who: backend, url: "{spec.pr.url}", caption: "Спецификация OpenSpec и зелёный вердикт стража", seconds: 8, focus: "Вердикт стража" }
+
+  - id: spec-merge
+    who: backend
+    do:
+      github: { merge: { pr: "{spec.pr.number}", title: "{api.issue.key}: спецификация повтора невостребованного приза" } }
+
+  - id: handoff
+    who: backend
+    do:
+      label: { key: "{api.issue.key}", label: "agent:backend" }
+    wait:
+      timeout: 300
+      jira: { key: "{api.issue.key}", label: "agent-running|agent-review", comment: "Фабрика взяла задачу" }
+
+  # 5. Агент фабрики и проверки PR (UC4, DoD 4); 5b - судья другого семейства моделей.
+  - id: agent
+    chapter: Агент фабрики делает задачу
+    note: агент роли бэкенда работает на своём раннере; страж, сканеры и тест до кода проверяют PR
+    who: backend
+    wait:
+      timeout: 2700
+      jira: { key: "{api.issue.key}", label: "agent-review|agent-failed" }
+      github: { head: "agent/{api.issue.key}-", status: factory/verdict }
+    show:
+      - { who: backend, url: "{agent.pr.url}", caption: "PR агента: вердикт стража, сканеры, тест до кода", seconds: 10, focus: "Вердикт стража" }
+      - { who: pm, url: "{api.issue.url}", caption: "Задача: исполнитель Backend, списанное время агента", seconds: 8 }
+
+  - id: judge
+    who: backend
+    wait:
+      timeout: 900
+      github: { pr: "{agent.pr.number}", status: factory/judge }
+    show:
+      - { who: backend, url: "{agent.pr.url}", caption: "Судья фабрики - модель другого семейства", seconds: 8, focus: "Судья" }
