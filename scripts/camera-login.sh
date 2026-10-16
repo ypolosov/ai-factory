@@ -18,7 +18,12 @@ site=$(sed -n 's/^ATLASSIAN_SITE=//p' .state/atlassian.env | tr -d '\r"')
 url=${2:-$site/jira}
 profile=.state/camera/profile-$persona
 out=.state/camera/atlassian-$persona.json
-email=$(sed -n 's/^ATLASSIAN_EMAIL=//p' ".state/atlassian-$persona.env" 2>/dev/null | tr -d '\r"')
+# Персонаж должен быть заведён (scripts/persona-atlassian-add.sh): его учётка - эталон для проверки.
+[ -s ".state/atlassian-$persona.env" ] || {
+	echo "нет .state/atlassian-$persona.env - такого персонажа нет (опечатка?) или его учётка не заведена" >&2
+	exit 2
+}
+email=$(sed -n 's/^ATLASSIAN_EMAIL=//p' ".state/atlassian-$persona.env" | tr -d '\r"')
 mkdir -p "$profile"
 chmod 700 .state/camera "$profile"
 port=$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
@@ -34,16 +39,30 @@ EOT
 printf '3. Вошли? Нажмите Enter: ' >&2
 read -r _ </dev/tty
 
-# Вход из Chrome - через порт отладки; файл пишет только владелец.
+# Вход из Chrome - через порт отладки; файл пишет только владелец. Сохраняется, только если вход -
+# под учёткой этого персонажа: учётка сессии сверяется с учёткой его API-токена.
 umask 077
 node --input-type=module -e "
+import { readFileSync, renameSync } from 'node:fs';
 import { chromium } from '$here/images/camera/node_modules/playwright/index.mjs';
+const env = Object.fromEntries(readFileSync('.state/atlassian-$persona.env', 'utf8').split(/\\r?\\n/).filter((l) => l.includes('=')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
+const cloud = (await (await fetch('$site/_edge/tenant_info')).json()).cloudId;
+const auth = 'Basic ' + Buffer.from(env.ATLASSIAN_EMAIL + ':' + env.JIRA_API_TOKEN).toString('base64');
+const want = await (await fetch('https://api.atlassian.com/ex/jira/' + cloud + '/rest/api/3/myself', { headers: { authorization: auth } })).json();
 const b = await chromium.connectOverCDP('http://127.0.0.1:$port');
-const s = await b.contexts()[0].storageState({ path: '$out' });
-const n = s.cookies.filter((c) => c.domain.includes('atlassian')).length;
-console.log('сохранено: $out, куки Atlassian: ' + n);
+const ctx = b.contexts()[0];
+const r = await ctx.request.get('$site/rest/api/3/myself');
+const me = r.ok() ? await r.json() : {};
+if (me.accountId !== want.accountId) {
+  console.error('вход под ' + (me.displayName ?? 'никем') + ', а персонаж $persona - ' + want.displayName + ': войдите под его учёткой и нажмите Enter снова');
+  await b.close();
+  process.exit(3);
+}
+await ctx.storageState({ path: '$out.new' });
+renameSync('$out.new', '$out');
+console.log('сохранено: $out - вход камеры под ' + me.displayName);
 await b.close();
 " || {
-	echo "вход не забран - окно Chrome закрыто раньше времени? Запустите мастер снова" >&2
+	echo "вход не сохранён - проверьте учётку в окне Chrome и запустите мастер снова" >&2
 	exit 2
 }
