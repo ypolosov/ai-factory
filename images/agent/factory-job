@@ -89,7 +89,9 @@ fi
 # (REWORK_BASE): база - общий предок ветки PR и ветки по умолчанию, изменение - вся ветка вместе с
 # доработкой (патч агента уже выгружен в agent.patch и от этого не меняется).
 if [ -s "$work/out/agent.patch" ]; then
-	[ -z "${REWORK_BASE:-}" ] || git -C "$work/repo" reset -q --soft "$REWORK_BASE"
+	# Рабочая копия принадлежит недоверенному пользователю (factory-untrusted) - git от его имени.
+	[ -z "${REWORK_BASE:-}" ] || (cd "$work/repo" && factory-untrusted git reset -q --soft "$REWORK_BASE") ||
+		echo "тест до кода: не вышло встать на общий предок $REWORK_BASE - сравнение с прошлой попыткой" >>"$work/out/agent.log"
 	(cd "$work/repo" && factory-test-first "$work/out/tests.json") 2>>"$work/out/agent.log" || true
 fi
 upload agent.patch run.json agent.log secrets.json tests.json
