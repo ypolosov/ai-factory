@@ -70,13 +70,14 @@ export interface Step {
     decision?: string; // команда, которую человек выполняет сам вживую
   };
   // Итог шага: задача Jira - по метке (label), по ключу (key) или среди зависимостей задачи (deps,
-  // с отбором по метке и заголовку match); PR - по номеру или началу имени ветки, со статусом.
+  // с отбором по метке и заголовку match); PR - по номеру или началу имени ветки, со статусом;
+  // newer - PR засчитывается, только когда на нём новый коммит (вершина уже не этот sha).
   // Метки через "|" - любая из них.
   wait?: {
     timeout?: number; // секунды
     discord?: { channel: string; contains?: string; retry?: number }; // retry - через сколько секунд повторить реплику шага
     jira?: { label?: string; comment?: string; key?: string; deps?: string; match?: string; count?: number; open?: boolean };
-    github?: { pr?: string; head?: string; status?: string; success?: boolean };
+    github?: { pr?: string; head?: string; status?: string; success?: boolean; newer?: string };
   };
   show?: Shot[];
 }

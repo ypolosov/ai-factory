@@ -325,6 +325,8 @@ async function githubDone(w: NonNullable<NonNullable<Step['wait']>['github']>, d
     ? await forge.getPull(Number(fill(w.pr, ctx)))
     : (await forge.listPulls({ state: 'open', limit: 50 })).find((x) => head && x.sourceBranch.startsWith(head));
   if (!p) return false;
+  // Доработка: вердикт прошлого коммита не в счёт - ждём новый коммит агента.
+  if (w.newer && p.headSha === fill(w.newer, ctx)) return false;
   if (w.status) {
     const s = (await forge.statuses(p.headSha)).find((x) => x.key === w.status);
     if (!s || s.state === 'pending' || (w.success && s.state !== 'success')) return false;
