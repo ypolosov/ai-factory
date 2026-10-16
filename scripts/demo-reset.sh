@@ -5,10 +5,12 @@
 #   в заголовок пометку архива (заголовок снова свободен для дубля) и уходят под "Архив съёмок";
 # - сбои стенда в GlitchTip решаются, открытые баги сбоев (метка incident) и незакрытые задачи
 #   Jira с меткой film закрываются - следующий дубль покажет сбой заново;
-# - открытые PR агентов по задачам с меткой film и PR участников съёмки (ветки film/...)
-#   закрываются, ветки остаются;
+# - открытые PR агентов по задачам с меткой film, PR участников съёмки (ветки film/...) и
+#   правила-кандидаты (ветки factory/rule-...) закрываются, ветки остаются;
 # - код и правила цели возвращаются к тегу demo-baseline (реестр ролей остаётся как в main):
-#   PR открывает и сливает DevOps (ИИ) своим приложением GitHub, служба выкладки выкладывает main.
+#   PR открывает и сливает DevOps (ИИ) своим приложением GitHub, служба выкладки выкладывает main;
+#   вершина main получает служебный тег выпуска (следующий патч), чтобы заметки выпуска в дубле
+#   показывали только его работу;
 # -n - только показать, что будет сделано. Ключи - .state/atlassian.env, .state/github-target.env
 # и .state/github-app-devops.env (.pem); нет приложения или тега - возврат кода пропускается;
 # GlitchTip - .state/coordinator/glitchtip.token (нет - сбои не трогаются).
@@ -113,7 +115,7 @@ cut -f1 "$tmp/issues" >"$tmp/keys"
 api gh GET "$G/pulls?state=open&per_page=100" | jq -r '.[] | [.number, .head.ref] | @tsv' >"$tmp/prs"
 while IFS="$(printf '\t')" read -r n ref; do
 	key=$(printf '%s' "$ref" | sed -n 's#^agent/\([A-Z][A-Z0-9]*-[0-9]*\)-.*#\1#p')
-	case $ref in film/*) ;; *) if [ -z "$key" ] || ! grep -qx "$key" "$tmp/keys"; then continue; fi ;; esac
+	case $ref in film/* | factory/rule-*) ;; *) if [ -z "$key" ] || ! grep -qx "$key" "$tmp/keys"; then continue; fi ;; esac
 	plan "GitHub: PR $n ($ref) - закрыть" && continue
 	api gh PATCH "$G/pulls/$n" '{"state":"closed"}' >/dev/null
 done <"$tmp/prs"
@@ -152,6 +154,18 @@ else
 				'{title: $t, head: $h, base: "main", body: "Сброс стенда перед дублем видео-демо: код и правила цели - как в теге demo-baseline, реестр ролей - как в main."}')" | jq -r .number)
 			api app PUT "$G/pulls/$n/merge" "{\"merge_method\":\"squash\",\"commit_title\":\"$title (#$n)\"}" >/dev/null
 			echo "код цели: PR $n слит - служба выкладки выложит main"
+		fi
+		# Служебный тег выпуска на базе дубля: заметки выпуска в дубле считаются от него и не тянут
+		# работу прошлых дублей. Вершина main уже с тегом - ничего не делать.
+		head=$(api app GET "$G/git/ref/heads/main" | jq -r .object.sha)
+		api app GET "$G/tags?per_page=100" >"$tmp/tags"
+		if ! jq -e --arg h "$head" 'any(.[]; .commit.sha == $h)' "$tmp/tags" >/dev/null; then
+			next=$(jq -r '[.[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | ltrimstr("v") | split(".") | map(tonumber)]
+				| sort | last // [1, 0, -1] | "v\(.[0]).\(.[1]).\(.[2] + 1)"' "$tmp/tags")
+			if ! plan "GitHub: служебный тег $next на базе дубля - заметки выпуска начнутся с него"; then
+				api app POST "$G/git/refs" "{\"ref\":\"refs/tags/$next\",\"sha\":\"$head\"}" >/dev/null
+				echo "код цели: тег $next на базе дубля"
+			fi
 		fi
 	fi
 fi
