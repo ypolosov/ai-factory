@@ -362,7 +362,9 @@ async function shoot(browser: Browser, step: Step): Promise<void> {
   for (const [n, shot] of (step.show ?? []).entries()) {
     const who = film.personas[shot.who];
     if (!who) throw new Error(`нет участника ${shot.who}`);
-    const login = who.browser ? join(state, film.browsers?.[who.browser] ?? '') : undefined;
+    // Вход камеры: свой у персонажа (scripts/camera-login.sh), иначе общий из film.browsers.
+    const own = who.atlassian ? join(state, `camera/atlassian-${who.atlassian}.json`) : undefined;
+    const login = own && existsSync(own) ? own : who.browser ? join(state, film.browsers?.[who.browser] ?? '') : undefined;
     const context: BrowserContext = await browser.newContext({
       viewport: { width: 1280, height: 720 },
       locale: 'ru-RU',
