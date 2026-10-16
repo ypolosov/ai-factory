@@ -202,12 +202,15 @@ async function jiraDone(w: NonNullable<NonNullable<Step['wait']>['jira']>, did: 
   const hasComment = async (key: string) =>
     !w.comment || (await tracker.listComments(key)).some((c) => c.body.includes(fill(w.comment ?? '', ctx)));
   let found: { key: string; url: string; title: string }[] = [];
+  // Все зависимости задачи (deps), не только отобранные: сброс стенда закроет и остальные задачи нарезки.
+  const deps: string[] = [];
   if (w.key) {
     const i = await tracker.getIssue(fill(w.key, ctx));
     if ((!label || anyOf(i.labels, label)) && (await hasComment(i.key))) found = [i];
   } else if (w.deps) {
     const match = w.match ? new RegExp(fill(w.match, ctx), 'i') : undefined;
     for (const k of await tracker.listDependencies(fill(w.deps, ctx))) {
+      deps.push(k);
       const i = await tracker.getIssue(k);
       if ((!label || anyOf(i.labels, label)) && (!match || match.test(i.title)) && (await hasComment(i.key))) found.push(i);
     }
@@ -217,7 +220,7 @@ async function jiraDone(w: NonNullable<NonNullable<Step['wait']>['jira']>, did: 
     if (i && (await hasComment(i.key))) found = [i];
   }
   if (!found.length) return false;
-  for (const i of found) await seen(i.key);
+  for (const k of new Set([...found.map((i) => i.key), ...deps])) await seen(k);
   did.issue = { key: found[0]?.key, url: found[0]?.url, title: found[0]?.title };
   if (w.deps) did.issues = found.map((i) => ({ key: i.key, url: i.url, title: i.title }));
   return true;

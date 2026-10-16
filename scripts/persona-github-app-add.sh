@@ -12,7 +12,7 @@
 # через дефис, с пометкой bot. По умолчанию - "<Персонаж> AI Factory".
 # Пример: scripts/persona-github-app-add.sh architect "Architect AI Factory"
 # Учётка самой фабрики в GitHub - тот же мастер с ПЕРСОНАЖ factory (scripts/demo-up.sh отдаёт её
-# координатору и службе выкладки): scripts/persona-github-app-add.sh factory "AI Factory Bot".
+# координатору и службе выкладки): scripts/persona-github-app-add.sh factory "AI Software Factory Bot".
 set -eu
 
 persona=${1:?использование: persona-github-app-add.sh ПЕРСОНАЖ [\"ИМЯ ПРИЛОЖЕНИЯ\"]}
