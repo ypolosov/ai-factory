@@ -19,7 +19,8 @@ case $persona in *[!a-z0-9-]* | "")
 	;;
 esac
 name=${2:-"$(printf '%s' "$persona" | cut -c1 | tr '[:lower:]' '[:upper:]')$(printf '%s' "$persona" | cut -c2-) AI Factory"}
-port=${PORT:-8765}
+# Порт страницы мастера - свободный, если не задан PORT: постоянный может быть занят другой программой.
+port=${PORT:-$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')}
 env=.state/github-app-$persona.env
 pem=.state/github-app-$persona.pem
 base=.state/github-target.env
@@ -30,7 +31,8 @@ base=.state/github-target.env
 repo=$(sed -n 's/^GITHUB_TARGET_REPO=//p' "$base" | tr -d '\r"')
 umask 077
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+srv=
+trap '[ -z "$srv" ] || kill "$srv" 2>/dev/null; rm -rf "$tmp"' EXIT INT TERM
 
 # Описание приложения: доступ только к содержимому и PR, без вебхуков.
 jq -n --arg name "$name" --arg url "https://github.com/$repo" --arg back "http://127.0.0.1:$port/done" '{
