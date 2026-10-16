@@ -37,6 +37,15 @@ ask() {
 	read -r v
 	stty echo 2>/dev/null || true
 	echo >&2
+	# Скрытый ввод не видно: токен, вставленный дважды подряд, берётся один раз.
+	n=${#v}
+	if [ "$n" -gt 0 ] && [ $((n % 2)) -eq 0 ]; then
+		h=$(printf '%s' "$v" | cut -c1-$((n / 2)))
+		if [ "$h$h" = "$v" ]; then
+			v=$h
+			echo "вставлено дважды - беру одну копию" >&2
+		fi
+	fi
 	printf '%s' "$v"
 }
 jira=$(ask '4. Токен Jira')
