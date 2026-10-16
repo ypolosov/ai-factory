@@ -173,6 +173,12 @@ export function snowflake(ms: number): string {
   return String((BigInt(ms) - 1_420_070_400_000n) << 22n);
 }
 
+// Фабрика просит повторить команду, когда площадка временно недоступна (images/coordinator/bot.ts):
+// это не ответ на реплику, а повод сказать её снова.
+export function asksRetry(text: string): boolean {
+  return /повторите команду/i.test(text);
+}
+
 // Метка всего, что создаёт съёмка: по ней scripts/demo-reset.sh уводит прошлые дубли в архив.
 export const FILM_LABEL = 'film';
 

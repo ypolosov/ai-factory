@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { applyEdit, chapterHtml, checkFilm, type Film, fill, nextVersion, parseEnv, snowflake, takeName } from '../script.ts';
+import { applyEdit, asksRetry, chapterHtml, checkFilm, type Film, fill, nextVersion, parseEnv, snowflake, takeName } from '../script.ts';
 
 describe('сценарий съёмки', () => {
   it('файл ключей: ИМЯ=значение, комментарии и кавычки', () => {
@@ -68,6 +68,11 @@ describe('сценарий съёмки', () => {
   it('метка времени Discord для "сообщения после": миллисекунды от эпохи Discord, сдвиг на 22 бита', () => {
     expect(snowflake(Date.UTC(2015, 0, 1))).toBe('0');
     expect(snowflake(1_420_070_400_000 + 1)).toBe('4194304');
+  });
+
+  it('просьба фабрики повторить команду (площадка временно недоступна) отличается от ответа', () => {
+    expect(asksRetry('Сервис сейчас недоступен - повторите команду через минуту.')).toBe(true);
+    expect(asksRetry('Сверка макета DRAW-43: замечаний нет')).toBe(false);
   });
 
   it('карточка главы экранирует текст', () => {
