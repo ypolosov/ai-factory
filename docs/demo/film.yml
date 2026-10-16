@@ -308,7 +308,7 @@ steps:
       label: { key: "{fe.issue.key}", label: "agent:frontend" }
     wait:
       timeout: 2700
-      github: { pr: "{frontend.pr.number}", status: factory/verdict, success: true }
+      github: { pr: "{frontend.pr.number}", newer: "{frontend.pr.sha}", status: factory/verdict, success: true }
     show:
       - { who: frontend, url: "{frontend.pr.url}", caption: "Агент дописал тесты - вердикт стража зелёный", seconds: 3, scroll: 8 }
 
