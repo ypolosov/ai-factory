@@ -11,6 +11,8 @@
 #   PR открывает и сливает DevOps (ИИ) своим приложением GitHub, служба выкладки выкладывает main;
 #   вершина main получает служебный тег выпуска (следующий патч), чтобы заметки выпуска в дубле
 #   показывали только его работу;
+# - схема базы стенда уходит в архив take_ВРЕМЯ, API стенда заводит её заново: таблицы агентов
+#   прошлых дублей не спорят с кодом нового;
 # -n - только показать, что будет сделано. Ключи - .state/atlassian.env, .state/github-target.env
 # и .state/github-app-devops.env (.pem); нет приложения или тега - возврат кода пропускается;
 # GlitchTip - .state/coordinator/glitchtip.token (нет - сбои не трогаются).
@@ -170,6 +172,34 @@ else
 				echo "код цели: тег $next на базе дубля"
 			fi
 		fi
+	fi
+fi
+
+# Данные стенда: таблицы, заведённые агентами прошлых дублей, остаются в базе и спорят со схемой
+# нового дубля (CREATE TABLE IF NOT EXISTS их не меняет). Схема public уходит в архив take_ВРЕМЯ,
+# API стенда перезапускается и заводит схему заново. Нет службы выкладки или стенда - пропуск.
+cd_svc=$(docker ps -q -f label=com.docker.compose.project=ai-factory -f label=com.docker.compose.service=cd)
+stand=${STAND_PROJECT:-prize-draw}
+# in_cd КОМАНДА - команда в службе выкладки: там Docker стенда.
+in_cd() { docker exec -i "$cd_svc" "$@"; }
+# stand_ctr СЛУЖБА - имя контейнера службы стенда (по имени: выкладка может пересоздать контейнер).
+stand_ctr() {
+	in_cd docker ps --format '{{.Names}}' -f "label=com.docker.compose.project=$stand" -f "label=com.docker.compose.service=$1" </dev/null
+}
+db=$([ -z "$cd_svc" ] || stand_ctr db)
+api_ctr=$([ -z "$cd_svc" ] || stand_ctr api)
+# shellcheck disable=SC2016 # переменные базы раскрывает оболочка в контейнере базы
+psql='psql -q -tA -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+if [ -z "$db" ] || [ -z "$api_ctr" ]; then
+	echo "данные стенда: нет базы или API стенда $stand - пропуск"
+elif [ "$(echo "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'" | in_cd docker exec -i "$db" sh -c "$psql")" = 0 ]; then
+	echo "данные стенда: схема базы пуста"
+else
+	arch=take_$(date +%m%d_%H%M%S)
+	if ! plan "стенд: схема базы - в архив $arch, API заводит схему заново"; then
+		echo "ALTER SCHEMA public RENAME TO $arch; CREATE SCHEMA public;" | in_cd docker exec -i "$db" sh -c "$psql"
+		in_cd docker restart "$api_ctr" </dev/null >/dev/null || echo "данные стенда: API не перезапущен - его перезапустит выкладка"
+		echo "данные стенда: схема прошлых дублей - в $arch, API перезапущен"
 	fi
 fi
 echo "стенд готов к дублю${dry:+ (проверка без изменений)}"
