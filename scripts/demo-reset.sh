@@ -161,7 +161,8 @@ else
 		# работу прошлых дублей. Вершина main уже с тегом - ничего не делать.
 		head=$(api app GET "$G/git/ref/heads/main" | jq -r .object.sha)
 		api app GET "$G/tags?per_page=100" >"$tmp/tags"
-		if ! jq -e --arg h "$head" 'any(.[]; .commit.sha == $h)' "$tmp/tags" >/dev/null; then
+		# Считаются только теги выпусков vX.Y.Z: тег базы demo-baseline-N заметки выпуска не отсчитывает.
+		if ! jq -e --arg h "$head" 'any(.[]; .commit.sha == $h and (.name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")))' "$tmp/tags" >/dev/null; then
 			next=$(jq -r '[.[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | ltrimstr("v") | split(".") | map(tonumber)]
 				| sort | last // [1, 0, -1] | "v\(.[0]).\(.[1]).\(.[2] + 1)"' "$tmp/tags")
 			if ! plan "GitHub: служебный тег $next на базе дубля - заметки выпуска начнутся с него"; then
