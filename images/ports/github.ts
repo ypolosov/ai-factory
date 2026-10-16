@@ -14,7 +14,7 @@ import {
 
 export interface GithubConfig {
   repo: string; // "владелец/имя"
-  token: string;
+  token: string | (() => Promise<string>); // токен или его источник (приложение GitHub, github-app.ts)
   api?: string; // по умолчанию https://api.github.com
 }
 
@@ -28,7 +28,7 @@ function client(cfg: GithubConfig) {
       r = await fetch(`${base}${path}`, {
         method,
         headers: {
-          authorization: `Bearer ${cfg.token}`,
+          authorization: `Bearer ${typeof cfg.token === 'string' ? cfg.token : await cfg.token()}`,
           accept,
           'x-github-api-version': '2022-11-28',
           'content-type': 'application/json',

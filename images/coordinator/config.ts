@@ -1,8 +1,10 @@
 // Настройка координатора: обычные значения - из окружения (compose.yaml), учётки - из файлов
 // каталога секретов (.state/coordinator, монтируется только для чтения). Ключи шага читаются
 // в момент выдачи посредником и в окружение процесса не попадают.
+
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { appToken } from '../ports/github-app.ts';
 import type {
   ChatConfig,
   ForgeConfig,
@@ -124,11 +126,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
   const discord = existsSync(join(secrets, 'discord.env')) ? envFile('discord.env') : {};
   const figma = existsSync(join(secrets, 'figma.env')) ? envFile('figma.env') : {};
-  const atl = envFile('atlassian.env');
+  // Учётка фабрики в Atlassian - своя (atlassian-factory.env, мастер scripts/persona-atlassian-add.sh
+  // factory): комментарии сверщика, задачи нарезки и страницы выпуска идут от неё. Нет - учётка
+  // из atlassian.env.
+  const atl = envFile(existsSync(join(secrets, 'atlassian-factory.env')) ? 'atlassian-factory.env' : 'atlassian.env');
   const bb = envFile('bitbucket.env');
   const gh = envFile('github-target.env');
   const target = need(gh, 'GITHUB_TARGET_REPO', 'github-target.env');
-  const publish = need(gh, 'GITHUB_PUBLISH_TOKEN', 'github-target.env');
+  // Учётка фабрики в GitHub - её приложение (github-app-factory.env и .pem, мастер
+  // scripts/persona-github-app-add.sh factory): PR, статусы, комментарии и ветки агента идут от
+  // "<имя>[bot]". Приложения нет - токен человека GITHUB_PUBLISH_TOKEN, как раньше.
+  const app = existsSync(join(secrets, 'github-app-factory.env')) ? envFile('github-app-factory.env') : undefined;
+  const publish: string | (() => Promise<string>) = app
+    ? appToken({
+        appId: need(app, 'GITHUB_APP_ID', 'github-app-factory.env'),
+        installation: need(app, 'GITHUB_APP_INSTALLATION', 'github-app-factory.env'),
+        pem: file('github-app-factory.pem'),
+      })
+    : need(gh, 'GITHUB_PUBLISH_TOKEN', 'github-target.env');
   const [host = '0.0.0.0', port = '8080'] = (env.BROKER_LISTEN ?? '0.0.0.0:8080').split(':');
   const gateway = env.JOB_GATEWAY_URL ?? 'http://172.31.250.30:4000';
   const proxy = env.JOB_PROXY ?? 'http://172.31.250.10:3128';

@@ -13,7 +13,8 @@
 # CD_PROJECT - имя проекта compose; CD_ENV - переменные для compose ("WEB_PORT=8082");
 # CD_INTERVAL - пауза опроса, с; CD_REPO - владелец/имя (по умолчанию GITHUB_TARGET_REPO);
 # DOCKER_HOST - Docker выкладки. Токены - /secrets/github-target.env: чтение - запросы к API,
-# публикация - статус коммита. Состояние - /state.
+# публикация - статус коммита; есть приложение фабрики (/secrets/github-app-factory.env и .pem) -
+# статус пишет оно (токен установки берётся заново раз в 50 минут). Состояние - /state.
 set -eu
 
 : "${CD_IMAGES:?}" "${CD_PROJECT:?}" "${CD_ENV:=}" "${CD_INTERVAL:=30}"
@@ -27,8 +28,30 @@ sed 's/\r$//' /secrets/github-target.env >/tmp/gh.env
 rm -f /tmp/gh.env
 : "${CD_REPO:=${GITHUB_TARGET_REPO:?}}"
 printf 'Authorization: Bearer %s\n' "${GITHUB_READ_TOKEN:?}" >/tmp/read.h
-printf 'Authorization: Bearer %s\n' "${GITHUB_PUBLISH_TOKEN:?}" >/tmp/publish.h
+app=/secrets/github-app-factory
+if [ -s "$app.env" ] && [ -s "$app.pem" ]; then
+	app_id=$(sed -n 's/^GITHUB_APP_ID=//p' "$app.env" | tr -d '\r"')
+	app_inst=$(sed -n 's/^GITHUB_APP_INSTALLATION=//p' "$app.env" | tr -d '\r"')
+else
+	printf 'Authorization: Bearer %s\n' "${GITHUB_PUBLISH_TOKEN:?}" >/tmp/publish.h
+fi
 unset GITHUB_READ_TOKEN GITHUB_PUBLISH_TOKEN
+b64url() { base64 | tr -d '=\n' | tr '/+' '_-'; }
+# Заголовок публикации приложения фабрики: токен установки живёт час, берётся раз в 50 минут.
+publish_auth() {
+	[ -n "${app_id:-}" ] || return 0
+	[ -z "$(find /tmp/publish.h -mmin -50 2>/dev/null)" ] || return 0
+	_now=$(date +%s)
+	_jwt="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url).$(printf '{"iat":%s,"exp":%s,"iss":"%s"}' $((_now - 60)) $((_now + 540)) "$app_id" | b64url)"
+	printf 'Authorization: Bearer %s.%s\n' "$_jwt" "$(printf '%s' "$_jwt" | openssl dgst -sha256 -sign "$app.pem" -binary | b64url)" >/tmp/app.h
+	if curl -fsS -X POST -H @/tmp/app.h -H 'Accept: application/vnd.github+json' "https://api.github.com/app/installations/$app_inst/access_tokens" |
+		jq -er '.token | select(. != null) | "Authorization: Bearer " + .' >/tmp/publish.h.new; then
+		mv /tmp/publish.h.new /tmp/publish.h
+	else
+		log "токен приложения фабрики не получен"
+	fi
+	rm -f /tmp/app.h
+}
 owner=${CD_REPO%%/*}
 api=https://api.github.com/repos/$CD_REPO
 
@@ -36,6 +59,7 @@ gh() { curl -fsS -H @/tmp/read.h -H "Accept: ${2:-application/vnd.github+json}" 
 
 # status SHA СОСТОЯНИЕ ОПИСАНИЕ - статус factory/deploy на коммите цели.
 status() {
+	publish_auth
 	jq -n --arg s "$2" --arg d "$3" '{state: $s, context: "factory/deploy", description: $d}' |
 		curl -fsS -o /dev/null -H @/tmp/publish.h -H 'Accept: application/vnd.github+json' --data @- "$api/statuses/$1" ||
 		log "статус коммита $1 не записан"

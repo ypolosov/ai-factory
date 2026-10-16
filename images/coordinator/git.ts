@@ -10,7 +10,7 @@ const run = promisify(execFile);
 
 export interface GitAuth {
   user: string; // x-access-token у GitHub, x-token-auth у Bitbucket
-  token: string;
+  token: string | (() => Promise<string>); // токен или его источник (приложение GitHub)
 }
 
 export interface Git {
@@ -39,10 +39,11 @@ export interface GitConfig {
   author: { name: string; email: string };
 }
 
-function authEnv(url: string, auth?: GitAuth): Record<string, string> {
+async function authEnv(url: string, auth?: GitAuth): Promise<Record<string, string>> {
   if (!auth || !/^https?:/.test(url)) return {};
   const origin = new URL(url).origin;
-  const basic = Buffer.from(`${auth.user}:${auth.token}`).toString('base64');
+  const token = typeof auth.token === 'string' ? auth.token : await auth.token();
+  const basic = Buffer.from(`${auth.user}:${token}`).toString('base64');
   return {
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: `http.${origin}/.extraHeader`,
@@ -55,7 +56,7 @@ export function git(cfg: GitConfig): Git {
     (
       await run('git', args, {
         cwd,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv(cfg.url, auth) },
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(await authEnv(cfg.url, auth)) },
         maxBuffer: 64 * 1024 * 1024,
       })
     ).stdout.trim();

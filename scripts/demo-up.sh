@@ -29,6 +29,16 @@ chmod 700 "$state/cd"
 # Ключ MCP фабрики для экзокортексов (Authorization: Bearer).
 [ -s "$dst/mcp.token" ] || (umask 077 && od -An -tx1 -N24 /dev/urandom | tr -d ' \n' >"$dst/mcp.token")
 cmp -s "$state/github-target.env" "$state/cd/github-target.env" || (umask 077 && cp "$state/github-target.env" "$state/cd/")
+# Свои учётки фабрики, по желанию: в Atlassian (scripts/persona-atlassian-add.sh factory) и в GitHub
+# - приложение (scripts/persona-github-app-add.sh factory). Без них фабрика ходит учётками из
+# atlassian.env и github-target.env.
+[ ! -s "$state/atlassian-factory.env" ] || cmp -s "$state/atlassian-factory.env" "$dst/atlassian-factory.env" ||
+	(umask 077 && cp "$state/atlassian-factory.env" "$dst/atlassian-factory.env")
+for f in github-app-factory.env github-app-factory.pem; do
+	[ ! -s "$state/$f" ] || for d in "$dst" "$state/cd"; do
+		cmp -s "$state/$f" "$d/$f" || (umask 077 && cp "$state/$f" "$d/$f")
+	done
+done
 
 # GlitchTip: проект цели и токен координатора; DSN - приложению на стенде (через службу выкладки).
 {

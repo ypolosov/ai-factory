@@ -11,6 +11,8 @@
 # Имя приложения уникально на всём GitHub; в интерфейсе оно видно строчными латинскими буквами
 # через дефис, с пометкой bot. По умолчанию - "<Персонаж> AI Factory".
 # Пример: scripts/persona-github-app-add.sh architect "Architect AI Factory"
+# Учётка самой фабрики в GitHub - тот же мастер с ПЕРСОНАЖ factory (scripts/demo-up.sh отдаёт её
+# координатору и службе выкладки): scripts/persona-github-app-add.sh factory "AI Factory Bot".
 set -eu
 
 persona=${1:?использование: persona-github-app-add.sh ПЕРСОНАЖ [\"ИМЯ ПРИЛОЖЕНИЯ\"]}
@@ -66,11 +68,13 @@ PY
 create_app() {
 	# Порт страницы - свободный, если не задан PORT: постоянный может быть занят другой программой.
 	port=${PORT:-$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')}
-	# Права - только содержимое и PR, без вебхуков.
-	jq -n --arg name "$name" --arg url "https://github.com/$repo" --arg back "http://127.0.0.1:$port/done" \
+	# Права персонажа - содержимое и PR; фабрике (ПЕРСОНАЖ factory) ещё статусы коммитов и
+	# перезапуск CI цели. Вебхуков нет.
+	perms='{"contents": "write", "pull_requests": "write", "checks": "read", "statuses": "read", "metadata": "read"}'
+	[ "$persona" != factory ] || perms='{"contents": "write", "pull_requests": "write", "checks": "read", "statuses": "write", "actions": "write", "metadata": "read"}'
+	jq -n --arg name "$name" --arg url "https://github.com/$repo" --arg back "http://127.0.0.1:$port/done" --argjson perms "$perms" \
 		'{name: $name, url: $url, redirect_url: $back, public: false, hook_attributes: {url: $url, active: false}, default_events: [],
-		default_permissions: {contents: "write", pull_requests: "write", checks: "read", statuses: "read", metadata: "read"}}' \
-		>"$tmp/manifest.json"
+		default_permissions: $perms}' >"$tmp/manifest.json"
 	state=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
 	python3 -I "$tmp/serve.py" "$port" "$state" "$tmp/manifest.json" "$tmp/code" &
 	srv=$!
