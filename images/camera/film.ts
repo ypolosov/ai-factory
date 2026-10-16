@@ -12,6 +12,7 @@ import { selectForge, selectTracker, selectWiki } from '../ports/select.ts';
 import { persona as githubPersona } from './github.ts';
 import {
   applyEdit,
+  asksRetry,
   badge,
   chapterHtml,
   checkFilm,
@@ -344,6 +345,18 @@ async function waitFor(step: Step): Promise<void> {
 
   async function check(): Promise<void> {
     if (!w) return;
+    // Фабрика просит повторить команду (площадка временно недоступна) - реплика повторяется через минуту.
+    const mine = did.message as { id: string; channel: string } | undefined;
+    if (step.do?.discord && mine && Date.now() - Number(did.said ?? t0) > 60_000) {
+      const msgs = await discord<{ author: { id: string }; content: string }[]>(
+        factoryToken,
+        `/channels/${channelId(mine.channel)}/messages?after=${mine.id}&limit=20`,
+      );
+      if (msgs.some((m) => m.author.id === factoryId && asksRetry(m.content))) {
+        log(`${step.id}: фабрика просит повторить команду`);
+        await say(step, did);
+      }
+    }
     if (w.discord && !done.discord) {
       // После своей реплики, а без неё - после начала шага.
       const after = (did.message as { id: string } | undefined)?.id ?? snowflake(Number(did.since ?? t0));
@@ -352,7 +365,8 @@ async function waitFor(step: Step): Promise<void> {
         `/channels/${channelId(w.discord.channel)}/messages?after=${after}&limit=20`,
       );
       const reply = msgs.find(
-        (m) => m.author.id === factoryId && (!w.discord?.contains || m.content.includes(fill(w.discord.contains, ctx))),
+        (m) =>
+          m.author.id === factoryId && !asksRetry(m.content) && (!w.discord?.contains || m.content.includes(fill(w.discord.contains, ctx))),
       );
       if (reply) {
         did.reply = { text: reply.content, url: /https?:\/\/\S+/.exec(reply.content)?.[0]?.replace(/[).,]+$/, '') };
