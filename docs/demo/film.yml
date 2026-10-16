@@ -14,7 +14,7 @@ personas:
   pm: { name: PM, kind: ai, discord: pm, atlassian: pm, jira: "712020:63480dfc-cc04-4e6b-8f57-f1c9929f0c89", browser: atlassian }
   architect: { name: Architect, kind: ai, discord: architect, atlassian: architect, github: architect, jira: "712020:60a01f69-2ed8-4e0b-a353-b5cdebb46f2e", browser: atlassian }
   designer: { name: Designer, kind: ai, discord: designer, atlassian: designer, jira: "712020:28c9e50f-44b7-4de5-8f75-5b4e5b245871", browser: atlassian }
-  frontend: { name: Frontend, kind: ai, discord: frontend, atlassian: frontend, jira: "712020:47ae87fe-7e13-4728-8ea0-f21c42af68bb", browser: atlassian }
+  frontend: { name: Frontend, kind: ai, discord: frontend, atlassian: frontend, github: frontend, jira: "712020:47ae87fe-7e13-4728-8ea0-f21c42af68bb", browser: atlassian }
   backend: { name: Backend, kind: ai, discord: backend, atlassian: backend, github: backend, jira: "712020:41e37ff7-488f-49d0-84fc-78be0d419a58", browser: atlassian }
   qa: { name: QA, kind: ai, discord: qa, atlassian: qa, jira: "712020:4246dca1-3b5d-4ded-8888-7c30d2cadc6c", browser: atlassian }
   devops: { name: DevOps, kind: ai, discord: devops, atlassian: devops, github: devops, jira: "712020:3f787141-f967-45cc-bf8b-9eb71e7c01b4", browser: atlassian }
@@ -294,10 +294,37 @@ steps:
     show:
       - { who: pm, url: "{api.issue.url}", caption: "Задача закрылась сама: сделано и выложено на стенд", seconds: 8, focus: "Сделано и выложено" }
 
-  # 8b. Стенд: розыгрыш на выложенном коде и повтор раньше срока (R6).
+  # 8a. Фронтенд: агент дорабатывает экран по замечанию в PR, Frontend сливает.
+  - id: frontend-ask
+    chapter: Агент дорабатывает по замечанию
+    note: Frontend просит в PR модульные тесты и снова отдаёт задачу агенту - агент продолжает свою ветку
+    who: frontend
+    do:
+      github: { comment: { pr: "{frontend.pr.number}", text: "Добавь модульные тесты на кнопку «Разыграть заново»: кнопка видна только у приза с истёкшим сроком подтверждения, нажатие вызывает повтор и показывает нового победителя." } }
+
+  - id: frontend-rework
+    who: frontend
+    do:
+      label: { key: "{fe.issue.key}", label: "agent:frontend" }
+    wait:
+      timeout: 2700
+      github: { pr: "{frontend.pr.number}", status: factory/verdict, success: true }
+    show:
+      - { who: frontend, url: "{frontend.pr.url}", caption: "Агент дописал тесты - вердикт стража зелёный", seconds: 3, scroll: 8 }
+
+  - id: frontend-merge
+    who: frontend
+    do:
+      github: { merge: { pr: "{frontend.pr.number}", title: "{fe.issue.key}: кнопка «Разыграть заново» на экране организатора" } }
+    wait:
+      timeout: 1800
+      jira: { key: "{fe.issue.key}", comment: "Сделано и выложено" }
+
+  # 8b. Стенд: розыгрыш на выложенном коде; повтор раньше срока API отклоняет (R6), после срока -
+  # повтор на экране организатора. Часы стенда демо сдвигают время на 4 дня (api/src/clock.ts цели).
   - id: stand
     chapter: Фича на стенде
-    note: организатор проводит розыгрыш на стенде; повтор приза раньше срока подтверждения API отклоняет по R6
+    note: организатор проводит розыгрыш; раньше срока повтор отклонён (R6), через 4 дня приз разыгран заново
     who: po
     do:
       http:
@@ -308,9 +335,16 @@ steps:
         - { method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/close" }
         - { method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/draw" }
         - { as: redraw, method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/winners/1/redraw" }
+        - { as: clock, method: POST, url: "http://127.0.0.1:8082/api/demo/clock", body: { days: 4 } }
     show:
-      - { who: po, url: "http://127.0.0.1:8082/#/draws/{stand.draw.json.id}", caption: "Стенд: победитель выбран из зерна, подтвердить приз - за 3 дня", seconds: 3, scroll: 5 }
+      - { who: po, url: "http://127.0.0.1:8082/#/draws/{stand.draw.json.id}", caption: "Стенд: победитель выбран из зерна, подтвердить приз - за 3 дня", seconds: 3, scroll: 4 }
       - { who: po, card: { title: "Повтор раньше срока - ответ {stand.redraw.status}", note: "{stand.redraw.json.message}" }, caption: "API повтора держит правило R6", seconds: 4 }
+      - { who: po, url: "http://127.0.0.1:8082/#/draws/{stand.draw.json.id}", clockDays: 4, play: [{ click: "Разыграть заново" }, { wait: 3 }], caption: "Через 4 дня приз не подтверждён - организатор разыгрывает его заново", seconds: 4 }
+
+  - id: stand-clock
+    who: po
+    do:
+      http: { method: POST, url: "http://127.0.0.1:8082/api/demo/clock", body: { days: 0 } }
 
   - id: e2e
     who: qa

@@ -22,7 +22,9 @@ describe('вход приложением GitHub', () => {
       {
         now: () => now,
         fetch: async (url, init) => {
-          calls.push(`${init?.method} ${url} ${String((init?.headers as Record<string, string>).authorization).split('.')[0]}`);
+          calls.push(
+            `${init?.method} ${url} ${String((init?.headers as Record<string, string> | undefined)?.authorization).split('.')[0]}`,
+          );
           return new Response(JSON.stringify({ token: `t${calls.length}`, expires_at: new Date(now + 3_600_000).toISOString() }), {
             status: 201,
           });
