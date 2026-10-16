@@ -3,7 +3,7 @@
 // наблюдаемому признаку, камера - Playwright без окна - снимает экран браузера участника с его
 // плашкой. Шаг с do.decision называет команду, которую человек выполняет вживую, и ждёт её итога.
 // Ключи - из каталога состояния (только чтение); в журнал, манифест и клипы они не попадают.
-// Использование: node film.ts СЦЕНАРИЙ.yml КАТАЛОГ_КЛИПОВ [--only шаг,шаг] [--state /state]
+// Использование: node film.ts СЦЕНАРИЙ.yml КАТАЛОГ_КЛИПОВ [--only шаг,шаг] [--ctx МАНИФЕСТ] [--state /state]
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Browser, type BrowserContext, chromium } from 'playwright';
@@ -104,8 +104,12 @@ const channelId = (name: string) => {
 
 // Итоги шагов для подстановок {шаг.поле}; {take} - имя дубля. Всё, что создаёт съёмка, получает
 // метки film и имени дубля: прошлые дубли уводит в архив scripts/demo-reset.sh.
-const take = takeName(new Date(t0));
-const ctx: Record<string, unknown> = { take };
+// --ctx МАНИФЕСТ продолжает прерванный дубль: итоги и имя дубля - из его манифеста, шаги - через --only.
+const resumed = flag('--ctx')
+  ? (JSON.parse(readFileSync(flag('--ctx') ?? '', 'utf8')) as { take: string; ctx: Record<string, unknown> })
+  : undefined;
+const take = resumed?.take ?? takeName(new Date(t0));
+const ctx: Record<string, unknown> = { ...resumed?.ctx, take };
 if (film.steps.some((s) => s.id === 'take')) throw new Error('шаг не может называться take');
 
 async function act(step: Step): Promise<void> {
@@ -149,10 +153,6 @@ async function act(step: Step): Promise<void> {
     await as(step.who).tracker.logWork(fill(d.logWork.key, ctx), d.logWork.minutes * 60, fill(d.logWork.comment, ctx));
     log(`${step.id}: списано ${d.logWork.minutes} мин на ${fill(d.logWork.key, ctx)}`);
   }
-  if (d.close) {
-    await as(step.who).tracker.close(fill(d.close.key, ctx));
-    log(`${step.id}: ${fill(d.close.key, ctx)} закрыта`);
-  }
   if (d.github?.pr) {
     const p = d.github.pr;
     const gh = app(step.who);
@@ -181,6 +181,12 @@ async function act(step: Step): Promise<void> {
     const n = Number(fill(d.github.comment.pr, ctx));
     await app(step.who).comment(n, fill(d.github.comment.text, ctx));
     log(`${step.id}: замечание в PR ${n}`);
+  }
+  // Задача закрывается после PR: закрытие задачи на решение запускает повторную сверку, и она
+  // должна видеть уже слитое решение.
+  if (d.close) {
+    await as(step.who).tracker.close(fill(d.close.key, ctx));
+    log(`${step.id}: ${fill(d.close.key, ctx)} закрыта`);
   }
   if (d.decision) log(`${step.id}: РЕШЕНИЕ ЧЕЛОВЕКА - ${fill(d.decision, ctx)}`);
 }
