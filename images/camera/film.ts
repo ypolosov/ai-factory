@@ -213,20 +213,23 @@ async function act(step: Step): Promise<void> {
     did.sha = await app(step.who).tag(name);
     log(`${step.id}: тег ${name}`);
   }
-  if (d.http) {
-    const r = await fetch(fill(d.http.url, ctx), {
-      method: d.http.method ?? 'GET',
+  for (const h of d.http === undefined ? [] : Array.isArray(d.http) ? d.http : [d.http]) {
+    const r = await fetch(fill(h.url, ctx), {
+      method: h.method ?? 'GET',
       headers: { 'content-type': 'application/json' },
-      body: d.http.body === undefined ? undefined : fill(JSON.stringify(d.http.body), ctx),
+      body: h.body === undefined ? undefined : fill(JSON.stringify(h.body), ctx),
     });
     const text = await r.text();
-    did.status = r.status;
+    let json: unknown;
     try {
-      did.json = JSON.parse(text);
+      json = JSON.parse(text);
     } catch {
-      did.json = text.slice(0, 500);
+      json = text.slice(0, 500);
     }
-    log(`${step.id}: ${d.http.method ?? 'GET'} ${fill(d.http.url, ctx)} - ${r.status}`);
+    did.status = r.status;
+    did.json = json;
+    if (h.as) did[h.as] = { status: r.status, json };
+    log(`${step.id}: ${h.method ?? 'GET'} ${fill(h.url, ctx)} - ${r.status}`);
   }
   if (d.webhook) {
     // Вебхук без учётки: самозванец пишет от чужого имени. Адрес вебхука канала - из
@@ -270,9 +273,15 @@ async function jiraDone(w: NonNullable<NonNullable<Step['wait']>['jira']>, did: 
   const label = w.label ? fill(w.label, ctx) : undefined;
   // Комментарий - только написанный после начала шага: старый из прошлого дубля итогом не считается.
   const since = Number(did.since ?? t0);
-  const hasComment = async (key: string) =>
-    !w.comment ||
-    (await tracker.listComments(key)).some((c) => Date.parse(c.createdAt) >= since - 5000 && c.body.includes(fill(w.comment ?? '', ctx)));
+  // Найденный комментарий - в итог шага (comment: текст и первая ссылка в нём).
+  const hasComment = async (key: string) => {
+    if (!w.comment) return true;
+    const c = (await tracker.listComments(key)).find(
+      (x) => Date.parse(x.createdAt) >= since - 5000 && x.body.includes(fill(w.comment ?? '', ctx)),
+    );
+    if (c) did.comment = { text: c.body, url: /https?:\/\/\S+/.exec(c.body)?.[0]?.replace(/[).,]+$/, '') };
+    return Boolean(c);
+  };
   let found: { key: string; url: string; title: string }[] = [];
   // Все зависимости задачи (deps), не только отобранные: сброс стенда закроет и остальные задачи нарезки.
   const deps: string[] = [];
@@ -358,13 +367,41 @@ async function waitFor(step: Step): Promise<void> {
 }
 
 const clips: { step: string; chapter: string; who: string; caption: string; file: string; at: string }[] = [];
+// Плавная прокрутка до конца за secs секунд: страница или её самая длинная прокручиваемая часть
+// (у Jira прокручивается не окно, а внутренняя колонка).
+async function scrollToEnd(secs: number): Promise<void> {
+  const all = [document.scrollingElement, ...document.querySelectorAll('*')].filter((e): e is Element => !!e);
+  const box = all
+    .filter(
+      (e) =>
+        e.scrollHeight - e.clientHeight > 40 && (e === document.scrollingElement || /(auto|scroll)/.test(getComputedStyle(e).overflowY)),
+    )
+    .sort((a, b) => b.scrollHeight - b.clientHeight - (a.scrollHeight - a.clientHeight))[0];
+  if (!box) return;
+  const from = box.scrollTop;
+  const to = box.scrollHeight - box.clientHeight;
+  const frames = Math.max(1, Math.round(secs * 30));
+  for (let i = 1; i <= frames; i++) {
+    const k = i / frames;
+    box.scrollTop = from + (to - from) * (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+    await new Promise((r) => setTimeout(r, 1000 / 30));
+  }
+}
+
 async function shoot(browser: Browser, step: Step): Promise<void> {
   for (const [n, shot] of (step.show ?? []).entries()) {
     const who = film.personas[shot.who];
     if (!who) throw new Error(`нет участника ${shot.who}`);
-    // Вход камеры: свой у персонажа (scripts/camera-login.sh), иначе общий из film.browsers.
+    // Вход камеры: у кадра свой (shot.login), иначе свой у персонажа (scripts/camera-login.sh),
+    // иначе общий из film.browsers.
     const own = who.atlassian ? join(state, `camera/atlassian-${who.atlassian}.json`) : undefined;
-    const login = own && existsSync(own) ? own : who.browser ? join(state, film.browsers?.[who.browser] ?? '') : undefined;
+    const login = shot.login
+      ? join(state, film.browsers?.[shot.login] ?? '')
+      : own && existsSync(own)
+        ? own
+        : who.browser
+          ? join(state, film.browsers?.[who.browser] ?? '')
+          : undefined;
     const context: BrowserContext = await browser.newContext({
       viewport: { width: 1280, height: 720 },
       locale: 'ru-RU',
@@ -377,12 +414,34 @@ async function shoot(browser: Browser, step: Step): Promise<void> {
       await page.setContent(chapterHtml(step.chapter, step.note ?? ''));
       await page.waitForTimeout(2500);
     }
-    await page.goto(fill(shot.url, ctx), { waitUntil: 'domcontentloaded' });
+    if (shot.card) await page.setContent(chapterHtml(fill(shot.card.title, ctx), fill(shot.card.note ?? '', ctx)));
+    else await page.goto(fill(shot.url ?? '', ctx), { waitUntil: 'domcontentloaded' });
     if (shot.focus) {
-      const target = page.getByText(fill(shot.focus, ctx)).first();
-      await target.waitFor({ timeout: 15_000 }).catch(() => log(`${step.id}: нет текста "${shot.focus}" на экране`));
-      await target.scrollIntoViewIfNeeded().catch(() => {});
+      // Комментарий может появиться позже загрузки страницы: нет текста - страница перезагружается раз.
+      const text = fill(shot.focus, ctx);
+      const seen = () => page.getByText(text).first().waitFor({ timeout: 15_000 });
+      const ok = await seen()
+        .then(() => true)
+        .catch(async () => {
+          await page.reload({ waitUntil: 'domcontentloaded' });
+          return seen()
+            .then(() => true)
+            .catch(() => false);
+        });
+      if (!ok) log(`${step.id}: нет текста "${shot.focus}" на экране`);
+      await page
+        .getByText(text)
+        .first()
+        .scrollIntoViewIfNeeded()
+        .catch(() => {});
     }
+    for (const a of shot.play ?? []) {
+      if ('click' in a) await page.getByText(fill(a.click, ctx)).first().click();
+      if ('fill' in a) await page.getByLabel(fill(a.fill.label, ctx)).first().fill(fill(a.fill.value, ctx));
+      if ('press' in a) await page.keyboard.press(a.press);
+      await page.waitForTimeout('wait' in a ? a.wait * 1000 : 800);
+    }
+    if (shot.scroll) await page.evaluate(scrollToEnd, shot.scroll);
     await page.waitForTimeout((shot.seconds ?? 6) * 1000);
     const video = page.video();
     await context.close();

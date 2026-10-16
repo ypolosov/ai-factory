@@ -24,6 +24,10 @@ personas:
 # Сохранённые входы камеры в каталоге состояния (.state).
 browsers:
   atlassian: camera/jira.json
+  # Входы человека на сайтах для кадров (scripts/camera-login.sh ИМЯ АДРЕС).
+  figma: camera/figma.json
+  glitchtip: camera/glitchtip.json
+  bitbucket: camera/bitbucket.json
 
 steps:
   # 1. Библиотекарь (UC1, DoD 2).
@@ -192,8 +196,9 @@ steps:
       jira: { key: "{api.issue.key}", label: "agent-review|agent-failed" }
       github: { head: "agent/{api.issue.key}-", status: factory/verdict }
     show:
-      - { who: backend, url: "{agent.pr.url}", caption: "PR агента: вердикт стража, сканеры, тест до кода", seconds: 10, focus: "Вердикт стража" }
-      - { who: pm, url: "{api.issue.url}", caption: "Задача: исполнитель Backend, списанное время агента", seconds: 8 }
+      - { who: backend, url: "{handoff.comment.url}", login: bitbucket, caption: "Задание агента на раннере фабрики (Bitbucket Pipelines)", seconds: 3, scroll: 6 }
+      - { who: backend, url: "{agent.pr.url}", caption: "PR агента: вердикт стража, сканеры, тест до кода", seconds: 3, scroll: 10 }
+      - { who: pm, url: "{api.issue.url}", caption: "Задача: исполнитель Backend, списанное время агента", seconds: 6, scroll: 6 }
 
   - id: judge
     who: backend
@@ -201,7 +206,7 @@ steps:
       timeout: 900
       github: { pr: "{agent.pr.number}", status: factory/judge }
     show:
-      - { who: backend, url: "{agent.pr.url}", caption: "Судья фабрики - модель другого семейства", seconds: 8, focus: "Судья" }
+      - { who: backend, url: "{agent.pr.url}", caption: "Судья фабрики - модель другого семейства", seconds: 4, focus: "Судья фабрики", scroll: 6 }
 
   # 5a. Сверка макета с задачей экрана (UC3).
   - id: fe
@@ -220,7 +225,8 @@ steps:
       timeout: 900
       jira: { key: "{fe.issue.key}", label: "design-ok|design-changes", comment: "Сверка макета" }
     show:
-      - { who: designer, url: "{fe.issue.url}", caption: "Судья макета сверил экран из Figma с задачей", seconds: 8, focus: "Сверка макета" }
+      - { who: designer, url: "https://www.figma.com/design/fAmgtG3ZDdllvl0XZFiKvU/?node-id=6-3", login: figma, caption: "Макет экрана в Figma", seconds: 6 }
+      - { who: designer, url: "{fe.issue.url}", caption: "Судья макета сверил экран из Figma с задачей", seconds: 4, focus: "Сверка макета", scroll: 6 }
 
   # 6. Экран: Frontend отдаёт задачу агенту роли фронтенда.
   - id: frontend
@@ -233,7 +239,7 @@ steps:
       timeout: 2700
       github: { head: "agent/{fe.issue.key}-", status: factory/verdict }
     show:
-      - { who: frontend, url: "{frontend.pr.url}", caption: "PR агента фронтенда и вердикт стража", seconds: 8, focus: "Вердикт стража" }
+      - { who: frontend, url: "{frontend.pr.url}", caption: "PR агента фронтенда и вердикт стража", seconds: 3, scroll: 8 }
 
   # 7. Правило-страж из решения архитектора не пускает случайность вне зерна (DoD 5).
   - id: guard
@@ -288,6 +294,24 @@ steps:
     show:
       - { who: pm, url: "{api.issue.url}", caption: "Задача закрылась сама: сделано и выложено на стенд", seconds: 8, focus: "Сделано и выложено" }
 
+  # 8b. Стенд: розыгрыш на выложенном коде и повтор раньше срока (R6).
+  - id: stand
+    chapter: Фича на стенде
+    note: организатор проводит розыгрыш на стенде; повтор приза раньше срока подтверждения API отклоняет по R6
+    who: po
+    do:
+      http:
+        - { as: draw, method: POST, url: "http://127.0.0.1:8082/api/draws", body: { title: "Наушники для участников демо", prizes: 1 } }
+        - { method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/entries", body: { participant: "Анна", birthDate: "1990-04-12" } }
+        - { method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/entries", body: { participant: "Борис", birthDate: "1985-09-30" } }
+        - { method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/entries", body: { participant: "Вера", birthDate: "1999-01-05" } }
+        - { method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/close" }
+        - { method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/draw" }
+        - { as: redraw, method: POST, url: "http://127.0.0.1:8082/api/draws/{stand.draw.json.id}/winners/1/redraw" }
+    show:
+      - { who: po, url: "http://127.0.0.1:8082/#/draws/{stand.draw.json.id}", caption: "Стенд: победитель выбран из зерна, подтвердить приз - за 3 дня", seconds: 3, scroll: 5 }
+      - { who: po, card: { title: "Повтор раньше срока - ответ {stand.redraw.status}", note: "{stand.redraw.json.message}" }, caption: "API повтора держит правило R6", seconds: 4 }
+
   - id: e2e
     who: qa
     do:
@@ -312,7 +336,9 @@ steps:
       timeout: 600
       jira: { label: incident, open: true }
     show:
-      - { who: devops, url: "{crash.issue.url}", caption: "Баг из сбоя: событие GlitchTip и место ошибки", seconds: 8 }
+      - { who: devops, card: { title: "POST /api/draws/{draw.json.id}/entries", note: "дата рождения 2000-13-45 - стенд ответил {crash.status}" }, caption: "Клиент API отправил заявку с несуществующей датой", seconds: 4 }
+      - { who: devops, url: "http://127.0.0.1:8200/factory/issues", login: glitchtip, caption: "GlitchTip поймал сбой стенда", seconds: 6, focus: "date/time field value out of range" }
+      - { who: devops, url: "{crash.issue.url}", caption: "Баг из сбоя: событие GlitchTip и место ошибки", seconds: 4, scroll: 6 }
 
   # 10. Агент чинит баг; после выкладки баг и сбой закрываются сами.
   - id: bugfix
