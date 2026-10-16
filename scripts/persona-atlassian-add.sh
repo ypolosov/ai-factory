@@ -33,9 +33,9 @@ API-токены учётки $email:
 EOF
 ask() {
 	printf '%s (ввод скрыт): ' "$1" >&2
-	stty -echo 2>/dev/null || true
-	read -r v
-	stty echo 2>/dev/null || true
+	stty -echo </dev/tty 2>/dev/null || true
+	read -r v </dev/tty
+	stty echo </dev/tty 2>/dev/null || true
 	echo >&2
 	# Скрытый ввод не видно: токен, вставленный дважды подряд, берётся один раз.
 	n=${#v}
