@@ -37,7 +37,12 @@ describe('сценарий съёмки', () => {
       title: 'т',
       personas: { a: { name: 'A', kind: 'ai', discord: 'a' }, b: { name: 'B', kind: 'ai' } },
       steps: [
-        { id: 's1', who: 'a', do: { discord: { channel: 'к', text: '{s2.x}' } }, wait: { jira: { label: 'w-{s1.page.id}' } } },
+        {
+          id: 's1',
+          who: 'a',
+          do: { discord: { channel: 'к', text: '{s2.x}', file: 'макет.png' } },
+          wait: { jira: { label: 'w-{s1.page.id}' } },
+        },
         {
           id: 's2',
           who: 'b',
@@ -49,6 +54,7 @@ describe('сценарий съёмки', () => {
     };
     expect(checkFilm(film, () => false)).toEqual([
       's1: {s2...} - не прошлый шаг',
+      's1: нет заготовки макет.png',
       's2: у участника b нет приложения GitHub',
       's2: в кадре нет участника c',
       's3: у участника b нет приложения GitHub',
