@@ -331,6 +331,19 @@ async function waitFor(step: Step): Promise<void> {
   ctx[step.id] = did;
   const done = { discord: !w.discord, jira: !w.jira, github: !w.github };
   while (Date.now() < deadline) {
+    // Сбой сети или площадки при проверке итога не обрывает дубль: проверка повторяется.
+    try {
+      await check();
+    } catch (e) {
+      log(`${step.id}: проверка итога не вышла (${(e as Error).message.split('\n')[0]}) - повтор`);
+    }
+    if (done.discord && done.jira && done.github) return;
+    await sleep(5000);
+  }
+  throw new Error(`${step.id}: итог не наступил за ${w.timeout ?? 300} с`);
+
+  async function check(): Promise<void> {
+    if (!w) return;
     if (w.discord && !done.discord) {
       // После своей реплики, а без неё - после начала шага.
       const after = (did.message as { id: string } | undefined)?.id ?? snowflake(Number(did.since ?? t0));
@@ -360,10 +373,7 @@ async function waitFor(step: Step): Promise<void> {
         `${step.id}: PR ${(did.pr as { number: number }).number}${w.github.status ? ` - ${w.github.status}: ${(did.status as { state: string }).state}` : ''}`,
       );
     }
-    if (done.discord && done.jira && done.github) return;
-    await sleep(5000);
   }
-  throw new Error(`${step.id}: итог не наступил за ${w.timeout ?? 300} с`);
 }
 
 const clips: { step: string; chapter: string; who: string; caption: string; file: string; at: string }[] = [];
