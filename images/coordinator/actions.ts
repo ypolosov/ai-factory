@@ -3,7 +3,7 @@
 // в шаги и хранит состояние между ними - его замена не трогает этот код.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import type { Forge, JobRunner, JobState, Tracker } from '../ports/ports.ts';
+import type { Forge, JobRunner, JobState, Pull, Tracker } from '../ports/ports.ts';
 import type { Git } from './git.ts';
 import { type GuardOptions, guardPatch, roleAllowed, type Verdict } from './guard.ts';
 import type { RunStore } from './runs.ts';
@@ -100,15 +100,29 @@ export function openspecChange(repo: string, issue: string): { path: string; tex
   return { path: names.map((n) => `openspec/changes/${n}`).join(', '), text: text.slice(0, 30_000) };
 }
 
+// Замечания к PR прошлой попытки после её последнего коммита - в задание агента.
+async function reworkText(d: Deps, p: Pull): Promise<string> {
+  const since = Date.parse(await d.forge.commitDate(p.headSha));
+  const notes = (await d.forge.listPullComments(p.number))
+    .filter((c) => Date.parse(c.createdAt) > since)
+    .map((c) => `- ${c.author}: ${c.body}`)
+    .join('\n')
+    .slice(0, 20_000);
+  return `\n## Доработка: PR ${p.number} (ветка ${p.sourceBranch})\n\nТвоя прошлая попытка уже в рабочей копии - продолжай её, не начинай заново. Замечания к PR после её последнего коммита:\n\n${notes || '- замечаний нет'}\n`;
+}
+
 export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatched> {
   const { token } = d.runs.create(runId, t.issue);
   const baseBranch = (await d.forge.repo()).defaultBranch;
-  const { baseSha } = await d.git.prepare(d.runs.dir(runId), baseBranch);
+  // Доработка: у задачи открыт PR агента - агент продолжает его ветку и получает замечания к PR,
+  // оставленные после её последнего коммита (вердикт стража, судья, люди и персонажи).
+  const prev = (await d.forge.listPulls({ state: 'open' })).find((p) => p.sourceBranch.startsWith(`agent/${t.issue}-`));
+  const { baseSha, mergeBase } = await d.git.prepare(d.runs.dir(runId), prev?.sourceBranch ?? baseBranch, prev ? baseBranch : undefined);
   const spec = openspecChange(join(d.runs.dir(runId), 'repo'), t.issue);
   d.runs.write(
     runId,
     'task.md',
-    `# ${t.issue}: ${t.title}\n\n${t.body}\n${spec ? `\n## Спецификация: изменение OpenSpec ${spec.path} (утверждено слиянием)\n\nТесты - по сценариям требований и до кода; каталог openspec/ не меняй.\n\n${spec.text}\n` : ''}`,
+    `# ${t.issue}: ${t.title}\n\n${t.body}\n${spec ? `\n## Спецификация: изменение OpenSpec ${spec.path} (утверждено слиянием)\n\nТесты - по сценариям требований и до кода; каталог openspec/ не меняй.\n\n${spec.text}\n` : ''}${prev ? await reworkText(d, prev) : ''}`,
   );
   const job = await d.jobs.start({ job: d.job, variables: { BROKER_URL: d.brokerUrl }, secrets: { RUN_TOKEN: token } });
   d.runs.update(runId, {
@@ -118,6 +132,7 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
     jobUrl: job.url,
     role: t.role ?? 'dev',
     ...(spec ? { spec: spec.path } : {}),
+    ...(prev ? { rework: { branch: prev.sourceBranch, pull: prev.number, ...(mergeBase ? { base: mergeBase } : {}) } } : {}),
   });
   await d.tracker.addComment(t.issue, `Фабрика взяла задачу: запуск ${runId}, задание агента ${job.url}`);
   return { issue: t.issue, title: t.title, jobId: job.id, jobUrl: job.url };
@@ -173,14 +188,17 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
     await relabel(d, t.issue, [d.labels.running], d.labels.failed);
     return { result: 'blocked', detail: verdictText(v) };
   }
-  const branch = `agent/${runId}`;
+  // Доработка - новый коммит в ветку и тот же PR; иначе - новая ветка и новый PR.
+  const branch = meta.rework?.branch ?? `agent/${runId}`;
   const { headSha } = await d.git.publish(d.runs.dir(runId), { branch, message: `${t.issue}: ${t.title}\n\nЗапуск фабрики ${runId}.` });
-  const pull = await d.forge.openPull({
-    title: `${t.issue}: ${t.title}`,
-    body: `Изменение агента фабрики по задаче ${t.issue}.\n\nЗапуск: ${runId}\nЗадание агента: ${t.jobUrl}\nБаза: ${meta.baseBranch} @ ${meta.baseSha}`,
-    head: branch,
-    base: meta.baseBranch,
-  });
+  const pull = meta.rework
+    ? await d.forge.getPull(meta.rework.pull)
+    : await d.forge.openPull({
+        title: `${t.issue}: ${t.title}`,
+        body: `Изменение агента фабрики по задаче ${t.issue}.\n\nЗапуск: ${runId}\nЗадание агента: ${t.jobUrl}\nБаза: ${meta.baseBranch} @ ${meta.baseSha}`,
+        head: branch,
+        base: meta.baseBranch,
+      });
   const ok = v.state === 'success';
   await d.forge.setStatus(headSha, {
     key: VERDICT_KEY,
@@ -188,8 +206,14 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
     description: ok ? 'страж: изменение в границах правил' : `страж: замечаний ${remarks(v)}`,
     url: t.jobUrl,
   });
-  await d.forge.commentPull(pull.number, `Вердикт стража фабрики (${ok ? 'зелёный' : 'красный'}):\n${verdictText(v)}`);
-  await d.tracker.addComment(t.issue, `Агент открыл PR: ${pull.url}\nВердикт стража - ${ok ? 'зелёный' : 'красный'}, решает человек.`);
+  await d.forge.commentPull(
+    pull.number,
+    `Вердикт стража фабрики (${ok ? 'зелёный' : 'красный'})${meta.rework ? ` для доработки ${headSha.slice(0, 7)}` : ''}:\n${verdictText(v)}`,
+  );
+  await d.tracker.addComment(
+    t.issue,
+    `Агент ${meta.rework ? 'дополнил' : 'открыл'} PR: ${pull.url}\nВердикт стража - ${ok ? 'зелёный' : 'красный'}, решает человек.`,
+  );
   await relabel(d, t.issue, [d.labels.running], d.labels.review);
   return { result: 'pull', detail: verdictText(v), url: pull.url };
 }

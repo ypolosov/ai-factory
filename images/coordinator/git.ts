@@ -15,8 +15,10 @@ export interface GitAuth {
 
 export interface Git {
   // Клон ветки цели в КАТАЛОГ/repo и bundle КАТАЛОГ/repo.bundle для шага.
-  prepare(dir: string, branch: string): Promise<{ baseSha: string }>;
-  // Патч КАТАЛОГ/agent.patch -> коммит в новой ветке поверх базы -> push. Возвращает голову ветки.
+  // mergeBaseWith - ветка, общий предок с которой нужен (доработка: тест до кода сравнивает с ним).
+  prepare(dir: string, branch: string, mergeBaseWith?: string): Promise<{ baseSha: string; mergeBase?: string }>;
+  // Патч КАТАЛОГ/agent.patch -> коммит в ветке поверх базы (новой или, при доработке, ветке прошлой
+  // попытки) -> push. Возвращает голову ветки.
   publish(dir: string, p: { branch: string; message: string }): Promise<{ headSha: string }>;
   // Архив tar.gz коммита из рабочей копии КАТАЛОГ.
   archive(dir: string, sha: string): Promise<Buffer>;
@@ -71,17 +73,20 @@ export function git(cfg: GitConfig): Git {
     return { sha: await g(dir, ['rev-parse', 'HEAD']) };
   }
   return {
-    async prepare(dir, branch) {
+    async prepare(dir, branch, mergeBaseWith) {
       await g(dir, ['clone', '--quiet', '--single-branch', '--branch', branch, cfg.url, 'repo'], cfg.read);
       const repo = join(dir, 'repo');
       const baseSha = await g(repo, ['rev-parse', 'HEAD']);
       await g(repo, ['bundle', 'create', '--quiet', join(dir, 'repo.bundle'), 'HEAD', branch]);
-      return { baseSha };
+      if (!mergeBaseWith) return { baseSha };
+      await g(repo, ['fetch', '--quiet', 'origin', mergeBaseWith], cfg.read);
+      return { baseSha, mergeBase: await g(repo, ['merge-base', 'HEAD', 'FETCH_HEAD']) };
     },
     async publish(dir, { branch, message }) {
       const repo = join(dir, 'repo');
       const who = ['-c', `user.name=${cfg.author.name}`, '-c', `user.email=${cfg.author.email}`];
-      await g(repo, ['checkout', '--quiet', '-b', branch]);
+      // Доработка: рабочая копия уже на ветке прошлой попытки - коммит ложится поверх неё.
+      if ((await g(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])) !== branch) await g(repo, ['checkout', '--quiet', '-b', branch]);
       await g(repo, ['apply', '--index', '--whitespace=nowarn', join(dir, 'agent.patch')]);
       await g(repo, [...who, 'commit', '--quiet', '-m', message]);
       await g(repo, ['push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`], cfg.write);
