@@ -22,7 +22,8 @@ export interface RunMeta {
   reported?: boolean; // итог проверки уже разобран
   spec?: string; // изменение OpenSpec задачи в базе (openspec/changes/<ключ>-<имя>)
   role?: string; // роль агента: dev, frontend, backend
-  rework?: { branch: string; pull: number }; // доработка: ветка и PR прошлой попытки агента
+  // Доработка: ветка и PR прошлой попытки агента; base - общий предок ветки и базы (тест до кода).
+  rework?: { branch: string; pull: number; base?: string };
 }
 
 export type RunKind = 'agent' | 'judge' | 'design' | 'e2e' | 'scan';

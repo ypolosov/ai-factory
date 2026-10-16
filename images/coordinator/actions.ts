@@ -117,7 +117,7 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
   // Доработка: у задачи открыт PR агента - агент продолжает его ветку и получает замечания к PR,
   // оставленные после её последнего коммита (вердикт стража, судья, люди и персонажи).
   const prev = (await d.forge.listPulls({ state: 'open' })).find((p) => p.sourceBranch.startsWith(`agent/${t.issue}-`));
-  const { baseSha } = await d.git.prepare(d.runs.dir(runId), prev?.sourceBranch ?? baseBranch);
+  const { baseSha, mergeBase } = await d.git.prepare(d.runs.dir(runId), prev?.sourceBranch ?? baseBranch, prev ? baseBranch : undefined);
   const spec = openspecChange(join(d.runs.dir(runId), 'repo'), t.issue);
   d.runs.write(
     runId,
@@ -132,7 +132,7 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
     jobUrl: job.url,
     role: t.role ?? 'dev',
     ...(spec ? { spec: spec.path } : {}),
-    ...(prev ? { rework: { branch: prev.sourceBranch, pull: prev.number } } : {}),
+    ...(prev ? { rework: { branch: prev.sourceBranch, pull: prev.number, ...(mergeBase ? { base: mergeBase } : {}) } } : {}),
   });
   await d.tracker.addComment(t.issue, `Фабрика взяла задачу: запуск ${runId}, задание агента ${job.url}`);
   return { issue: t.issue, title: t.title, jobId: job.id, jobUrl: job.url };

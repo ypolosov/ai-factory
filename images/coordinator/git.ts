@@ -15,7 +15,8 @@ export interface GitAuth {
 
 export interface Git {
   // Клон ветки цели в КАТАЛОГ/repo и bundle КАТАЛОГ/repo.bundle для шага.
-  prepare(dir: string, branch: string): Promise<{ baseSha: string }>;
+  // mergeBaseWith - ветка, общий предок с которой нужен (доработка: тест до кода сравнивает с ним).
+  prepare(dir: string, branch: string, mergeBaseWith?: string): Promise<{ baseSha: string; mergeBase?: string }>;
   // Патч КАТАЛОГ/agent.patch -> коммит в ветке поверх базы (новой или, при доработке, ветке прошлой
   // попытки) -> push. Возвращает голову ветки.
   publish(dir: string, p: { branch: string; message: string }): Promise<{ headSha: string }>;
@@ -72,12 +73,14 @@ export function git(cfg: GitConfig): Git {
     return { sha: await g(dir, ['rev-parse', 'HEAD']) };
   }
   return {
-    async prepare(dir, branch) {
+    async prepare(dir, branch, mergeBaseWith) {
       await g(dir, ['clone', '--quiet', '--single-branch', '--branch', branch, cfg.url, 'repo'], cfg.read);
       const repo = join(dir, 'repo');
       const baseSha = await g(repo, ['rev-parse', 'HEAD']);
       await g(repo, ['bundle', 'create', '--quiet', join(dir, 'repo.bundle'), 'HEAD', branch]);
-      return { baseSha };
+      if (!mergeBaseWith) return { baseSha };
+      await g(repo, ['fetch', '--quiet', 'origin', mergeBaseWith], cfg.read);
+      return { baseSha, mergeBase: await g(repo, ['merge-base', 'HEAD', 'FETCH_HEAD']) };
     },
     async publish(dir, { branch, message }) {
       const repo = join(dir, 'repo');

@@ -241,6 +241,15 @@ describe('координатор: задача -> агент -> страж -> PR
     expect(git(origin, 'rev-list', '--count', `main..${head}`)).toBe('2');
     expect(await mf.forge.statuses(head)).toEqual([expect.objectContaining({ key: VERDICT_KEY })]);
     expect((await tracker.listComments(issue)).at(-1)?.body).toContain(`Агент дополнил PR: ${pull.url}`);
+    // Тест до кода в доработке сравнивает с общим предком ветки и main, а не с прошлой попыткой.
+    const runId =
+      /запуск (\S+),/.exec(
+        (await tracker.listComments(issue))
+          .map((c) => c.body)
+          .filter((b) => b.startsWith('Фабрика взяла'))
+          .at(-1) ?? '',
+      )?.[1] ?? '';
+    expect(runs.meta(runId)?.rework?.base).toBe(git(origin, 'merge-base', 'main', head));
   });
 
   it('повтор задачи после неудачи - старая метка неудачи снимается', async () => {

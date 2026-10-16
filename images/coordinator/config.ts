@@ -94,7 +94,15 @@ export function stepEnvFor(cfg: Config, m: RunMeta): Record<string, string> {
       CODEX_AUTH_JSON: cfg.codexAuth(),
     };
   }
-  return { ...cfg.stepEnv, ...id, FACTORY_ROLE: m.role ?? 'dev', ...cfg.stepSecrets() };
+  // Доработка: тест до кода сравнивает изменение всей ветки с общим предком (REWORK_BASE), а не с
+  // прошлой попыткой - иначе тесты прошлой попытки "проходят на коде базы".
+  return {
+    ...cfg.stepEnv,
+    ...id,
+    FACTORY_ROLE: m.role ?? 'dev',
+    ...(m.rework?.base ? { REWORK_BASE: m.rework.base } : {}),
+    ...cfg.stepSecrets(),
+  };
 }
 
 // Файл вида ИМЯ=значение (как читает sh): комментарии и пустые строки пропускаются.
