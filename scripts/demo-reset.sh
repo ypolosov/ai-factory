@@ -158,6 +158,7 @@ else
 				'{title: $t, head: $h, base: "main", body: "Сброс стенда перед дублем видео-демо: код и правила цели - как в теге demo-baseline, реестр ролей - как в main."}')" | jq -r .number)
 			api app PUT "$G/pulls/$n/merge" "{\"merge_method\":\"squash\",\"commit_title\":\"$title (#$n)\"}" >/dev/null
 			echo "код цели: PR $n слит - служба выкладки выложит main"
+			merged=1
 		fi
 		# Служебный тег выпуска на базе дубля: заметки выпуска в дубле считаются от него и не тянут
 		# работу прошлых дублей. Вершина main уже с тегом - ничего не делать.
@@ -178,6 +179,8 @@ fi
 # Данные стенда: таблицы, заведённые агентами прошлых дублей, остаются в базе и спорят со схемой
 # нового дубля (CREATE TABLE IF NOT EXISTS их не меняет). Схема public уходит в архив take_ВРЕМЯ,
 # API стенда перезапускается и заводит схему заново. Нет службы выкладки или стенда - пропуск.
+# Код вернулся к базе - сначала дождаться его выкладки: иначе API прошлого дубля заведёт свои
+# таблицы в новой схеме.
 cd_svc=$(docker ps -q -f label=com.docker.compose.project=ai-factory -f label=com.docker.compose.service=cd)
 stand=${STAND_PROJECT:-prize-draw}
 # in_cd КОМАНДА - команда в службе выкладки: там Docker стенда.
@@ -186,6 +189,19 @@ in_cd() { docker exec -i "$cd_svc" "$@"; }
 stand_ctr() {
 	in_cd docker ps --format '{{.Names}}' -f "label=com.docker.compose.project=$stand" -f "label=com.docker.compose.service=$1" </dev/null
 }
+if [ -n "${merged:-}" ] && [ -n "$cd_svc" ]; then
+	echo "данные стенда: жду выкладку базы ${head%"${head#???????}"} (образы публикует CI цели)"
+	i=0
+	until in_cd docker ps --format '{{.Image}} {{.Status}}' -f "label=com.docker.compose.project=$stand" \
+		-f label=com.docker.compose.service=api </dev/null | grep -q ":$head .*(healthy)"; do
+		i=$((i + 1))
+		[ $i -le 120 ] || {
+			echo "данные стенда: база не выложена за 20 мин - схема не тронута" >&2
+			exit 1
+		}
+		sleep 10
+	done
+fi
 db=$([ -z "$cd_svc" ] || stand_ctr db)
 api_ctr=$([ -z "$cd_svc" ] || stand_ctr api)
 # shellcheck disable=SC2016 # переменные базы раскрывает оболочка в контейнере базы
