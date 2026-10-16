@@ -39,6 +39,7 @@ describe('координатор: задача -> агент -> страж -> PR
   };
   let brokerUrl = '';
   let change: Change = { file: 'src/draw.ts', text: 'export const draw = 1;\n' };
+  let lastTask = '';
   const tracker: Tracker = memoryTracker();
   const mf = memoryForge();
   const runs = runStore(join(root, 'runs'));
@@ -53,6 +54,7 @@ describe('координатор: задача -> агент -> страж -> PR
     };
     const vars = (await (await get('env')).json()) as Record<string, string>;
     const task = await (await get('task')).text();
+    lastTask = task;
     const work = mkdtempSync(join(root, 'step-'));
     writeFileSync(join(work, 'repo.bundle'), new Uint8Array(await (await get('repo')).arrayBuffer()));
     git(work, 'clone', '-q', 'repo.bundle', 'repo');
@@ -218,6 +220,27 @@ describe('координатор: задача -> агент -> страж -> PR
     const issue = (await tracker.createIssue({ title: 'Без итога', body: '', labels: ['agent'] })).key;
     expect(await settle(issue)).toEqual([labels.failed]);
     expect((await tracker.listComments(issue)).at(-1)?.body).toContain('без итога');
+  });
+
+  it('доработка: задача снова у агента при открытом PR - агент продолжает ветку PR и получает замечания', async () => {
+    change = { file: 'src/rework.ts', text: 'export const rework = 1;\n' };
+    const issue = (await tracker.createIssue({ title: 'Кнопка повтора', body: '', labels: ['agent'] })).key;
+    await settle(issue);
+    const [pull] = (await mf.forge.listPulls({ state: 'open' })).filter((p) => p.title.startsWith(issue));
+    if (!pull) throw new Error('нет PR агента');
+    await new Promise((r) => setTimeout(r, 1100)); // замечание - позже коммита (время git - в секундах)
+    await mf.forge.commentPull(pull.number, 'Добавь модульные тесты на кнопку повтора.');
+    change = { file: 'src/rework.test.ts', text: 'export const tested = 1;\n' };
+    await tracker.removeLabel(issue, labels.review);
+    await tracker.addLabel(issue, 'agent');
+    expect(await settle(issue)).toEqual([labels.review]);
+    expect(lastTask).toContain('Добавь модульные тесты на кнопку повтора.');
+    expect((await mf.forge.listPulls({ state: 'open' })).filter((p) => p.title.startsWith(issue))).toHaveLength(1);
+    const head = git(origin, 'rev-parse', `refs/heads/${pull.sourceBranch}`);
+    expect(git(origin, 'show', `${head}:src/rework.ts`)).toContain('rework = 1');
+    expect(git(origin, 'rev-list', '--count', `main..${head}`)).toBe('2');
+    expect(await mf.forge.statuses(head)).toEqual([expect.objectContaining({ key: VERDICT_KEY })]);
+    expect((await tracker.listComments(issue)).at(-1)?.body).toContain(`Агент дополнил PR: ${pull.url}`);
   });
 
   it('повтор задачи после неудачи - старая метка неудачи снимается', async () => {
