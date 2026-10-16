@@ -33,6 +33,7 @@ export interface Shot {
   scroll?: number;
   play?: PlayAction[];
   login?: string;
+  clockDays?: number; // часы браузера сдвинуты вперёд (часы стенда демо - так же)
 }
 
 export interface HttpCall {
