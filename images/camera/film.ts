@@ -10,7 +10,20 @@ import { type Browser, type BrowserContext, chromium } from 'playwright';
 import { parse } from 'yaml';
 import { selectForge, selectTracker, selectWiki } from '../ports/select.ts';
 import { persona as githubPersona } from './github.ts';
-import { applyEdit, badge, chapterHtml, checkFilm, FILM_LABEL, type Film, fill, parseEnv, type Step, takeName } from './script.ts';
+import {
+  applyEdit,
+  badge,
+  chapterHtml,
+  checkFilm,
+  FILM_LABEL,
+  type Film,
+  fill,
+  nextVersion,
+  parseEnv,
+  type Step,
+  snowflake,
+  takeName,
+} from './script.ts';
 
 const API = 'https://discord.com/api/v10';
 const [filmPath = '', out = ''] = process.argv.slice(2);
@@ -112,21 +125,25 @@ const take = resumed?.take ?? takeName(new Date(t0));
 const ctx: Record<string, unknown> = { ...resumed?.ctx, take };
 if (film.steps.some((s) => s.id === 'take')) throw new Error('шаг не может называться take');
 
+// Реплика участника в Discord - его ботом; @factory - упоминание бота фабрики.
+async function say(step: Step, did: Record<string, unknown>): Promise<void> {
+  const d = step.do?.discord;
+  const who = film.personas[step.who];
+  if (!d) return;
+  if (!who?.discord) throw new Error(`у участника ${step.who} нет бота Discord`);
+  const text = fill(d.text, ctx).replaceAll('@factory', `<@${factoryId}>`);
+  const m = await discord<{ id: string }>(personaToken(who.discord), `/channels/${channelId(d.channel)}/messages`, { content: text });
+  did.message = { id: m.id, channel: d.channel };
+  did.said = Date.now();
+  log(`${step.id}: ${who.name} пишет в #${d.channel}`);
+}
+
 async function act(step: Step): Promise<void> {
-  const did: Record<string, unknown> = {};
+  const did: Record<string, unknown> = { since: Date.now() };
   ctx[step.id] = did;
   const d = step.do;
   if (!d) return;
-  if (d.discord) {
-    const who = film.personas[step.who];
-    if (!who?.discord) throw new Error(`у участника ${step.who} нет бота Discord`);
-    const text = fill(d.discord.text, ctx).replaceAll('@factory', `<@${factoryId}>`);
-    const m = await discord<{ id: string }>(personaToken(who.discord), `/channels/${channelId(d.discord.channel)}/messages`, {
-      content: text,
-    });
-    did.message = { id: m.id, channel: d.discord.channel };
-    log(`${step.id}: ${who.name} пишет в #${d.discord.channel}`);
-  }
+  if (d.discord) await say(step, did);
   if (d.wiki) {
     const wiki = as(step.who).wiki ?? factory.wiki;
     if (!wiki) throw new Error(`у участника ${step.who} нет учётки Confluence`);
@@ -182,6 +199,58 @@ async function act(step: Step): Promise<void> {
     await app(step.who).comment(n, fill(d.github.comment.text, ctx));
     log(`${step.id}: замечание в PR ${n}`);
   }
+  if (d.github?.closePr) {
+    const n = Number(fill(d.github.closePr.pr, ctx));
+    await app(step.who).closePull(n);
+    log(`${step.id}: PR ${n} закрыт без слияния`);
+  }
+  if (d.github?.tag) {
+    const name = nextVersion(
+      (await forge.tags()).map((x) => x.name),
+      d.github.tag.bump,
+    );
+    did.tag = name;
+    did.sha = await app(step.who).tag(name);
+    log(`${step.id}: тег ${name}`);
+  }
+  if (d.http) {
+    const r = await fetch(fill(d.http.url, ctx), {
+      method: d.http.method ?? 'GET',
+      headers: { 'content-type': 'application/json' },
+      body: d.http.body === undefined ? undefined : fill(JSON.stringify(d.http.body), ctx),
+    });
+    const text = await r.text();
+    did.status = r.status;
+    try {
+      did.json = JSON.parse(text);
+    } catch {
+      did.json = text.slice(0, 500);
+    }
+    log(`${step.id}: ${d.http.method ?? 'GET'} ${fill(d.http.url, ctx)} - ${r.status}`);
+  }
+  if (d.webhook) {
+    // Вебхук без учётки: самозванец пишет от чужого имени. Адрес вебхука канала - из
+    // .state/discord-webhook-<канал>.env (scripts/film-webhook-add.sh); нет файла - вебхук заводит
+    // бот фабрики (нужно право Manage Webhooks).
+    const file = `discord-webhook-${d.webhook.channel}.env`;
+    let url = existsSync(join(state, file)) ? env(file).DISCORD_WEBHOOK_URL : undefined;
+    if (!url) {
+      const ch = channelId(d.webhook.channel);
+      const hooks = await discord<{ id: string; token?: string; name: string }[]>(factoryToken, `/channels/${ch}/webhooks`);
+      const hook =
+        hooks.find((h) => h.name === 'film-webhook' && h.token) ??
+        (await discord<{ id: string; token: string; name: string }>(factoryToken, `/channels/${ch}/webhooks`, { name: 'film-webhook' }));
+      url = `${API}/webhooks/${hook.id}/${hook.token}`;
+    }
+    const r = await fetch(`${url}?wait=true`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: fill(d.webhook.text, ctx), username: d.webhook.username }),
+    });
+    if (!r.ok) throw new Error(`Discord вебхук: ${r.status}`);
+    did.message = { id: ((await r.json()) as { id: string }).id, channel: d.webhook.channel };
+    log(`${step.id}: вебхук "${d.webhook.username}" пишет в #${d.webhook.channel}`);
+  }
   // Задача закрывается после PR: закрытие задачи на решение запускает повторную сверку, и она
   // должна видеть уже слитое решение.
   if (d.close) {
@@ -199,8 +268,11 @@ const seen = async (key: string) => {
 // Задача Jira, которой ждёт шаг: найдена - в итог шага (issue, а для deps - ещё issues).
 async function jiraDone(w: NonNullable<NonNullable<Step['wait']>['jira']>, did: Record<string, unknown>): Promise<boolean> {
   const label = w.label ? fill(w.label, ctx) : undefined;
+  // Комментарий - только написанный после начала шага: старый из прошлого дубля итогом не считается.
+  const since = Number(did.since ?? t0);
   const hasComment = async (key: string) =>
-    !w.comment || (await tracker.listComments(key)).some((c) => c.body.includes(fill(w.comment ?? '', ctx)));
+    !w.comment ||
+    (await tracker.listComments(key)).some((c) => Date.parse(c.createdAt) >= since - 5000 && c.body.includes(fill(w.comment ?? '', ctx)));
   let found: { key: string; url: string; title: string }[] = [];
   // Все зависимости задачи (deps), не только отобранные: сброс стенда закроет и остальные задачи нарезки.
   const deps: string[] = [];
@@ -216,7 +288,7 @@ async function jiraDone(w: NonNullable<NonNullable<Step['wait']>['jira']>, did: 
     }
     if (found.length < (w.count ?? 1)) found = [];
   } else if (label) {
-    const [i] = await tracker.listIssues({ label, state: 'all', limit: 1 });
+    const [i] = await tracker.listIssues({ label, state: w.open ? 'open' : 'all', limit: 1 });
     if (i && (await hasComment(i.key))) found = [i];
   }
   if (!found.length) return false;
@@ -231,7 +303,7 @@ async function githubDone(w: NonNullable<NonNullable<Step['wait']>['github']>, d
   const head = w.head ? fill(w.head, ctx) : undefined;
   const p = w.pr
     ? await forge.getPull(Number(fill(w.pr, ctx)))
-    : (await forge.listPulls({ state: 'all', limit: 30 })).find((x) => head && x.sourceBranch.startsWith(head));
+    : (await forge.listPulls({ state: 'open', limit: 50 })).find((x) => head && x.sourceBranch.startsWith(head));
   if (!p) return false;
   if (w.status) {
     const s = (await forge.statuses(p.headSha)).find((x) => x.key === w.status);
@@ -251,7 +323,8 @@ async function waitFor(step: Step): Promise<void> {
   const done = { discord: !w.discord, jira: !w.jira, github: !w.github };
   while (Date.now() < deadline) {
     if (w.discord && !done.discord) {
-      const after = (did.message as { id: string } | undefined)?.id ?? '0';
+      // После своей реплики, а без неё - после начала шага.
+      const after = (did.message as { id: string } | undefined)?.id ?? snowflake(Number(did.since ?? t0));
       const msgs = await discord<{ id: string; author: { id: string }; content: string }[]>(
         factoryToken,
         `/channels/${channelId(w.discord.channel)}/messages?after=${after}&limit=20`,
@@ -260,9 +333,12 @@ async function waitFor(step: Step): Promise<void> {
         (m) => m.author.id === factoryId && (!w.discord?.contains || m.content.includes(fill(w.discord.contains, ctx))),
       );
       if (reply) {
-        did.reply = { text: reply.content };
+        did.reply = { text: reply.content, url: /https?:\/\/\S+/.exec(reply.content)?.[0]?.replace(/[).,]+$/, '') };
         done.discord = true;
         log(`${step.id}: ответ фабрики получен`);
+      } else if (w.discord.retry && step.do?.discord && Date.now() - Number(did.said ?? t0) > w.discord.retry * 1000) {
+        // Фабрика ещё не готова (например, образов выпуска нет в реестре) - реплика повторяется.
+        await say(step, did);
       }
     }
     if (w.jira && !done.jira && (await jiraDone(w.jira, did))) {

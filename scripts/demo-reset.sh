@@ -3,13 +3,15 @@
 # ничего не удаляется. Всё, что создаёт съёмка, несёт метку film (images/camera/script.ts):
 # - страницы Confluence с меткой film теряют метку story (сверщик их больше не берёт), получают
 #   в заголовок пометку архива (заголовок снова свободен для дубля) и уходят под "Архив съёмок";
-# - незакрытые задачи Jira с меткой film закрываются;
+# - сбои стенда в GlitchTip решаются, открытые баги сбоев (метка incident) и незакрытые задачи
+#   Jira с меткой film закрываются - следующий дубль покажет сбой заново;
 # - открытые PR агентов по задачам с меткой film и PR участников съёмки (ветки film/...)
 #   закрываются, ветки остаются;
 # - код и правила цели возвращаются к тегу demo-baseline (реестр ролей остаётся как в main):
 #   PR открывает и сливает DevOps (ИИ) своим приложением GitHub, служба выкладки выкладывает main.
 # -n - только показать, что будет сделано. Ключи - .state/atlassian.env, .state/github-target.env
-# и .state/github-app-devops.env (.pem); нет приложения или тега - возврат кода пропускается.
+# и .state/github-app-devops.env (.pem); нет приложения или тега - возврат кода пропускается;
+# GlitchTip - .state/coordinator/glitchtip.token (нет - сбои не трогаются).
 # Запуск из корня репозитория.
 set -eu
 
@@ -71,6 +73,29 @@ while IFS= read -r p; do
 		'{id, type: "page", title: $t, version: {number: (.version.number + 1)}, ancestors: [{id: $p}], body: {storage: {representation: "storage", value: .body.storage.value}}}')
 	api wiki PUT "$C/content/$id" "$body" >/dev/null
 done <"$tmp/pages"
+
+# GlitchTip: нерешённые сбои стенда - решить раньше, чем закрыть их баги: иначе фабрика откроет баг
+# снова, увидев нерешённый сбой.
+gt=$state/coordinator/glitchtip.token
+if [ -s "$gt" ]; then
+	printf 'Authorization: Bearer %s\n' "$(cat "$gt")" >"$tmp/gt"
+	GTA=${GLITCHTIP_URL:-http://127.0.0.1:8200}/api/0
+	GTO=${GLITCHTIP_ORG:-factory}
+	api gt GET "$GTA/projects/$GTO/${GLITCHTIP_PROJECT:-prize-draw}/issues/?query=$(uri is:unresolved)" | jq -r '.[].id' >"$tmp/gtids"
+	while IFS= read -r id; do
+		plan "GlitchTip: сбой $id - решён" && continue
+		api gt PUT "$GTA/organizations/$GTO/issues/?id=$id" '{"status":"resolved"}' >/dev/null
+	done <"$tmp/gtids"
+fi
+
+# Jira: открытые баги сбоев (метка incident) - закрыть.
+api jira GET "$J/search/jql?jql=$(uri "project = $JIRA_PROJECT AND labels = incident AND statusCategory != Done")&fields=status" |
+	jq -r '.issues[].key' >"$tmp/bugs"
+while IFS= read -r key; do
+	plan "Jira: баг сбоя $key - закрыть" && continue
+	t=$(api jira GET "$J/issue/$key/transitions" | jq -r '[.transitions[] | select(.to.statusCategory.key == "done")][0].id')
+	api jira POST "$J/issue/$key/transitions" "{\"transition\":{\"id\":\"$t\"}}" >/dev/null
+done <"$tmp/bugs"
 
 # Jira: задачи прошлых дублей; незакрытые - закрыть.
 api jira GET "$J/search/jql?jql=$(uri "project = $JIRA_PROJECT AND labels = $label")&fields=status&maxResults=100" |

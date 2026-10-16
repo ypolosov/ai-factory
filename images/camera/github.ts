@@ -92,5 +92,14 @@ export function persona(state: string, id: string) {
     async comment(n: number, text: string): Promise<void> {
       await call('POST', `/issues/${n}/comments`, { body: text });
     },
+    async closePull(n: number): Promise<void> {
+      await call('PATCH', `/pulls/${n}`, { state: 'closed' });
+    },
+    // Лёгкий тег на вершине ветки.
+    async tag(name: string, branch = 'main'): Promise<string> {
+      const head = await call<{ object: { sha: string } }>('GET', `/git/ref/heads/${branch}`);
+      await call('POST', '/git/refs', { ref: `refs/tags/${name}`, sha: head.object.sha });
+      return head.object.sha;
+    },
   };
 }

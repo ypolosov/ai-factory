@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { applyEdit, chapterHtml, checkFilm, type Film, fill, parseEnv, takeName } from '../script.ts';
+import { applyEdit, chapterHtml, checkFilm, type Film, fill, nextVersion, parseEnv, snowflake, takeName } from '../script.ts';
 
 describe('сценарий съёмки', () => {
   it('файл ключей: ИМЯ=значение, комментарии и кавычки', () => {
@@ -57,6 +57,17 @@ describe('сценарий съёмки', () => {
     const real = parse(readFileSync(new URL('../../../docs/demo/film.yml', import.meta.url), 'utf8')) as Film;
     const assets = (n: string) => existsSync(new URL(`../../../docs/demo/film-assets/${n}`, import.meta.url));
     expect(checkFilm(real, assets)).toEqual([]);
+  });
+
+  it('следующий выпуск - по последнему тегу vX.Y.Z; тегов нет - v1.0.0', () => {
+    expect(nextVersion(['v1.0.0', 'demo-baseline', 'v1.2.3', 'v1.10.0'], 'minor')).toBe('v1.11.0');
+    expect(nextVersion(['v1.0.0'], 'patch')).toBe('v1.0.1');
+    expect(nextVersion(['demo-baseline'], 'minor')).toBe('v1.0.0');
+  });
+
+  it('метка времени Discord для "сообщения после": миллисекунды от эпохи Discord, сдвиг на 22 бита', () => {
+    expect(snowflake(Date.UTC(2015, 0, 1))).toBe('0');
+    expect(snowflake(1_420_070_400_000 + 1)).toBe('4194304');
   });
 
   it('карточка главы экранирует текст', () => {

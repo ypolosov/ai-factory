@@ -36,7 +36,11 @@ export interface Step {
       pr?: { branch: string; title: string; body: string; base?: string; files: FileEdit[] };
       merge?: { pr: string; title: string };
       comment?: { pr: string; text: string };
+      closePr?: { pr: string }; // закрыть PR без слияния
+      tag?: { bump: 'minor' | 'patch' }; // тег следующего выпуска на вершине main: итог - tag
     };
+    http?: { method?: string; url: string; body?: unknown }; // запрос к стенду: итог - status и json
+    webhook?: { channel: string; username: string; text: string }; // сообщение вебхука без учётки
     decision?: string; // команда, которую человек выполняет сам вживую
   };
   // Итог шага: задача Jira - по метке (label), по ключу (key) или среди зависимостей задачи (deps,
@@ -44,8 +48,8 @@ export interface Step {
   // Метки через "|" - любая из них.
   wait?: {
     timeout?: number; // секунды
-    discord?: { channel: string; contains?: string };
-    jira?: { label?: string; comment?: string; key?: string; deps?: string; match?: string; count?: number };
+    discord?: { channel: string; contains?: string; retry?: number }; // retry - через сколько секунд повторить реплику шага
+    jira?: { label?: string; comment?: string; key?: string; deps?: string; match?: string; count?: number; open?: boolean };
     github?: { pr?: string; head?: string; status?: string; success?: boolean };
   };
   show?: { who: string; url: string; caption: string; seconds?: number; focus?: string }[]; // focus - текст, до которого прокрутить
@@ -119,6 +123,23 @@ export function checkFilm(film: Film, assetExists: (name: string) => boolean): s
     for (const f of s.do?.github?.pr?.files ?? []) if (f.from && !assetExists(f.from)) out.push(`${s.id}: нет заготовки ${f.from}`);
   }
   return out;
+}
+
+// Тег следующего выпуска по последнему тегу vX.Y.Z; тегов выпусков нет - v1.0.0.
+export function nextVersion(tags: string[], bump: 'minor' | 'patch'): string {
+  const vs = tags
+    .map((t) => /^v(\d+)\.(\d+)\.(\d+)$/.exec(t))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])] as const)
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  const last = vs.at(-1);
+  if (!last) return 'v1.0.0';
+  return bump === 'minor' ? `v${last[0]}.${last[1] + 1}.0` : `v${last[0]}.${last[1]}.${last[2] + 1}`;
+}
+
+// Номер сообщения Discord на момент времени: "сообщения после" для ответа без своей реплики.
+export function snowflake(ms: number): string {
+  return String((BigInt(ms) - 1_420_070_400_000n) << 22n);
 }
 
 // Метка всего, что создаёт съёмка: по ней scripts/demo-reset.sh уводит прошлые дубли в архив.
