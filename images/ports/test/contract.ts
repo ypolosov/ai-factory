@@ -284,6 +284,15 @@ export function forgeContract(name: string, setup: () => Promise<ForgeFixture>) 
     it('обязательные проверки ветки - список', async () => {
       assert.ok(Array.isArray(await f.requiredChecks((await f.repo()).defaultBranch)));
     });
+
+    it('черновик PR - туда и обратно, повтор без второго эффекта (носитель без черновиков - пропуск)', async () => {
+      if (!f.setDraft) return;
+      await f.setDraft(pr.n, true);
+      await f.setDraft(pr.n, true);
+      assert.equal((await f.getPull(pr.n)).draft, true);
+      await f.setDraft(pr.n, false);
+      assert.equal(Boolean((await f.getPull(pr.n)).draft), false);
+    });
   });
 }
 

@@ -117,6 +117,8 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
   // Доработка: у задачи открыт PR агента - агент продолжает его ветку и получает замечания к PR,
   // оставленные после её последнего коммита (вердикт стража, судья, люди и персонажи).
   const prev = (await d.forge.listPulls({ state: 'open' })).find((p) => p.sourceBranch.startsWith(`agent/${t.issue}-`));
+  // Пока агент дорабатывает PR, PR - черновик: прошлую попытку не слить до нового вердикта.
+  if (prev) await draft(d, t.issue, prev.number, true);
   const { baseSha, mergeBase } = await d.git.prepare(d.runs.dir(runId), prev?.sourceBranch ?? baseBranch, prev ? baseBranch : undefined);
   const spec = openspecChange(join(d.runs.dir(runId), 'repo'), t.issue);
   d.runs.write(
@@ -138,6 +140,18 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
   return { issue: t.issue, title: t.title, jobId: job.id, jobUrl: job.url };
 }
 
+// Черновик PR на время доработки. Носитель без черновиков - ничего; сбой - сведение в задачу,
+// работа агента идёт дальше.
+async function draft(d: Pick<Deps, 'forge' | 'tracker'>, issue: string, n: number, on: boolean): Promise<void> {
+  if (!d.forge.setDraft) return;
+  await d.forge
+    .setDraft(n, on)
+    .catch((e) => d.tracker.addComment(issue, `PR ${n} не ${on ? 'стал черновиком' : 'снят с черновика'}: ${(e as Error).message}`));
+}
+// Доработка не дала нового вердикта: PR остаётся черновиком.
+const stillDraft = (rework: { pull: number } | undefined) =>
+  rework ? `\nPR ${rework.pull} остаётся черновиком: слить прошлую попытку - решение человека.` : '';
+
 const LEVEL = { block: 'стоп', fail: 'замечание', info: 'сведение' } as const;
 const verdictText = (v: Verdict) =>
   v.findings.length ? v.findings.map((f) => `- ${LEVEL[f.level]}: ${f.message}`).join('\n') : '- замечаний нет';
@@ -148,7 +162,7 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
   if (!meta?.baseBranch) throw new Error(`нет данных запуска ${runId}`);
   if (!meta.done) {
     const detail = `задание агента закончилось без итога (${jobState})`;
-    await d.tracker.addComment(t.issue, `Агент не дал результата: ${detail}. Журнал: ${t.jobUrl}`);
+    await d.tracker.addComment(t.issue, `Агент не дал результата: ${detail}. Журнал: ${t.jobUrl}${stillDraft(meta.rework)}`);
     await relabel(d, t.issue, [d.labels.running], d.labels.failed);
     return { result: 'failed', detail };
   }
@@ -184,7 +198,10 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
       : `изменения OpenSpec для задачи нет (openspec/changes/${t.issue.toLowerCase()}-...)`,
   });
   if (v.state === 'blocked') {
-    await d.tracker.addComment(t.issue, `Страж фабрики не пропустил изменение агента:\n${verdictText(v)}\nЖурнал: ${t.jobUrl}`);
+    await d.tracker.addComment(
+      t.issue,
+      `Страж фабрики не пропустил изменение агента:\n${verdictText(v)}\nЖурнал: ${t.jobUrl}${stillDraft(meta.rework)}`,
+    );
     await relabel(d, t.issue, [d.labels.running], d.labels.failed);
     return { result: 'blocked', detail: verdictText(v) };
   }
@@ -210,6 +227,8 @@ export async function finish(d: Deps, runId: string, t: Dispatched, jobState: Jo
     pull.number,
     `Вердикт стража фабрики (${ok ? 'зелёный' : 'красный'})${meta.rework ? ` для доработки ${headSha.slice(0, 7)}` : ''}:\n${verdictText(v)}`,
   );
+  // Доработка закончена, у новой вершины есть вердикт: PR снова готов к ревью.
+  if (meta.rework) await draft(d, t.issue, pull.number, false);
   await d.tracker.addComment(
     t.issue,
     `Агент ${meta.rework ? 'дополнил' : 'открыл'} PR: ${pull.url}\nВердикт стража - ${ok ? 'зелёный' : 'красный'}, решает человек.`,

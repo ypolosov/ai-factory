@@ -241,6 +241,12 @@ describe('координатор: задача -> агент -> страж -> PR
     expect(git(origin, 'rev-list', '--count', `main..${head}`)).toBe('2');
     expect(await mf.forge.statuses(head)).toEqual([expect.objectContaining({ key: VERDICT_KEY })]);
     expect((await tracker.listComments(issue)).at(-1)?.body).toContain(`Агент дополнил PR: ${pull.url}`);
+    // На время доработки PR был черновиком, с новым вердиктом снова готов к ревью.
+    expect(mf.drafts.filter((x) => x.n === pull.number)).toEqual([
+      { n: pull.number, draft: true },
+      { n: pull.number, draft: false },
+    ]);
+    expect((await mf.forge.getPull(pull.number)).draft).toBe(false);
     // Тест до кода в доработке сравнивает с общим предком ветки и main, а не с прошлой попыткой.
     const runId =
       /запуск (\S+),/.exec(

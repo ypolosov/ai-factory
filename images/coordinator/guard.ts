@@ -9,6 +9,9 @@ export interface GuardOptions {
   maxFiles: number;
   role?: string; // роль агента
   allowed?: string[]; // пути роли из .factory/config.yml цели; нет - весь репозиторий
+  // Защищённые пути, которые этому изменению разрешил реестр ролей цели (автор PR держит роль с
+  // решением factory-config), и кто он: такой путь - сведение, а не стоп.
+  granted?: { paths: string[]; by: string };
 }
 
 // Пути роли агента: roles.<роль>.paths.allowed в .factory/config.yml (как в шаблоне фабрики).
@@ -194,9 +197,12 @@ export function guardPatch(
     ...testFindings(testsReport),
   ];
   if (!patch.trim() || files.length === 0) findings.push({ level: 'block', message: 'агент ничего не изменил' });
+  const under = (f: string) => (p: string) => (p.endsWith('/') ? f.startsWith(p) : f === p);
   for (const f of files) {
-    const hit = o.protectedPaths.find((p) => (p.endsWith('/') ? f.startsWith(p) : f === p));
-    if (hit) findings.push({ level: 'block', message: `изменён защищённый путь ${f}: агенту нельзя, человеку - решение владельца` });
+    const hit = o.protectedPaths.find(under(f));
+    if (hit && o.granted?.paths.some(under(f)))
+      findings.push({ level: 'info', message: `настройки фабрики ${f} меняет ${o.granted.by} - решение роли по реестру ролей` });
+    else if (hit) findings.push({ level: 'block', message: `изменён защищённый путь ${f}: агенту нельзя, человеку - решение владельца` });
     if (o.allowed && !o.allowed.some((p) => (p.endsWith('/') ? f.startsWith(p) : f === p)))
       findings.push({ level: 'block', message: `роль ${o.role ?? 'агента'} меняет только ${o.allowed.join(', ')}: ${f} - вне её путей` });
   }

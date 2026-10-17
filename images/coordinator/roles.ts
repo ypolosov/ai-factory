@@ -25,6 +25,7 @@ export const DECISIONS = {
   'propose-rule': 'предложить правило',
   'rerun-checks': 'перезапустить проверки', // !e2e, !ci, !судья
   'design-check': 'сверить макет',
+  'factory-config': 'изменить настройки фабрики (.factory/config.yml)', // PR цели; реестр ролей меняет только владелец
 } as const;
 
 export type Decision = keyof typeof DECISIONS;
