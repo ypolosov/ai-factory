@@ -97,5 +97,20 @@ describe('правило-кандидат из повторяющихся зам
         post: async () => {},
       }),
     ).toContain('уже предложено');
+    // Прошлое предложение закрыто, его ветка осталась: новое - в ветку с номером, а не поверх неё.
+    const first = await m.forge.findPullByBranch('factory/rule-utc-deadline');
+    if (!first) throw new Error('нет PR правила-кандидата');
+    m.merge(first.number);
+    expect(
+      await proposeRule({
+        forge,
+        git: gitPort({ url: origin, author: { name: 'f', email: 'f@f' } }),
+        workDir: () => mkdtempSync(join(root, `w${++n}-`)),
+        ask: async () => ANSWER,
+        post: async () => {},
+      }),
+    ).toContain('Правило-кандидат предложено');
+    expect(git(origin, 'rev-parse', 'refs/heads/factory/rule-utc-deadline-2')).toMatch(/^[0-9a-f]{40}$/);
+    expect(git(origin, 'rev-parse', 'refs/heads/factory/rule-utc-deadline')).toBe(head);
   });
 });
