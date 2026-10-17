@@ -103,9 +103,17 @@ export async function proposeRule(d: RuleDeps): Promise<string> {
   if (rs.length < 3) return 'Сверщик: замечаний людей к PR пока меньше трёх - повторов искать не в чем.';
   const c = parseCandidate(await d.ask(rulePrompt(rs)), rs);
   if (!c) return 'Сверщик: повторяющихся замечаний минимум в трёх PR не нашлось.';
-  const branch = `factory/rule-${c.id}`;
-  const existing = await d.forge.findPullByBranch(branch);
-  if (existing) return `Правило-кандидат "${c.rule}" уже предложено: ${existing.url}`;
+  // Ветка правила - по его имени. Открытый PR из неё - правило уже предложено. Ветка прошлого
+  // предложения того же правила (PR закрыт или слит) остаётся: новое - в ветку с номером, а не
+  // поверх чужой истории (push такой ветки отклоняется).
+  let branch = `factory/rule-${c.id}`;
+  for (let i = 2; ; i++) {
+    const existing = await d.forge.findPullByBranch(branch);
+    if (existing) return `Правило-кандидат "${c.rule}" уже предложено: ${existing.url}`;
+    if (!(await d.forge.branchHead(branch))) break;
+    if (i > 20) return `Сверщик: веток правила "${c.rule}" слишком много - разберите прошлые предложения.`;
+    branch = `factory/rule-${c.id}-${i}`;
+  }
   const base = (await d.forge.repo()).defaultBranch;
   const dir = d.workDir();
   await d.git.prepare(dir, base);
