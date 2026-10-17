@@ -138,6 +138,8 @@ export function memoryForge(user = 'factory-bot') {
   const pulls = new Map<number, Pull>();
   const pullComments = new Map<number, Comment[]>();
   const statuses = new Map<string, CommitStatus[]>();
+  // Переключения черновика по порядку: тест видит, когда PR был черновиком.
+  const drafts: { n: number; draft: boolean }[] = [];
   let seq = 0;
   const pull = (n: number) => {
     const p = pulls.get(n);
@@ -184,6 +186,12 @@ export function memoryForge(user = 'factory-bot') {
       };
       pulls.set(n, p);
       return { ...p };
+    },
+    async setDraft(n, draft) {
+      const p = pull(n);
+      if (Boolean(p.draft) === draft) return;
+      p.draft = draft;
+      drafts.push({ n, draft });
     },
     async pullCommits(n) {
       const sha = pull(n).headSha;
@@ -238,6 +246,7 @@ export function memoryForge(user = 'factory-bot') {
   };
   return {
     forge,
+    drafts,
     pushBranch,
     // Ветка, отправленная мимо адаптера (например, git push потребителя в тесте).
     setHead(branch: string, sha: string, file = 'README.md', message = `change ${file}`) {

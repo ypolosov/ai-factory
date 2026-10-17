@@ -21,18 +21,20 @@ export interface GithubConfig {
 type Json = Record<string, unknown>;
 
 function client(cfg: GithubConfig) {
-  const base = `${(cfg.api ?? 'https://api.github.com').replace(/\/$/, '')}/repos/${cfg.repo}`;
+  const root = (cfg.api ?? 'https://api.github.com').replace(/\/$/, '');
+  const base = `${root}/repos/${cfg.repo}`;
+  const headers = async (accept: string) => ({
+    authorization: `Bearer ${typeof cfg.token === 'string' ? cfg.token : await cfg.token()}`,
+    accept,
+    'x-github-api-version': '2022-11-28',
+    'content-type': 'application/json',
+  });
   async function req(method: string, path: string, body?: unknown, accept = 'application/vnd.github+json'): Promise<Response> {
     let r: Response;
     try {
       r = await fetch(`${base}${path}`, {
         method,
-        headers: {
-          authorization: `Bearer ${typeof cfg.token === 'string' ? cfg.token : await cfg.token()}`,
-          accept,
-          'x-github-api-version': '2022-11-28',
-          'content-type': 'application/json',
-        },
+        headers: await headers(accept),
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
@@ -68,6 +70,26 @@ function client(cfg: GithubConfig) {
         throw e;
       }
     },
+    // GraphQL - для того, чего нет в REST: перевести открытый PR в черновик и обратно.
+    async graphql(query: string, variables: Json): Promise<Json> {
+      let r: Response;
+      try {
+        r = await fetch(`${root}/graphql`, {
+          method: 'POST',
+          headers: await headers('application/json'),
+          body: JSON.stringify({ query, variables }),
+        });
+      } catch (e) {
+        throw new PortError('unavailable', `GitHub недоступен: ${(e as Error).message}`);
+      }
+      const j = (await r.json().catch(() => ({}))) as { data?: Json; errors?: { message?: string }[] };
+      if (r.ok && !j.errors?.length) return j.data ?? {};
+      const why = (j.errors ?? []).map((e) => e.message).join('; ');
+      throw new PortError(
+        r.status === 401 || r.status === 403 ? 'auth' : r.ok ? 'invalid' : 'unavailable',
+        `GraphQL: ${r.status} ${why}`.slice(0, 300),
+      );
+    },
   };
 }
 
@@ -95,6 +117,7 @@ export function githubForge(cfg: GithubConfig): Forge {
     headSha: String((p.head as Json).sha),
     author: String((p.user as Json | undefined)?.login ?? ''),
     url: String(p.html_url ?? ''),
+    ...(p.draft ? { draft: true } : {}),
   });
   const forge: Forge = {
     async repo() {
@@ -124,6 +147,12 @@ export function githubForge(cfg: GithubConfig): Forge {
     },
     async openPull({ title, body, head, base }) {
       return toPull(await api.json('POST', '/pulls', { title, body, head, base }));
+    },
+    async setDraft(n, draft) {
+      const p = await api.json('GET', `/pulls/${n}`);
+      if (Boolean(p.draft) === draft) return;
+      const m = draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview';
+      await api.graphql(`mutation($id: ID!) { ${m}(input: { pullRequestId: $id }) { pullRequest { isDraft } } }`, { id: p.node_id });
     },
     async pullCommits(n) {
       return (await api.json<Json[]>('GET', `/pulls/${n}/commits?per_page=100`)).map((c) => ({

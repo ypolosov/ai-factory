@@ -157,6 +157,8 @@ const pulls = pullGuard({
   forge: deps.forge,
   guard: DEFAULT_GUARD,
   targetConfig,
+  roles,
+  tool: cfg.forge.kind,
   log,
 });
 // MCP фабрики для экзокортексов; на хосте - только 127.0.0.1 (compose.yaml).

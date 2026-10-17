@@ -86,6 +86,7 @@ export interface Pull {
   headSha: string;
   author: string;
   url: string;
+  draft?: boolean; // черновик: слить нельзя, пока работа над PR не закончена
 }
 
 export interface PullCommit {
@@ -123,6 +124,9 @@ export interface Forge {
   findPullByBranch(branch: string): Promise<Pull | undefined>;
   // Открыть PR из уже отправленной ветки head в base.
   openPull(p: { title: string; body: string; head: string; base: string }): Promise<Pull>;
+  // PR - черновик или снова готов к ревью: пока агент дорабатывает PR, прошлую попытку не слить.
+  // Носитель без черновиков метода не даёт.
+  setDraft?(n: number, draft: boolean): Promise<void>;
   pullCommits(n: number): Promise<PullCommit[]>;
   pullDiff(n: number): Promise<string>;
   pullReviews(n: number): Promise<Review[]>;

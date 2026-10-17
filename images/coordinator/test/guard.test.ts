@@ -35,6 +35,17 @@ describe('страж изменения агента', () => {
     }
   });
 
+  it('защищённый путь, разрешённый реестром ролей, - сведение, а не стоп; другие защищённые пути - стоп', () => {
+    const granted = { paths: ['.factory/config.yml'], by: 'Architect (ИИ) (роль architect)' };
+    const ok = guardPatch(diff('.factory/config.yml'), 0, { ...DEFAULT_GUARD, granted }, CONFIG);
+    expect(ok.state).toBe('success');
+    expect(ok.findings.map((f) => f.message)).toEqual([
+      'настройки фабрики .factory/config.yml меняет Architect (ИИ) (роль architect) - решение роли по реестру ролей',
+    ]);
+    for (const p of ['.factory/roles.yml', '.github/workflows/ci.yml'])
+      expect(guardPatch(diff(p), 0, { ...DEFAULT_GUARD, granted }, CONFIG).state, p).toBe('blocked');
+  });
+
   it('переименование в защищённый путь тоже ловится', () => {
     const patch = 'diff --git a/x.yml b/.github/x.yml\nsimilarity index 100%\nrename from x.yml\nrename to .github/x.yml\n';
     expect(patchFiles(patch)).toEqual(['x.yml', '.github/x.yml']);
