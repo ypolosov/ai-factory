@@ -16,7 +16,11 @@ export interface GithubConfig {
   repo: string; // "владелец/имя"
   token: string | (() => Promise<string>); // токен или его источник (приложение GitHub, github-app.ts)
   api?: string; // по умолчанию https://api.github.com
+  fetch?: typeof fetch; // для тестов
 }
+
+// Кеш условных запросов: сколько ответов помнить (старые вытесняются первыми).
+const CACHE_LIMIT = 2000;
 
 type Json = Record<string, unknown>;
 
@@ -29,19 +33,43 @@ function client(cfg: GithubConfig) {
     'x-github-api-version': '2022-11-28',
     'content-type': 'application/json',
   });
+  const get = cfg.fetch ?? fetch;
+  // Условные запросы: опрос фабрики почти всегда получает то же самое, а ответ 304 (не изменилось)
+  // GitHub не считает в лимит запросов установки (5000 в час). Без них опрос каждые 20 с съедал
+  // лимит, и фабрика замолкала до конца часа.
+  const cache = new Map<string, { etag: string; status: number; body: string; type: string }>();
   async function req(method: string, path: string, body?: unknown, accept = 'application/vnd.github+json'): Promise<Response> {
+    const key = `${accept} ${path}`;
+    const hit = method === 'GET' ? cache.get(key) : undefined;
     let r: Response;
     try {
-      r = await fetch(`${base}${path}`, {
+      r = await get(`${base}${path}`, {
         method,
-        headers: await headers(accept),
+        headers: { ...(await headers(accept)), ...(hit ? { 'if-none-match': hit.etag } : {}) },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
       throw new PortError('unavailable', `GitHub недоступен: ${(e as Error).message}`);
     }
+    if (r.status === 304 && hit) return new Response(hit.body, { status: hit.status, headers: { 'content-type': hit.type } });
+    const etag = r.headers.get('etag');
+    if (method === 'GET' && r.ok && r.status !== 204 && etag) {
+      const text = await r.text();
+      cache.delete(key);
+      cache.set(key, { etag, status: r.status, body: text, type: r.headers.get('content-type') ?? '' });
+      if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value ?? '');
+      return new Response(text, { status: r.status, headers: r.headers });
+    }
     if (r.ok) return r;
     const text = (await r.text()).slice(0, 300);
+    // Лимит запросов исчерпан - временная недоступность до сброса лимита, а не отказ в доступе.
+    const limited = r.status === 429 || (r.status === 403 && r.headers.get('x-ratelimit-remaining') === '0');
+    const reset = Number(r.headers.get('x-ratelimit-reset') ?? 0);
+    if (limited)
+      throw new PortError(
+        'unavailable',
+        `${method} ${path}: лимит запросов GitHub исчерпан${reset ? ` до ${new Date(reset * 1000).toISOString().slice(11, 16)} UTC` : ''}`,
+      );
     const code =
       r.status === 404
         ? 'not_found'
@@ -74,7 +102,7 @@ function client(cfg: GithubConfig) {
     async graphql(query: string, variables: Json): Promise<Json> {
       let r: Response;
       try {
-        r = await fetch(`${root}/graphql`, {
+        r = await get(`${root}/graphql`, {
           method: 'POST',
           headers: await headers('application/json'),
           body: JSON.stringify({ query, variables }),
