@@ -30,7 +30,9 @@ result() {
 cmd=$(awk '/^checks:/ { c = 1; next } c && /^[^ #]/ { c = 0 }
 	c && $1 == "test:" { sub(/^[ \t]*test:[ \t]*/, ""); print; exit }' .factory/config.yml 2>/dev/null || true)
 [ -n "$cmd" ] || result skipped skipped "нет checks.test в .factory/config.yml"
-if [ ! -d node_modules ] && [ -f package-lock.json ]; then
+# Тесты - на чистой установке по package-lock: node_modules рабочей копии мог оставить или
+# поправить агент (npm ci удаляет его и ставит заново).
+if [ -f package-lock.json ]; then
 	factory-untrusted factory-npm-ci >"$tmp/npm.log" 2>&1 || result skipped skipped "npm ci не прошёл"
 fi
 
