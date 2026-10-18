@@ -24,6 +24,7 @@ export interface RunMeta {
   role?: string; // роль агента: dev, frontend, backend
   // Доработка: ветка и PR прошлой попытки агента; base - общий предок ветки и базы (тест до кода).
   rework?: { branch: string; pull: number; base?: string };
+  mockup?: boolean; // в запуске агента есть принятый макет экрана (mockup.png)
 }
 
 export type RunKind = 'agent' | 'judge' | 'design' | 'e2e' | 'scan';
@@ -33,6 +34,7 @@ export type RunFile =
   | 'repo.bundle'
   | 'repo.tar.gz'
   | 'input'
+  | 'mockup.png'
   | 'agent.patch'
   | 'run.json'
   | 'agent.log'

@@ -35,11 +35,15 @@ describe('координатор: задача -> агент -> страж -> PR
     running: 'agent-running',
     review: 'agent-review',
     failed: 'agent-failed',
-    roles: { 'agent:backend': 'backend' },
+    roles: { 'agent:frontend': 'frontend', 'agent:backend': 'backend' },
   };
   let brokerUrl = '';
   let change: Change = { file: 'src/draw.ts', text: 'export const draw = 1;\n' };
   let lastTask = '';
+  // Что получил шаг по запуску: задание и макет экрана.
+  const steps = new Map<string, { task: string; mockup?: Uint8Array }>();
+  // Принятые макеты экранов (сверка макета) по задачам.
+  const accepted = new Map<string, Uint8Array>();
   const tracker: Tracker = memoryTracker();
   const mf = memoryForge();
   const runs = runStore(join(root, 'runs'));
@@ -55,6 +59,9 @@ describe('координатор: задача -> агент -> страж -> PR
     const vars = (await (await get('env')).json()) as Record<string, string>;
     const task = await (await get('task')).text();
     lastTask = task;
+    // Макет экрана - как factory-job: отдельно от задачи и рабочей копии, если он есть в запуске.
+    const mockup = await fetch(`${env.BROKER_URL}/v1/mockup`, { headers: h });
+    steps.set(vars.TASK_ID ?? '', { task, ...(mockup.ok ? { mockup: new Uint8Array(await mockup.arrayBuffer()) } : {}) });
     const work = mkdtempSync(join(root, 'step-'));
     writeFileSync(join(work, 'repo.bundle'), new Uint8Array(await (await get('repo')).arrayBuffer()));
     git(work, 'clone', '-q', 'repo.bundle', 'repo');
@@ -90,6 +97,7 @@ describe('координатор: задача -> агент -> страж -> PR
     labels,
     guard: DEFAULT_GUARD,
     assignee: async (role) => (role === 'backend' ? 'agent-backend' : undefined),
+    mockup: (issue) => accepted.get(issue),
   });
   // Новый экземпляр Mastra на тот же файл хранилища - как перезапуск службы.
   const boot = () => {
@@ -266,5 +274,49 @@ describe('координатор: задача -> агент -> страж -> PR
     await tracker.addLabel(issue, 'agent');
     await boot().tick(); // взял задачу снова и ждёт задание
     expect((await tracker.getIssue(issue)).labels).toEqual([labels.running]);
+  });
+
+  it('принятый макет экрана - агенту отдельным файлом и разделом задания, в доработке тоже; без макета - ничего', async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 7]);
+    const runsOf = (issue: string) => runs.list().filter((r) => r.issue === issue);
+    const step = (issue: string, n: number) => steps.get(runsOf(issue)[n]?.runId ?? '');
+    change = { file: 'web/src/Prize.tsx', text: 'export const Prize = 1;\n' };
+    const issue = (await tracker.createIssue({ title: 'Экран приза', body: '', labels: ['agent:frontend'] })).key;
+    accepted.set(issue, png);
+    expect(await settle(issue)).toEqual([labels.review]);
+    expect(step(issue, 0)?.task).toContain('## Макет экрана');
+    expect(step(issue, 0)?.task).toContain('картинка mockup.png лежит рядом с заданием');
+    expect(step(issue, 0)?.task).toContain('Картинку макета в репозиторий не клади.');
+    expect(step(issue, 0)?.mockup).toEqual(png);
+    expect(runsOf(issue).map((r) => r.mockup)).toEqual([true]);
+    const [pull] = (await mf.forge.listPulls({ state: 'open' })).filter((p) => p.title.startsWith(issue));
+    expect(git(origin, 'ls-tree', '-r', '--name-only', `refs/heads/${pull?.sourceBranch}`)).not.toContain('mockup.png');
+    // Доработка по замечаниям - тот же принятый макет.
+    change = { file: 'web/src/Prize.test.tsx', text: 'export const tested = 1;\n' };
+    await tracker.removeLabel(issue, labels.review);
+    await tracker.addLabel(issue, 'agent:frontend');
+    expect(await settle(issue)).toEqual([labels.review]);
+    expect(step(issue, 1)?.task).toContain('## Доработка');
+    expect(step(issue, 1)?.task).toContain('## Макет экрана');
+    expect(step(issue, 1)?.mockup).toEqual(png);
+    expect(runsOf(issue).map((r) => r.mockup)).toEqual([true, true]);
+    // Нет принятого макета - задание и запуск как раньше.
+    change = { file: 'web/src/Plain.tsx', text: 'export const Plain = 1;\n' };
+    const plain = (await tracker.createIssue({ title: 'Экран без макета', body: '', labels: ['agent:frontend'] })).key;
+    expect(await settle(plain)).toEqual([labels.review]);
+    expect(step(plain, 0)?.task).not.toContain('## Макет экрана');
+    expect(step(plain, 0)?.mockup).toBeUndefined();
+    expect(runsOf(plain).map((r) => r.mockup)).toEqual([undefined]);
+    expect(runs.read(runsOf(plain)[0]?.runId ?? '', 'mockup.png')).toBeUndefined();
+  });
+
+  it('агент бэкенда принятый макет экрана не получает: экран делают dev и frontend', async () => {
+    change = { file: 'api/src/prize.ts', text: 'export const prize = 1;\n' };
+    const issue = (await tracker.createIssue({ title: 'API приза', body: '', labels: ['agent:backend'] })).key;
+    accepted.set(issue, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 8]));
+    expect(await settle(issue)).toEqual([labels.review]);
+    const run = runs.list().find((r) => r.issue === issue);
+    expect(steps.get(run?.runId ?? '')?.task).not.toContain('## Макет экрана');
+    expect(steps.get(run?.runId ?? '')?.mockup).toBeUndefined();
   });
 });

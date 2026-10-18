@@ -29,6 +29,8 @@ export interface Deps {
   guard: GuardOptions;
   // Исполнитель задачи агента роли: учётка трекера ИИ-персонажа роли (реестр ролей цели).
   assignee?(role: string): Promise<string | undefined>;
+  // Принятый макет экрана задачи (сверка макета, design-ok): картинка PNG или ничего.
+  mockup?(issue: string): Uint8Array | undefined;
 }
 
 export interface Task {
@@ -111,6 +113,12 @@ async function reworkText(d: Deps, p: Pull): Promise<string> {
   return `\n## Доработка: PR ${p.number} (ветка ${p.sourceBranch})\n\nТвоя прошлая попытка уже в рабочей копии - продолжай её, не начинай заново. Замечания к PR после её последнего коммита:\n\n${notes || '- замечаний нет'}\n`;
 }
 
+// Принятый макет экрана - картинкой рядом с заданием, вне рабочей копии (путь дописывает шаг агента).
+// Макет получают роли, что делают экран: dev (весь репозиторий) и frontend.
+const MOCKUP_ROLES = ['dev', 'frontend'];
+const MOCKUP_TEXT =
+  '\n## Макет экрана\n\nМакет экрана принят судьёй макета: картинка mockup.png лежит рядом с заданием, вне рабочей копии (путь - в конце задания). Сделай экран по макету: расположение, тексты, состояния. Цвета, шрифты и компоненты - из стилей приложения, которые уже есть в репозитории, новых не выдумывай. Картинку макета в репозиторий не клади.\n';
+
 export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatched> {
   const { token } = d.runs.create(runId, t.issue);
   const baseBranch = (await d.forge.repo()).defaultBranch;
@@ -121,10 +129,12 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
   if (prev) await draft(d, t.issue, prev.number, true);
   const { baseSha, mergeBase } = await d.git.prepare(d.runs.dir(runId), prev?.sourceBranch ?? baseBranch, prev ? baseBranch : undefined);
   const spec = openspecChange(join(d.runs.dir(runId), 'repo'), t.issue);
+  const mockup = MOCKUP_ROLES.includes(t.role ?? 'dev') ? d.mockup?.(t.issue) : undefined;
+  if (mockup) d.runs.write(runId, 'mockup.png', mockup);
   d.runs.write(
     runId,
     'task.md',
-    `# ${t.issue}: ${t.title}\n\n${t.body}\n${spec ? `\n## Спецификация: изменение OpenSpec ${spec.path} (утверждено слиянием)\n\nТесты - по сценариям требований и до кода; каталог openspec/ не меняй.\n\n${spec.text}\n` : ''}${prev ? await reworkText(d, prev) : ''}`,
+    `# ${t.issue}: ${t.title}\n\n${t.body}\n${spec ? `\n## Спецификация: изменение OpenSpec ${spec.path} (утверждено слиянием)\n\nТесты - по сценариям требований и до кода; каталог openspec/ не меняй.\n\n${spec.text}\n` : ''}${mockup ? MOCKUP_TEXT : ''}${prev ? await reworkText(d, prev) : ''}`,
   );
   const job = await d.jobs.start({ job: d.job, variables: { BROKER_URL: d.brokerUrl }, secrets: { RUN_TOKEN: token } });
   d.runs.update(runId, {
@@ -134,6 +144,7 @@ export async function dispatch(d: Deps, runId: string, t: Task): Promise<Dispatc
     jobUrl: job.url,
     role: t.role ?? 'dev',
     ...(spec ? { spec: spec.path } : {}),
+    ...(mockup ? { mockup: true } : {}),
     ...(prev ? { rework: { branch: prev.sourceBranch, pull: prev.number, ...(mergeBase ? { base: mergeBase } : {}) } } : {}),
   });
   await d.tracker.addComment(t.issue, `Фабрика взяла задачу: запуск ${runId}, задание агента ${job.url}`);

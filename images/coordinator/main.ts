@@ -27,7 +27,7 @@ import { ciRerun } from './ci-rerun.ts';
 import { loadConfig, stepEnvFor } from './config.ts';
 import { coordinator } from './coordinator.ts';
 import { deliveryLoop } from './delivery.ts';
-import { designHandler, startDesign } from './design.ts';
+import { acceptedMockups, designHandler, startDesign } from './design.ts';
 import { git } from './git.ts';
 import { DEFAULT_GUARD } from './guard.ts';
 import { incidentLoop } from './incidents.ts';
@@ -54,6 +54,8 @@ import { agentTaskWorkflow } from './workflow.ts';
 const log = (m: string) => console.log(`${new Date().toISOString()} ${m}`);
 const cfg = loadConfig();
 const runs = runStore(join(cfg.data, 'runs'));
+// Принятые макеты экранов (сверка макета): последний на задачу - агенту задачи.
+const mockups = acceptedMockups(join(cfg.data, 'mockups'));
 const deps: Deps = {
   tracker: selectTracker(cfg.tracker),
   forge: selectForge(cfg.forge),
@@ -64,6 +66,7 @@ const deps: Deps = {
   brokerUrl: cfg.broker.url,
   labels: cfg.labels,
   guard: DEFAULT_GUARD,
+  mockup: (issue) => mockups.read(issue),
 };
 // Знание для сверки - рабочая копия ветки по умолчанию цели; ссылки - на её коммит.
 const knowledgeDir = join(cfg.data, 'knowledge');
@@ -291,10 +294,14 @@ const checks = checkLoop({
       if (chat) await chat.post(channel, text);
       else log(text);
     }),
-    design: designHandler(deps.tracker, async (channel, text) => {
-      if (chat) await chat.post(channel, text);
-      else log(text);
-    }),
+    design: designHandler(
+      deps.tracker,
+      async (channel, text) => {
+        if (chat) await chat.post(channel, text);
+        else log(text);
+      },
+      { runs, mockups },
+    ),
   },
   saveCodexAuth: (auth) => {
     if (auth.trim()) writeFileSync(join(cfg.data, 'codex-auth.json'), auth, { mode: 0o600 });

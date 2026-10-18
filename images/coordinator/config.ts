@@ -96,11 +96,13 @@ export function stepEnvFor(cfg: Config, m: RunMeta): Record<string, string> {
   }
   // Доработка: тест до кода сравнивает изменение всей ветки с общим предком (REWORK_BASE), а не с
   // прошлой попыткой - иначе тесты прошлой попытки "проходят на коде базы".
+  // FACTORY_MOCKUP - в запуске есть принятый макет экрана: шаг берёт его у посредника.
   return {
     ...cfg.stepEnv,
     ...id,
     FACTORY_ROLE: m.role ?? 'dev',
     ...(m.rework?.base ? { REWORK_BASE: m.rework.base } : {}),
+    ...(m.mockup ? { FACTORY_MOCKUP: '1' } : {}),
     ...cfg.stepSecrets(),
   };
 }

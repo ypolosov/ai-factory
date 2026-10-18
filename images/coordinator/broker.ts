@@ -6,6 +6,7 @@
 //   GET  /v1/task              текст задачи
 //   GET  /v1/repo              рабочая копия цели (git bundle или архив tar.gz)
 //   GET  /v1/input             вход проверки (дифф PR, картинка макета)
+//   GET  /v1/mockup            принятый макет экрана задачи для агента (PNG), если он есть в запуске
 //   GET  /v1/env               переменные шага с ключами (JSON); выдаются один раз
 //   PUT  /v1/files/<имя>       agent.patch, run.json, agent.log, secrets.json, tests.json, result.json
 //   POST /v1/done              {"exit_code": N} - шаг закончил; после этого запуск только читается
@@ -66,6 +67,11 @@ export function broker(o: BrokerOptions): Server {
               : (o.runs.read(meta.runId, 'repo.bundle') ?? o.runs.read(meta.runId, 'repo.tar.gz'));
         if (!file) throw new HttpError(404, 'нет данных запуска');
         return send(200, file, route === 'GET /v1/task' ? 'text/markdown; charset=utf-8' : 'application/octet-stream');
+      }
+      if (route === 'GET /v1/mockup') {
+        const file = o.runs.read(meta.runId, 'mockup.png');
+        if (!file) throw new HttpError(404, 'нет макета в запуске');
+        return send(200, file, 'image/png');
       }
       if (route === 'GET /v1/env') {
         if (meta.envServed) throw new HttpError(410, 'переменные шага уже выданы');
