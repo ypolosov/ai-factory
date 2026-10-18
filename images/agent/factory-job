@@ -4,7 +4,8 @@
 #
 # Вход:  BROKER_URL, RUN_TOKEN - разовый ключ запуска (у исполнителя - скрытая переменная).
 #        Вид задания - FACTORY_JOB от посредника: agent (по умолчанию), judge (судья PR),
-#        design (сверка макета), scan (сканеры изменения PR).
+#        design (сверка макета), scan (сканеры изменения PR). FACTORY_MOCKUP - у агента есть
+#        принятый макет экрана задачи.
 # Выход: agent.patch, run.json, agent.log, secrets.json (находки Gitleaks в добавленных строках,
 #        значения скрыты), tests.json (тест до кода) и код агента - у посредника; код шага = код агента.
 # Ключи шага (подписка, шлюз) приходят только от посредника, не печатаются и живут в окружении
@@ -74,9 +75,16 @@ esac
 
 broker -o "$work/repo.bundle" "$BROKER_URL/v1/repo"
 git clone -q "$work/repo.bundle" "$work/repo"
+# Принятый макет экрана (FACTORY_MOCKUP от посредника) - рядом с заданием, вне рабочей копии:
+# в коммит агента он не попадёт.
+set --
+if [ -n "${FACTORY_MOCKUP:-}" ]; then
+	broker -o "$work/mockup.png" "$BROKER_URL/v1/mockup"
+	set -- --mockup "$work/mockup.png"
+fi
 
 set +e
-(cd "$work/repo" && factory-agent --task "$work/task.md" --out "$work/out")
+(cd "$work/repo" && factory-agent --task "$work/task.md" --out "$work/out" "$@")
 rc=$?
 set -e
 # Секреты в добавленных строках патча: правила Gitleaks фабрики, значения в отчёте скрыты.

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadConfig } from '../config.ts';
+import { loadConfig, stepEnvFor } from '../config.ts';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -57,5 +57,20 @@ describe('учётка фабрики в GitHub', () => {
     });
     expect(cfg.forge.token).toBe('human');
     expect(cfg.git.write?.token).toBe('human');
+  });
+});
+
+describe('переменные шага агента', () => {
+  it('в запуске есть принятый макет экрана - шаг берёт его у посредника (FACTORY_MOCKUP), нет - переменной нет', () => {
+    const cfg = loadConfig({
+      COORDINATOR_SECRETS: secrets({
+        'github-target.env': 'GITHUB_TARGET_REPO=o/prize-draw\nGITHUB_PUBLISH_TOKEN=human\n',
+        'gw-agent-sub.key': 'k\n',
+        'claude-oauth.token': 't\n',
+      }),
+    });
+    const m = { runId: 'DRAW-1-x', issue: 'DRAW-1', tokenHash: '', createdAt: '', envServed: false, done: false, role: 'frontend' };
+    expect(stepEnvFor(cfg, { ...m, mockup: true })).toMatchObject({ FACTORY_ROLE: 'frontend', FACTORY_MOCKUP: '1' });
+    expect(stepEnvFor(cfg, m)).not.toHaveProperty('FACTORY_MOCKUP');
   });
 });

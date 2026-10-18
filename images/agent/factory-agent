@@ -2,6 +2,8 @@
 # Контракт исполнителя: любая обвязка запускается одинаково.
 #
 # Вход:  рабочая копия в текущем каталоге; --task ФАЙЛ (текст задачи вне рабочей копии); --out КАТАЛОГ;
+#        --mockup ФАЙЛ - принятый макет экрана (PNG), необязательно: копия вне рабочей копии,
+#        путь к ней - в конце промпта;
 #        FACTORY_ROLE = dev | spec | tests (промпт роли - /etc/factory/prompts/РОЛЬ.md);
 #        FACTORY_EXECUTOR = opencode | claude | codex; FACTORY_MODEL (псевдоним шлюза
 #        для opencode, модель вендора для claude и codex, default - модель обвязки);
@@ -17,10 +19,12 @@ set -eu
 
 task=""
 out=""
+mockup=""
 while [ $# -gt 0 ]; do
 	case $1 in
 	--task) task=$2 && shift 2 ;;
 	--out) out=$2 && shift 2 ;;
+	--mockup) mockup=$2 && shift 2 ;;
 	*) echo "неизвестный аргумент: $1" >&2 && exit 2 ;;
 	esac
 done
@@ -29,6 +33,7 @@ if [ -z "$task" ] || [ ! -f "$task" ]; then
 	exit 2
 fi
 [ -n "$out" ] || { echo "нужен --out КАТАЛОГ" >&2 && exit 2; }
+[ -z "$mockup" ] || [ -f "$mockup" ] || { echo "нет файла макета $mockup" >&2 && exit 2; }
 mkdir -p "$out"
 task=$(cd "$(dirname "$task")" && pwd)/$(basename "$task")
 out=$(cd "$out" && pwd)
@@ -51,6 +56,21 @@ prompt="$(cat "$role_prompt")
 
 --- задача ---
 $(cat "$task")"
+
+# Макет экрана - картинкой вне рабочей копии (в коммит не попадёт): каталог читает обвязка
+# от node, путь - в промпте. Claude Code читает картинку по пути (каталог - через --add-dir),
+# Codex получает её ещё и вложением (-i).
+mockup_dir=""
+if [ -n "$mockup" ]; then
+	mockup_dir=$(mktemp -d)
+	cp "$mockup" "$mockup_dir/mockup.png"
+	chown -R node:node "$mockup_dir"
+	mockup=$mockup_dir/mockup.png
+	prompt="$prompt
+
+--- макет экрана ---
+Картинка макета (PNG): $mockup"
+fi
 
 # Рабочая копия переходит пользователю node: агент правит её, а git в ней
 # запускается тоже от node (настройки .git под контролем агента).
@@ -78,11 +98,13 @@ run_harness() {
 	claude)
 		# Подписка владельца: токен claude setup-token, запросы - прозрачно через шлюз.
 		[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || { echo "нет CLAUDE_CODE_OAUTH_TOKEN" >&2 && exit 2; }
+		set --
+		[ -z "$mockup_dir" ] || set -- --add-dir "$mockup_dir"
 		# shellcheck disable=SC2086
 		ANTHROPIC_BASE_URL=$GATEWAY_URL \
 			ANTHROPIC_CUSTOM_HEADERS="$(printf 'x-gateway-key: %s\nx-task-id: %s' "$GATEWAY_KEY" "$TASK_ID")" \
 			factory-untrusted $gw -e ANTHROPIC_BASE_URL -e ANTHROPIC_CUSTOM_HEADERS -e CLAUDE_CODE_OAUTH_TOKEN \
-			claude -p "$prompt" --model "$FACTORY_MODEL" --permission-mode acceptEdits \
+			claude -p "$prompt" --model "$FACTORY_MODEL" "$@" --permission-mode acceptEdits \
 			--allowedTools "Bash Read Edit Write Glob Grep" >>"$out/agent.log" 2>&1
 		rc=$?
 		;;
@@ -97,6 +119,7 @@ run_harness() {
 		auth_before=$(sha256sum "$auth")
 		set --
 		[ "$FACTORY_MODEL" = default ] || set -- -m "$FACTORY_MODEL"
+		[ -z "$mockup" ] || set -- "$@" -i "$mockup"
 		# Своя песочница Codex (bubblewrap) в контейнере без прав на пространства имён
 		# не запускает ни одной команды; песочница здесь - контейнер задания и пользователь node.
 		# shellcheck disable=SC2086
@@ -166,6 +189,7 @@ fi
 set -e
 [ -z "${watch:-}" ] || kill "$watch" 2>/dev/null || true
 rm -f "$hdr" "$hdr.out"
+[ -z "$mockup_dir" ] || rm -rf "$mockup_dir"
 end=$(date +%s)
 
 factory-untrusted git add -A

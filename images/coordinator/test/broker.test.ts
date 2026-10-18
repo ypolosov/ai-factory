@@ -49,6 +49,16 @@ describe('посредник шага', () => {
     expect((await call(token, 'GET', '/v1/env')).status).toBe(410);
   });
 
+  it('принятый макет экрана шаг получает картинкой, когда он есть в запуске', async () => {
+    const { token } = runs.create('R-4', 'DRAW-4');
+    expect((await call(token, 'GET', '/v1/mockup')).status).toBe(404);
+    runs.write('R-4', 'mockup.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const r = await call(token, 'GET', '/v1/mockup');
+    expect(r.headers.get('content-type')).toBe('image/png');
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    expect((await call(token, 'PUT', '/v1/files/mockup.png', 'x')).status).toBe(400);
+  });
+
   it('итог шага сдаётся один раз, лишние и большие файлы не принимаются', async () => {
     const { token } = runs.create('R-2', 'DRAW-2');
     expect((await call(token, 'PUT', '/v1/files/agent.patch', 'diff')).status).toBe(204);
