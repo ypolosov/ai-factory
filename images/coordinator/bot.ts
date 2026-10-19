@@ -73,7 +73,8 @@ export async function daily(d: BotDeps): Promise<string> {
 }
 
 export async function answer(d: BotDeps, m: ChatMessage): Promise<string | undefined> {
-  const text = m.text.replace(/<@!?\d+>/g, '').trim();
+  // Упоминания учёток и ролей - не часть вопроса (служебная роль бота - тоже обращение к нему).
+  const text = m.text.replace(/<@[!&]?\d+>/g, '').trim();
   const tool = d.chatTool ?? 'discord';
   // Точка решения: отказ, если у учётки нет нужной роли; иначе - undefined.
   const gate = async (decision: Decision): Promise<string | undefined> => {

@@ -1,0 +1,17 @@
+  # Стенд цели демо (prize-draw): служба cd выкладывает его в Docker стенда, порт 8082 -
+  # веб, /api проксируется на API. ensure_gatus дописывает эти проверки, когда поднят
+  # экземпляр демо (scripts/demo-up.sh). Только наблюдение, без оповещений: оповещения Gatus
+  # заводят задачи в Forgejo (gitea), а задачи цели демо живут в Jira (поставщика оповещений
+  # для Jira у Gatus нет).
+  - name: prize-draw
+    group: стенд демо
+    url: "http://deploy-dind:8082/"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+  - name: prize-draw-api
+    group: стенд демо
+    url: "http://deploy-dind:8082/api/draws"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
