@@ -23,7 +23,7 @@ describe('факты о фабрике из её файлов', () => {
   it('точки решения ролей', async () => {
     const d = parseDecisions(await repo('images/coordinator/roles.ts'));
     expect(d.map((x) => x.id)).toEqual(
-      ['deploy', 'approve-slice', 'slice', 'submit-task', 'story', 'propose-rule', 'rerun-checks', 'design-check'].map(
+      ['deploy', 'approve-slice', 'slice', 'submit-task', 'story', 'propose-rule', 'rerun-checks', 'design-check', 'factory-config'].map(
         (k) => `decision:${k}`,
       ),
     );
