@@ -10,7 +10,22 @@ import { type GitDocsConfig, gitDocsKnowledge } from './gitdocs.ts';
 import { type GithubConfig, githubCi, githubForge } from './github.ts';
 import { type GlitchtipConfig, glitchtipIncidents } from './glitchtip.ts';
 import { type JiraConfig, jiraTracker } from './jira.ts';
-import type { Chat, Forge, Incidents, JobRunner, Knowledge, Mockups, Notifier, Registry, TargetCi, Tracker, Wiki } from './ports.ts';
+import { type MiroConfig, miroDiagrams } from './miro.ts';
+import { type PlantUmlConfig, plantumlDiagrams } from './plantuml.ts';
+import type {
+  Chat,
+  Diagrams,
+  Forge,
+  Incidents,
+  JobRunner,
+  Knowledge,
+  Mockups,
+  Notifier,
+  Registry,
+  TargetCi,
+  Tracker,
+  Wiki,
+} from './ports.ts';
 
 export type TrackerConfig = ({ kind: 'jira' } & JiraConfig) | ({ kind: 'forgejo' } & ForgejoConfig);
 export type ForgeConfig = ({ kind: 'github' } & GithubConfig) | ({ kind: 'forgejo' } & ForgejoConfig);
@@ -22,6 +37,7 @@ export type WikiConfig = { kind: 'confluence' } & ConfluenceConfig;
 export type RegistryConfig = { kind: 'ghcr' } & GhcrConfig;
 export type IncidentsConfig = { kind: 'glitchtip' } & GlitchtipConfig;
 export type MockupsConfig = { kind: 'figma' } & FigmaConfig;
+export type DiagramsConfig = ({ kind: 'plantuml' } & PlantUmlConfig) | ({ kind: 'miro' } & MiroConfig);
 
 export function selectTracker(c: TrackerConfig): Tracker {
   return c.kind === 'jira' ? jiraTracker(c) : forgejoTracker(c);
@@ -65,4 +81,8 @@ export function selectMockups(c: MockupsConfig): Mockups {
 
 export function selectTargetCi(c: ForgeConfig): TargetCi | undefined {
   return c.kind === 'github' ? githubCi(c) : undefined;
+}
+
+export function selectDiagrams(c: DiagramsConfig): Diagrams {
+  return c.kind === 'miro' ? miroDiagrams(c) : plantumlDiagrams(c);
 }

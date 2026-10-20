@@ -1,0 +1,216 @@
+{
+  "_stage": "layouted",
+  "elements": {},
+  "views": {
+    "probe": {
+      "id": "probe",
+      "title": "Проба последовательности",
+      "_type": "dynamic",
+      "sourcePath": "seq.c4",
+      "nodes": [
+        {
+          "id": "eng.dev",
+          "kind": "person",
+          "title": "Разработчик (оркестратор)",
+          "x": 7,
+          "y": 637,
+          "width": 320,
+          "height": 180
+        },
+        {
+          "id": "exo",
+          "kind": "external",
+          "title": "Экзокортекс человека",
+          "x": 631,
+          "y": 526,
+          "width": 370,
+          "height": 180
+        },
+        {
+          "id": "factory.mcp",
+          "kind": "container",
+          "title": "MCP фабрики",
+          "x": 1317,
+          "y": 483,
+          "width": 333,
+          "height": 180
+        },
+        {
+          "id": "factory.cd",
+          "kind": "container",
+          "title": "Выкладка и наблюдение",
+          "x": 0,
+          "y": 347,
+          "width": 334,
+          "height": 180
+        },
+        {
+          "id": "jira",
+          "kind": "external",
+          "title": "Jira",
+          "x": 656,
+          "y": 816,
+          "width": 320,
+          "height": 180
+        },
+        {
+          "id": "eng.rev",
+          "kind": "person",
+          "title": "Ревьюер (человек)",
+          "x": 7,
+          "y": 0,
+          "width": 320,
+          "height": 180
+        },
+        {
+          "id": "github",
+          "kind": "external",
+          "title": "GitHub",
+          "x": 632,
+          "y": 0,
+          "width": 368,
+          "height": 180
+        },
+        {
+          "id": "factory.coord",
+          "kind": "container",
+          "title": "Координатор",
+          "x": 1288,
+          "y": 816,
+          "width": 392,
+          "height": 180
+        },
+        {
+          "id": "bitbucket",
+          "kind": "external",
+          "title": "Bitbucket Cloud",
+          "x": 1962,
+          "y": 671,
+          "width": 363,
+          "height": 180
+        },
+        {
+          "id": "discord",
+          "kind": "external",
+          "title": "Discord",
+          "x": 1984,
+          "y": 961,
+          "width": 320,
+          "height": 180
+        }
+      ],
+      "edges": [
+        {
+          "id": "step-01",
+          "source": "eng.dev",
+          "target": "exo",
+          "label": "беру задачу",
+          "notes": null
+        },
+        {
+          "id": "step-02",
+          "source": "exo",
+          "target": "factory.mcp",
+          "label": "контекст задачи",
+          "notes": null
+        },
+        {
+          "id": "step-03",
+          "source": "factory.mcp",
+          "target": "exo",
+          "label": "требования, ссылки",
+          "notes": null
+        },
+        {
+          "id": "step-04",
+          "source": "factory.cd",
+          "target": "factory.cd",
+          "label": "тянет образ",
+          "notes": null
+        },
+        {
+          "id": "step-05",
+          "source": "eng.dev",
+          "target": "jira",
+          "label": "метка agent",
+          "notes": {
+            "txt": "HITL: замысел"
+          }
+        },
+        {
+          "id": "step-06:alt.01:when.01",
+          "source": "eng.rev",
+          "target": "github",
+          "label": "замечания",
+          "notes": null
+        },
+        {
+          "id": "step-06:alt.01:when.02",
+          "source": "factory.coord",
+          "target": "bitbucket",
+          "label": "повтор исполнения",
+          "notes": null
+        },
+        {
+          "id": "step-06:alt.02:else.01",
+          "source": "eng.rev",
+          "target": "github",
+          "label": "одобрение и слияние",
+          "notes": null
+        },
+        {
+          "id": "step-07:par.01",
+          "source": "factory.coord",
+          "target": "jira",
+          "label": "закрыть задачу",
+          "notes": null
+        },
+        {
+          "id": "step-07:par.02",
+          "source": "factory.coord",
+          "target": "discord",
+          "label": "сообщить",
+          "notes": null
+        }
+      ],
+      "flow": [
+        "step-01",
+        "step-02",
+        "step-03",
+        "step-04",
+        "step-05",
+        {
+          "flow": [
+            {
+              "flow": [
+                "step-06:alt.01:when.01",
+                "step-06:alt.01:when.02"
+              ],
+              "_type": "alt-when",
+              "id": "step-06:alt.01:when",
+              "title": "доработать"
+            },
+            {
+              "flow": [
+                "step-06:alt.02:else.01"
+              ],
+              "_type": "alt-else",
+              "id": "step-06:alt.02:else",
+              "title": "принять"
+            }
+          ],
+          "_type": "alt",
+          "id": "step-06:alt"
+        },
+        {
+          "flow": [
+            "step-07:par.01",
+            "step-07:par.02"
+          ],
+          "_type": "par",
+          "id": "step-07:par"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+@startuml uc1
+' Сгенерировано из модели (docs/model): правка - в модели, а не здесь.
+!include ../../demo/diagrams/common-uml.puml
+
+title UC1 Требование -> согласование знаний -> решение архитектора
+footer Источник: модель, версия d13ec5240e8f
+
+actor "Product Owner" as e_product_dpo
+participant "Бот" as e_factory_dbot
+participant "База знаний" as e_factory_dkb
+participant "Confluence" as e_confluence
+participant "Сверщик (агент)" as e_factory_dreconciler
+participant "Jira" as e_jira
+actor "Архитектор" as e_eng_darchitect
+participant "Репозиторий цели" as e_github_drepo
+autonumber
+e_product_dpo -> e_factory_dbot : что известно про невостребованные призы?
+e_factory_dbot -> e_factory_dkb : поиск
+e_factory_dkb -> e_factory_dbot : ADR-3 &#34;результат воспроизводим из зафиксированного зерна&#34;, задача DRAW-7, обсуждение в канале
+e_factory_dbot -> e_product_dpo : выжимка со ссылками
+e_product_dpo -> e_confluence : стори &#34;разыграть невостребованный приз заново среди всех участников&#34;
+e_factory_dkb -> e_confluence : опрос изменений: новая версия страницы
+e_factory_dkb -> e_factory_dreconciler : сверить новое утверждение
+e_factory_dreconciler -> e_factory_dkb : связь: стори и ADR-3 - противоречие
+e_factory_dreconciler -> e_jira : задача архитектору: цитаты обеих сторон, ссылки
+e_factory_dreconciler -> e_factory_dbot : уведомление в канал продукта
+e_eng_darchitect -> e_github_drepo : PR: ADR-3 уточнён - повтор берёт следующего кандидата из той же последовательности, правило-страж
+note right of e_github_drepo : слияние PR = решение; страж запрещает новый случайный выбор вне drawWinners
+e_github_drepo -> e_factory_dkb : правила и решения обновлены
+e_factory_dbot -> e_product_dpo : согласовано, ссылка на ADR-3; можно нарезать задачи (UC2)
+@enduml

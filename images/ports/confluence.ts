@@ -14,23 +14,63 @@ export interface ConfluenceConfig {
 type Json = Record<string, unknown>;
 
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const inline = (t: string) => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>');
+// Внутри `кода` ничего не размечается; точка или запятая в конце адреса - не часть ссылки.
+const inline = (t: string) =>
+  esc(t)
+    .split(/(`[^`]+`)/)
+    .map((part) =>
+      /^`[^`]+`$/.test(part)
+        ? `<code>${part.slice(1, -1)}</code>`
+        : part.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/(https?:\/\/[^\s<]*[^\s<.,;:!?)])/g, '<a href="$1">$1</a>'),
+    )
+    .join('');
+const cells = (row: string) =>
+  row
+    .trim()
+    .replace(/^\||\|$/g, '')
+    .split(/(?<!\\)\|/)
+    .map((c) => c.trim().replace(/\\\|/g, '|'));
 
-// Текст -> формат хранения Confluence: "## " - заголовок, "- " - список, остальное - абзацы.
+// Текст -> формат хранения Confluence: "# ".."#### " - заголовки, "- " - список, "1. " -
+// нумерованный, строки "| ... |" - таблица (первая - шапка, строка "|---|" пропускается),
+// остальное - абзацы; внутри строки `код`, **жирный** и ссылки.
 export function toStorage(text: string): string {
   const out: string[] = [];
   let list: string[] = [];
+  let kind: 'ul' | 'ol' = 'ul';
+  let table: string[][] = [];
   const flush = () => {
-    if (list.length) out.push(`<ul>${list.map((l) => `<li>${inline(l)}</li>`).join('')}</ul>`);
+    if (list.length) out.push(`<${kind}>${list.map((l) => `<li>${inline(l)}</li>`).join('')}</${kind}>`);
     list = [];
+    if (table.length) {
+      const [head = [], ...rows] = table;
+      const tr = (r: string[], tag: string) => `<tr>${r.map((c) => `<${tag}>${inline(c)}</${tag}>`).join('')}</tr>`;
+      out.push(`<table><tbody>${tr(head, 'th')}${rows.map((r) => tr(r, 'td')).join('')}</tbody></table>`);
+    }
+    table = [];
   };
   for (const line of text.split('\n')) {
-    if (line.startsWith('- ')) {
-      list.push(line.slice(2));
+    const item = /^- (.*)$/.exec(line) ?? /^\d+\. (.*)$/.exec(line);
+    if (item) {
+      const k = line.startsWith('- ') ? 'ul' : 'ol';
+      if (table.length || (list.length && k !== kind)) flush();
+      kind = k;
+      list.push(item[1] ?? '');
+      continue;
+    }
+    if (/^\|.*\|\s*$/.test(line)) {
+      if (list.length) {
+        const keep = table;
+        table = [];
+        flush();
+        table = keep;
+      }
+      if (!/^\|[\s|:-]+\|\s*$/.test(line)) table.push(cells(line));
       continue;
     }
     flush();
-    if (line.startsWith('## ')) out.push(`<h2>${inline(line.slice(3))}</h2>`);
+    const h = /^(#{1,4}) (.*)$/.exec(line);
+    if (h) out.push(`<h${h[1]?.length}>${inline(h[2] ?? '')}</h${h[1]?.length}>`);
     else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
   }
   flush();

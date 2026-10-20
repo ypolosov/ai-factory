@@ -1,0 +1,193 @@
+// Модель фабрики ПО на ИИ: люди, фабрика и её контейнеры, цель и её контейнеры, внешние
+// системы. Идентификаторы - латиницей, подписи - по-русски. Схемы и тексты берут элементы
+// отсюда, а не описывают их заново.
+model {
+  product = person 'Продукт' {
+    description 'Product Owner, Project Manager: требования, планирование, отчёты'
+
+    po = person 'Product Owner' {
+      description 'Владелец продукта: стори и приоритеты'
+    }
+  }
+  eng = person 'Инженеры' {
+    description 'Архитектор, дизайнер, разработчики BE и FE, QA, DevOps'
+
+    developer = person 'Разработчик (оркестратор)' {
+      description 'Ведёт задачу со своими агентами'
+    }
+    reviewer = person 'Ревьюер (человек)' {
+      description 'Смотрит PR и решает о слиянии'
+    }
+    architect = person 'Архитектор' {
+      description 'Решает конфликты знаний, ведёт ADR'
+    }
+  }
+  ops = person 'Эксплуатация и релиз' {
+    description 'Инженер эксплуатации, релиз-менеджер'
+  }
+  human = person 'Человек-агент' {
+    description 'Любая роль; оркестратор своей команды агентов'
+  }
+  users = person 'Участники и организаторы' {
+    description 'Пользователи приложения'
+  }
+  participant = person 'Участник' {
+    description 'Подаёт заявку, смотрит результаты, подтверждает получение приза'
+  }
+  organizer = person 'Организатор' {
+    description 'Создаёт розыгрыш: призы, период, число победителей; запускает выбор'
+  }
+
+  exo = external 'Экзокортекс человека' {
+    description 'У каждого свой: обвязка агентов (Claude Code, Codex, Cursor), навыки, практики'
+  }
+
+  factory = system 'Фабрика ПО на ИИ' {
+    description 'Координирует работу, исполняет задачи агентами, проверяет результат стражами правил и управлением, ведёт базу знаний'
+
+    mcp = container 'MCP фабрики' {
+      technology 'TypeScript, MCP'
+      description 'Вход для экзокортексов: контекст задачи, поиск со ссылками, предложение правки'
+    }
+    bot = container 'Бот' {
+      technology 'TypeScript, Discord'
+      description 'Вопросы к базе, уведомления, команды: перезапуск проверок'
+    }
+    coord = container 'Координатор' {
+      technology 'TypeScript, Mastra core'
+      description 'Фазы задачи с режимом HITL/HOTL/HOOTL; ждёт решения человека; запускает задания'
+    }
+    kb = database 'База знаний' {
+      technology 'PostgreSQL; на переходе Onyx'
+      description 'Правда - git; индексы, граф связей, конфликты, правила-стражи'
+    }
+    guards = container 'Стражи и управление' {
+      technology 'правила из git, судьи'
+      description 'Проверки по правилам; судья другого семейства; политика слияния'
+    }
+    pipes = container 'Задания фабрики' {
+      technology 'Bitbucket Pipelines, POSIX sh'
+      description 'Тесты до кода, исполнение, публикация PR, стражи, сверка'
+    }
+    collect = container 'Сборщики' {
+      technology 'хаб MCP проекта'
+      description 'Jira, Confluence, GitHub, Discord: ссылка и отпечаток версии'
+    }
+    gw = container 'Шлюз моделей' {
+      technology 'agentgateway'
+      description 'Ключи ролей, маршруты, учёт цены по задаче'
+    }
+    runner = container 'Свой раннер и образ исполнителя' {
+      technology 'Bitbucket runner, Docker'
+      description 'Claude Code, Codex, OpenCode за одним контрактом; выход в сеть - через прокси'
+    }
+    egress = container 'Прокси выхода' {
+      technology 'allowlist'
+      description 'Единственный выход в сеть для заданий'
+    }
+    cd = container 'Выкладка и наблюдение' {
+      technology 'deployer, Gatus, GlitchTip'
+      description 'Образ из GHCR на стенд; сбой - задача в трекере'
+    }
+    reconciler = container 'Сверщик (агент)' {
+      technology 'агент фабрики'
+      description 'Сверяет новые утверждения со знанием: противоречия, правила-кандидаты'
+    }
+  }
+
+  target = system 'Целевая система Розыгрыш призов' {
+    description 'Фронтенд и бэкенд: розыгрыши, заявки, честный выбор победителей'
+
+    spa = container 'Веб-приложение' {
+      technology 'TypeScript, React, Vite; nginx'
+      description 'Активные розыгрыши, заявка, результаты с проверкой честности, кабинет организатора'
+    }
+    api = container 'API' {
+      technology 'TypeScript, NestJS'
+      description 'Розыгрыши, заявки, выбор победителей из зафиксированного зерна, подтверждение приза, повторный розыгрыш'
+    }
+    db = database 'База' {
+      technology 'PostgreSQL'
+      description 'Розыгрыши, заявки, победители; одна заявка - уникальным ключом'
+    }
+  }
+
+  jira = external 'Jira' {
+    description 'Задачи и статусы'
+  }
+  confluence = external 'Confluence' {
+    description 'Требования, страницы продукта'
+  }
+  discord = external 'Discord' {
+    description 'Каналы команды, бот фабрики'
+  }
+  bitbucket = external 'Bitbucket Cloud' {
+    description 'Платформа фабрики: репозиторий и Pipelines'
+  }
+  github = external 'GitHub' {
+    description 'Платформа цели: репозиторий, Actions, GHCR'
+
+    repo = external 'Репозиторий цели' {
+      description 'Код, правила и ADR цели; PR и статусы'
+    }
+    actions = external 'Actions (CI цели)' {
+      description 'Сборка, тесты, e2e; образы в GHCR'
+    }
+  }
+  llm = external 'Вендоры моделей' {
+    description 'Anthropic, OpenAI - подписки; OpenRouter - эмбеддинги'
+  }
+
+  // Контекст (C4 L1)
+  product -> exo 'работают через'
+  eng -> exo 'работают через'
+  ops -> exo 'работают через'
+  product -> jira 'задачи, планы'
+  product -> confluence 'требования'
+  ops -> discord 'алерты, команды боту'
+  users -> target 'участвуют, проводят розыгрыши'
+  factory -> jira 'читает и ведёт задачи'
+  factory -> confluence 'собирает знание'
+  factory -> discord 'ответы, уведомления'
+  factory -> bitbucket 'свои задания на своём раннере'
+  factory -> github 'PR, статусы стражей'
+  factory -> llm 'модели через шлюз'
+  github -> target 'CI собирает образы'
+  factory -> target 'выкладка на стенд, наблюдение'
+
+  // Контейнеры фабрики (C4 L2)
+  human -> exo 'работает через'
+  human -> discord 'вопросы, решения'
+  exo -> factory.mcp 'MCP фабрики; правила из git'
+  factory.mcp -> factory.kb 'поиск, контекст'
+  factory.bot -> factory.kb 'поиск'
+  factory.bot -> discord 'сообщения'
+  factory.coord -> jira 'события задач, статусы'
+  factory.coord -> factory.bot 'уведомления, ожидание решения'
+  factory.collect -> confluence 'опрос изменений'
+  factory.collect -> jira 'опрос изменений'
+  factory.collect -> factory.kb 'записи со ссылками'
+  factory.coord -> bitbucket 'запуск задания с ключом задачи'
+  bitbucket -> factory.runner 'шаги задания'
+  factory.runner -> factory.pipes 'исполняет'
+  factory.pipes -> factory.guards 'проверяет результат'
+  factory.guards -> factory.kb 'правила-стражи'
+  factory.runner -> factory.egress 'весь выход'
+  factory.egress -> github 'клон; PR и статусы - отдельным шагом публикации'
+  factory.egress -> llm 'подписки вендора'
+  factory.runner -> factory.gw 'модели'
+  factory.gw -> llm 'подписки и ключи'
+  github -> factory.cd 'образы в GHCR'
+  factory.cd -> target 'выкладка, доступность'
+  factory.cd -> jira 'сбой - задача'
+  factory.reconciler -> factory.kb 'связи и противоречия'
+  factory.reconciler -> jira 'задачи архитектору'
+  factory.reconciler -> factory.bot 'уведомления'
+
+  // Контейнеры цели (C4 L2)
+  participant -> target.spa 'участвует'
+  organizer -> target.spa 'проводит розыгрыш'
+  target.spa -> target.api 'вызывает'
+  target.api -> target.db 'читает и пишет'
+  target.api -> discord 'уведомления'
+}

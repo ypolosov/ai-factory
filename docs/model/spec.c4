@@ -1,0 +1,32 @@
+// Модель фабрики - источник правды для схем и текстов (docs/publications/manifest.md).
+// Виды элементов и их стиль - одни на все схемы и носители.
+specification {
+  element person {
+    style {
+      shape person
+      color green
+    }
+  }
+  element system {
+    style {
+      color primary
+    }
+  }
+  element external {
+    style {
+      color muted
+    }
+  }
+  element container {
+    style {
+      color secondary
+    }
+  }
+  element database {
+    style {
+      shape cylinder
+      color secondary
+    }
+  }
+  deploymentNode node
+}

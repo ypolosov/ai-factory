@@ -1,7 +1,15 @@
 // Эталонный адаптер в памяти проходит контракт: так проверяется сам набор тестов.
 
-import { forgeContract, jobsContract, KNOWLEDGE_DOCS, knowledgeContract, trackerContract, wikiContract } from './contract.ts';
-import { memoryForge, memoryJobs, memoryKnowledge, memoryTracker, memoryWiki } from './memory.ts';
+import {
+  diagramsContract,
+  forgeContract,
+  jobsContract,
+  KNOWLEDGE_DOCS,
+  knowledgeContract,
+  trackerContract,
+  wikiContract,
+} from './contract.ts';
+import { memoryDiagrams, memoryForge, memoryJobs, memoryKnowledge, memoryTracker, memoryWiki } from './memory.ts';
 
 trackerContract('в памяти', async () => ({ tracker: memoryTracker(), cleanup: async () => {} }));
 
@@ -21,3 +29,5 @@ jobsContract('в памяти', async () => ({
 knowledgeContract('в памяти', async () => ({ knowledge: memoryKnowledge(KNOWLEDGE_DOCS), cleanup: async () => {} }));
 
 wikiContract('в памяти', async () => ({ wiki: memoryWiki(), cleanup: async () => {} }));
+
+diagramsContract('в памяти', async () => ({ diagrams: memoryDiagrams(), cleanup: async () => {} }), { sequence: true });

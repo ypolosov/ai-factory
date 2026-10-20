@@ -1,9 +1,9 @@
-.PHONY: check test fmt contract contract-saas diagrams platforms-check up smoke gateway-check down
+.PHONY: check test fmt contract contract-saas diagrams publications publications-miro guides guides-confluence platforms-check up smoke gateway-check down
 
 SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
 	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
 	images/agent/factory-publish images/agent/factory-untrusted images/agent/factory-role images/agent/factory-feedback images/agent/factory-tasks images/agent/factory-acceptance images/agent/factory-mutation images/agent/factory-npm-ci images/agent/factory-pr-comment images/agent/factory-gate images/agent/factory-judge images/agent/factory-deps images/agent/factory-scan images/agent/factory-test-first images/agent/factory-utf8-head images/agent/factory-reconcile images/agent/factory-job images/agent/factory-design images/portal/portal.sh images/deployer/deployer \
-	scripts/deploy.sh scripts/rollback.sh scripts/rework.sh scripts/task-report.sh scripts/kb-up.sh scripts/kb-setup.sh scripts/kb-model.sh scripts/kb-ask.sh scripts/factory-report.sh scripts/demo.sh scripts/port-contract.sh scripts/platforms-check.sh scripts/bb-api.sh scripts/bb-commit.sh scripts/bb-images.sh scripts/jira-api.sh scripts/port-contract-saas.sh scripts/demo-up.sh scripts/persona-atlassian-add.sh scripts/persona-github-app-add.sh images/cd/factory-cd
+	scripts/deploy.sh scripts/rollback.sh scripts/rework.sh scripts/task-report.sh scripts/kb-up.sh scripts/kb-setup.sh scripts/kb-model.sh scripts/kb-ask.sh scripts/factory-report.sh scripts/demo.sh scripts/port-contract.sh scripts/platforms-check.sh scripts/bb-api.sh scripts/bb-commit.sh scripts/bb-images.sh scripts/jira-api.sh scripts/port-contract-saas.sh scripts/publish-miro.sh scripts/make-guides.sh scripts/demo-up.sh scripts/persona-atlassian-add.sh scripts/persona-github-app-add.sh images/cd/factory-cd
 
 check:
 	shellcheck -x -P . $(SCRIPTS)
@@ -29,6 +29,30 @@ contract:
 # Контракты портов на облачных носителях: песочницы Jira (FCT) и GitHub (factory-contract-tests).
 contract-saas:
 	./scripts/port-contract-saas.sh
+
+# Публикации (docs/publications/manifest.md): модель LikeC4 (docs/model) -> виды с раскладом ->
+# носитель PlantUML в docs/publications/diagrams -> PNG. Версия источника - в подвале схемы.
+publications:
+	mkdir -p .publications
+	docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$$PWD/docs/model":/model:ro -v "$$PWD/.publications":/out \
+		docker.io/likec4/likec4:1.59.4 export json -o /out/likec4.json /model
+	docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD":/w -w /w docker.io/library/node:24.21.0-alpine3.24 \
+		node --no-warnings images/publisher/publish.ts .publications/likec4.json docs/model plantuml \
+		docs/publications/diagrams ../../demo/diagrams/common.puml seq:../../demo/diagrams/common-uml.puml
+	$(MAKE) diagrams
+
+# Те же виды - на доску Miro публикаций (.state/miro.env: MIRO_TOKEN, MIRO_BOARD). Карта
+# "элемент модели -> элемент доски" - docs/publications/miro.json, в git.
+publications-miro:
+	./scripts/publish-miro.sh
+
+# Руководства из фактов фабрики: писатель Claude Code, судья Codex (docs/publications/guides).
+guides:
+	./scripts/make-guides.sh
+
+# Подтверждённое руководство - в пространство Confluence публикаций, без новых вызовов моделей.
+guides-confluence:
+	./scripts/make-guides.sh --confluence
 
 # Диаграммы: PlantUML и C4-PlantUML -> PNG рядом с исходниками (docs/*/diagrams). Монтируется
 # весь docs/: диаграммы разделов подключают общий стиль из docs/demo/diagrams.

@@ -1,0 +1,403 @@
+{
+  "context": {
+    "frame": "3458764687376799034",
+    "x": 1392,
+    "width": 2784,
+    "nodes": {
+      "@gr1": {
+        "item": "3458764687376799035",
+        "kind": "@group"
+      },
+      "users": {
+        "item": "3458764687376799067",
+        "kind": "person"
+      },
+      "product": {
+        "item": "3458764687376799040",
+        "kind": "person"
+      },
+      "eng": {
+        "item": "3458764687376799044",
+        "kind": "person"
+      },
+      "ops": {
+        "item": "3458764687376799064",
+        "kind": "person"
+      },
+      "exo": {
+        "item": "3458764687376799073",
+        "kind": "external"
+      },
+      "factory": {
+        "item": "3458764687376799077",
+        "kind": "system"
+      },
+      "jira": {
+        "item": "3458764687376799164",
+        "kind": "external"
+      },
+      "confluence": {
+        "item": "3458764687376799166",
+        "kind": "external"
+      },
+      "discord": {
+        "item": "3458764687376799169",
+        "kind": "external"
+      },
+      "bitbucket": {
+        "item": "3458764687376799183",
+        "kind": "external"
+      },
+      "github": {
+        "item": "3458764687376799189",
+        "kind": "external"
+      },
+      "llm": {
+        "item": "3458764687376799201",
+        "kind": "external"
+      },
+      "target": {
+        "item": "3458764687376799207",
+        "kind": "system"
+      }
+    },
+    "edges": {
+      "[\"factory\",\"target\",\"выкладка на стенд, наблюдение\"]#0": "3458764687376799213",
+      "[\"users\",\"target\",\"участвуют, проводят розыгрыши\"]#0": "3458764687376799316",
+      "[\"product\",\"exo\",\"работают через\"]#0": "3458764687376799272",
+      "[\"eng\",\"exo\",\"работают через\"]#0": "3458764687376799297",
+      "[\"ops\",\"exo\",\"работают через\"]#0": "3458764687376799302",
+      "[\"exo\",\"factory\",\"MCP фабрики; правила из git\"]#0": "3458764687376799320",
+      "[\"factory\",\"jira\",\"читает и ведёт задачи\"]#0": "3458764687376799219",
+      "[\"product\",\"jira\",\"задачи, планы\"]#0": "3458764687376799277",
+      "[\"factory\",\"confluence\",\"собирает знание\"]#0": "3458764687376799224",
+      "[\"product\",\"confluence\",\"требования\"]#0": "3458764687376799284",
+      "[\"factory\",\"discord\",\"ответы, уведомления\"]#0": "3458764687376799242",
+      "[\"ops\",\"discord\",\"алерты, команды боту\"]#0": "3458764687376799309",
+      "[\"factory\",\"bitbucket\",\"свои задания на своём раннере\"]#0": "3458764687376799254",
+      "[\"factory\",\"github\",\"PR, статусы стражей\"]#0": "3458764687376799265",
+      "[\"github\",\"target\",\"CI собирает образы\"]#0": "3458764687376799335",
+      "[\"factory\",\"llm\",\"модели через шлюз\"]#0": "3458764687376799267"
+    },
+    "version": "d13ec5240e8f",
+    "versionItem": "3458764687376799359"
+  },
+  "targetContainers": {
+    "frame": "3458764687389138804",
+    "x": 3780.5,
+    "width": 1193,
+    "nodes": {
+      "target": {
+        "item": "3458764687389138810",
+        "kind": "system"
+      },
+      "participant": {
+        "item": "3458764687389138838",
+        "kind": "person"
+      },
+      "organizer": {
+        "item": "3458764687389138846",
+        "kind": "person"
+      },
+      "target.spa": {
+        "item": "3458764687389138857",
+        "kind": "container"
+      },
+      "target.api": {
+        "item": "3458764687389138861",
+        "kind": "container"
+      },
+      "target.db": {
+        "item": "3458764687389138864",
+        "kind": "database"
+      },
+      "discord": {
+        "item": "3458764687389138867",
+        "kind": "external"
+      }
+    },
+    "edges": {
+      "[\"participant\",\"target.spa\",\"участвует\"]#0": "3458764687389138870",
+      "[\"organizer\",\"target.spa\",\"проводит розыгрыш\"]#0": "3458764687389138874",
+      "[\"target.spa\",\"target.api\",\"вызывает\"]#0": "3458764687389138876",
+      "[\"target.api\",\"target.db\",\"читает и пишет\"]#0": "3458764687389138888",
+      "[\"target.api\",\"discord\",\"уведомления\"]#0": "3458764687389138890"
+    },
+    "version": "d13ec5240e8f",
+    "versionItem": "3458764687389138907"
+  },
+  "deployment": {
+    "frame": "3458764687389297217",
+    "x": 7003,
+    "width": 4452,
+    "nodes": {
+      "laptop": {
+        "item": "3458764687389297534",
+        "kind": "node"
+      },
+      "bbc": {
+        "item": "3458764687389297542",
+        "kind": "node"
+      },
+      "ghc": {
+        "item": "3458764687389297550",
+        "kind": "node"
+      },
+      "vend": {
+        "item": "3458764687389297561",
+        "kind": "node"
+      },
+      "dsc": {
+        "item": "3458764687389297567",
+        "kind": "node"
+      },
+      "atl": {
+        "item": "3458764687389297574",
+        "kind": "node"
+      },
+      "laptop.tstand": {
+        "item": "3458764687389297582",
+        "kind": "node"
+      },
+      "laptop.exonode": {
+        "item": "3458764687389297591",
+        "kind": "node"
+      },
+      "laptop.runnernode": {
+        "item": "3458764687389297630",
+        "kind": "node"
+      },
+      "laptop.fstand": {
+        "item": "3458764687389297650",
+        "kind": "node"
+      },
+      "laptop.tstand.spa": {
+        "item": "3458764687389297666",
+        "kind": "container"
+      },
+      "laptop.exonode.exo": {
+        "item": "3458764687389297694",
+        "kind": "external"
+      },
+      "laptop.runnernode.jobs.step": {
+        "item": "3458764687389297704",
+        "kind": "container"
+      },
+      "laptop.tstand.api": {
+        "item": "3458764687389297711",
+        "kind": "container"
+      },
+      "laptop.tstand.db": {
+        "item": "3458764687389297744",
+        "kind": "database"
+      },
+      "laptop.fstand.coord": {
+        "item": "3458764687389297768",
+        "kind": "container"
+      },
+      "laptop.fstand.mcp": {
+        "item": "3458764687389297775",
+        "kind": "container"
+      },
+      "laptop.fstand.collect": {
+        "item": "3458764687389297785",
+        "kind": "container"
+      },
+      "laptop.fstand.gw": {
+        "item": "3458764687389297794",
+        "kind": "container"
+      },
+      "laptop.fstand.egress": {
+        "item": "3458764687389297816",
+        "kind": "container"
+      },
+      "laptop.fstand.bot": {
+        "item": "3458764687389297822",
+        "kind": "container"
+      },
+      "laptop.fstand.kb": {
+        "item": "3458764687389297825",
+        "kind": "database"
+      },
+      "bbc.pl": {
+        "item": "3458764687389297829",
+        "kind": "external"
+      },
+      "ghc.gh": {
+        "item": "3458764687389297836",
+        "kind": "external"
+      },
+      "vend.models": {
+        "item": "3458764687389297840",
+        "kind": "external"
+      },
+      "dsc.chan": {
+        "item": "3458764687389297847",
+        "kind": "external"
+      },
+      "laptop.fstand.cd": {
+        "item": "3458764687389297858",
+        "kind": "container"
+      },
+      "atl.jira": {
+        "item": "3458764687389297865",
+        "kind": "external"
+      },
+      "atl.conf": {
+        "item": "3458764687389297873",
+        "kind": "external"
+      }
+    },
+    "edges": {
+      "[\"laptop.fstand.coord\",\"laptop.fstand.bot\",\"уведомления, ожидание решения\"]#0": "3458764687389297883",
+      "[\"laptop.fstand.mcp\",\"laptop.fstand.kb\",\"поиск, контекст\"]#0": "3458764687389297893",
+      "[\"laptop.fstand.bot\",\"laptop.fstand.kb\",\"поиск\"]#0": "3458764687389297897",
+      "[\"laptop.fstand.collect\",\"laptop.fstand.kb\",\"записи со ссылками\"]#0": "3458764687389297904",
+      "[\"laptop.tstand.spa\",\"laptop.tstand.api\",\"вызывает\"]#0": "3458764687389297911",
+      "[\"laptop.tstand.api\",\"laptop.tstand.db\",\"читает и пишет\"]#0": "3458764687389297925",
+      "[\"laptop.exonode.exo\",\"laptop.fstand.mcp\",\"MCP фабрики; правила из git\"]#0": "3458764687389434938",
+      "[\"laptop.runnernode.jobs.step\",\"laptop.fstand.gw\",\"модели\"]#0": "3458764687389434943",
+      "[\"laptop.runnernode.jobs.step\",\"laptop.fstand.egress\",\"весь выход\"]#0": "3458764687389434948",
+      "[\"laptop.fstand.coord\",\"bbc.pl\",\"запуск задания с ключом задачи\"]#0": "3458764687389434951",
+      "[\"bbc.pl\",\"laptop.runnernode.jobs.step\",\"шаги задания\"]#0": "3458764687389434953",
+      "[\"laptop.fstand.egress\",\"ghc.gh\",\"клон; PR и статусы - отдельным шагом публикации\"]#0": "3458764687389434959",
+      "[\"ghc.gh\",\"laptop.fstand.cd\",\"образы в GHCR\"]#0": "3458764687389434962",
+      "[\"laptop.fstand.coord\",\"atl.jira\",\"события задач, статусы\"]#0": "3458764687389434963",
+      "[\"laptop.fstand.collect\",\"atl.jira\",\"опрос изменений\"]#0": "3458764687389434969",
+      "[\"laptop.fstand.collect\",\"atl.conf\",\"опрос изменений\"]#0": "3458764687389434988",
+      "[\"laptop.fstand.cd\",\"atl.jira\",\"сбой - задача\"]#0": "3458764687389434993",
+      "[\"laptop.fstand.bot\",\"dsc.chan\",\"сообщения\"]#0": "3458764687389434997",
+      "[\"laptop.tstand.api\",\"dsc.chan\",\"уведомления\"]#0": "3458764687389435002",
+      "[\"laptop.fstand.gw\",\"vend.models\",\"подписки и ключи\"]#0": "3458764687389435005",
+      "[\"laptop.fstand.egress\",\"vend.models\",\"подписки вендора\"]#0": "3458764687389435009"
+    },
+    "version": "d13ec5240e8f",
+    "versionItem": "3458764687389435015"
+  },
+  "factoryContainers": {
+    "frame": "3458764687389435640",
+    "x": 12090.5,
+    "width": 5331,
+    "nodes": {
+      "factory": {
+        "item": "3458764687389435648",
+        "kind": "system"
+      },
+      "bitbucket": {
+        "item": "3458764687389435665",
+        "kind": "external"
+      },
+      "github": {
+        "item": "3458764687389435672",
+        "kind": "external"
+      },
+      "human": {
+        "item": "3458764687389435680",
+        "kind": "person"
+      },
+      "exo": {
+        "item": "3458764687389435686",
+        "kind": "external"
+      },
+      "factory.mcp": {
+        "item": "3458764687389435699",
+        "kind": "container"
+      },
+      "factory.runner": {
+        "item": "3458764687389435703",
+        "kind": "container"
+      },
+      "factory.cd": {
+        "item": "3458764687389435707",
+        "kind": "container"
+      },
+      "factory.coord": {
+        "item": "3458764687389435716",
+        "kind": "container"
+      },
+      "factory.reconciler": {
+        "item": "3458764687394364330",
+        "kind": "container"
+      },
+      "factory.collect": {
+        "item": "3458764687389435721",
+        "kind": "container"
+      },
+      "factory.pipes": {
+        "item": "3458764687389435732",
+        "kind": "container"
+      },
+      "factory.gw": {
+        "item": "3458764687389435742",
+        "kind": "container"
+      },
+      "factory.egress": {
+        "item": "3458764687389435754",
+        "kind": "container"
+      },
+      "target": {
+        "item": "3458764687389435770",
+        "kind": "system"
+      },
+      "factory.bot": {
+        "item": "3458764687389435774",
+        "kind": "container"
+      },
+      "jira": {
+        "item": "3458764687389435778",
+        "kind": "external"
+      },
+      "confluence": {
+        "item": "3458764687389435782",
+        "kind": "external"
+      },
+      "factory.guards": {
+        "item": "3458764687389435790",
+        "kind": "container"
+      },
+      "llm": {
+        "item": "3458764687389435793",
+        "kind": "external"
+      },
+      "discord": {
+        "item": "3458764687389435801",
+        "kind": "external"
+      },
+      "factory.kb": {
+        "item": "3458764687389435821",
+        "kind": "database"
+      }
+    },
+    "edges": {
+      "[\"exo\",\"factory.mcp\",\"MCP фабрики; правила из git\"]#0": "3458764687389435823",
+      "[\"bitbucket\",\"factory.runner\",\"шаги задания\"]#0": "3458764687389435826",
+      "[\"github\",\"factory.cd\",\"образы в GHCR\"]#0": "3458764687389435829",
+      "[\"factory.mcp\",\"factory.kb\",\"поиск, контекст\"]#0": "3458764687389435842",
+      "[\"factory.bot\",\"factory.kb\",\"поиск\"]#0": "3458764687389435844",
+      "[\"factory.coord\",\"factory.bot\",\"уведомления, ожидание решения\"]#0": "3458764687389435847",
+      "[\"factory.reconciler\",\"factory.bot\",\"уведомления\"]#0": "3458764687394364461",
+      "[\"factory.guards\",\"factory.kb\",\"правила-стражи\"]#0": "3458764687389435849",
+      "[\"factory.collect\",\"factory.kb\",\"записи со ссылками\"]#0": "3458764687389435865",
+      "[\"factory.reconciler\",\"factory.kb\",\"связи и противоречия\"]#0": "3458764687394364512",
+      "[\"factory.pipes\",\"factory.guards\",\"проверяет результат\"]#0": "3458764687389435870",
+      "[\"factory.runner\",\"factory.pipes\",\"исполняет\"]#0": "3458764687389435874",
+      "[\"factory.runner\",\"factory.gw\",\"модели\"]#0": "3458764687389435892",
+      "[\"factory.runner\",\"factory.egress\",\"весь выход\"]#0": "3458764687389435904",
+      "[\"factory.bot\",\"discord\",\"сообщения\"]#0": "3458764687389435911",
+      "[\"factory.coord\",\"jira\",\"события задач, статусы\"]#0": "3458764687389435916",
+      "[\"factory.coord\",\"bitbucket\",\"запуск задания с ключом задачи\"]#0": "3458764687389435918",
+      "[\"factory.collect\",\"jira\",\"опрос изменений\"]#0": "3458764687389435920",
+      "[\"factory.collect\",\"confluence\",\"опрос изменений\"]#0": "3458764687389435924",
+      "[\"factory.gw\",\"llm\",\"подписки и ключи\"]#0": "3458764687389435927",
+      "[\"factory.egress\",\"github\",\"клон; PR и статусы - отдельным шагом публикации\"]#0": "3458764687389572930",
+      "[\"factory.egress\",\"llm\",\"подписки вендора\"]#0": "3458764687389572932",
+      "[\"factory.cd\",\"target\",\"выкладка, доступность\"]#0": "3458764687389572940",
+      "[\"factory.cd\",\"jira\",\"сбой - задача\"]#0": "3458764687389572943",
+      "[\"factory.reconciler\",\"jira\",\"задачи архитектору\"]#0": "3458764687394364766",
+      "[\"human\",\"exo\",\"работает через\"]#0": "3458764687389572947",
+      "[\"human\",\"discord\",\"вопросы, решения\"]#0": "3458764687389572949"
+    },
+    "version": "d13ec5240e8f",
+    "versionItem": "3458764687389572951"
+  }
+}

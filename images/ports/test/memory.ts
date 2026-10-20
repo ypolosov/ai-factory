@@ -5,6 +5,8 @@ import {
   type ChatMessage,
   type Comment,
   type CommitStatus,
+  type Diagrams,
+  type DiagramView,
   type Forge,
   type Incident,
   type Incidents,
@@ -449,6 +451,23 @@ export function memoryIncidents() {
         resolved: false,
       });
       return id;
+    },
+  };
+}
+
+// Схемы в памяти: эталон носителя, показывает ровно опубликованное - и структуру, и последовательность.
+export function memoryDiagrams(): Diagrams & { shown: Map<string, DiagramView> } {
+  const shown = new Map<string, DiagramView>();
+  return {
+    shown,
+    views: ['structure', 'sequence'],
+    async publish(view) {
+      shown.set(view.id, structuredClone(view));
+      return { url: `memory://diagrams/${view.id}` };
+    },
+    async read(viewId) {
+      const v = shown.get(viewId);
+      return v && structuredClone(v);
     },
   };
 }

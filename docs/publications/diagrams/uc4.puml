@@ -1,0 +1,50 @@
+@startuml uc4
+' Сгенерировано из модели (docs/model): правка - в модели, а не здесь.
+!include ../../demo/diagrams/common-uml.puml
+
+title UC4 Задача -> PR -> стражи -> слияние (ядро демо)
+footer Источник: модель, версия d13ec5240e8f
+
+actor "Разработчик (оркестратор)" as e_eng_ddeveloper
+participant "Экзокортекс человека" as e_exo
+participant "MCP фабрики" as e_factory_dmcp
+participant "Репозиторий цели" as e_github_drepo
+participant "Координатор" as e_factory_dcoord
+participant "Jira" as e_jira
+participant "Bitbucket Cloud" as e_bitbucket
+participant "Свой раннер и образ исполнителя" as e_factory_drunner
+participant "Actions (CI цели)" as e_github_dactions
+participant "Стражи и управление" as e_factory_dguards
+actor "Ревьюер (человек)" as e_eng_dreviewer
+participant "Выкладка и наблюдение" as e_factory_dcd
+autonumber
+e_eng_ddeveloper -> e_exo : беру задачу DRAW-12
+e_exo -> e_factory_dmcp : контекст задачи
+e_factory_dmcp -> e_exo : требования, решения, ссылки на Jira, Confluence, ADR
+e_eng_ddeveloper -> e_exo : спецификация и сценарии приёмки - вместе с агентом
+note right of e_exo : HITL: замысел
+e_exo -> e_github_drepo : PR &#34;spec: DRAW-12&#34;
+e_eng_ddeveloper -> e_github_drepo : слияние PR спецификации = утверждение
+e_eng_ddeveloper -> e_jira : метка agent
+e_factory_dcoord -> e_jira : опрос: DRAW-12 готова к исполнению
+e_factory_dcoord -> e_bitbucket : запуск задания с ключом задачи
+e_bitbucket -> e_factory_drunner : тесты до кода, затем реализация
+note right of e_factory_drunner : HOOTL: исполнение в песочнице
+e_factory_drunner -> e_factory_dmcp : правила проекта и контекст (только чтение)
+e_factory_drunner -> e_bitbucket : патч, журнал, цена; права записи нет
+e_bitbucket -> e_github_drepo : шаг публикации: ветка и PR (свой токен, без ключа модели)
+e_github_drepo -> e_github_dactions : PR запускает CI цели
+e_github_dactions -> e_github_drepo : сборка, тесты, e2e - статусы
+e_bitbucket -> e_factory_dguards : стражи: правила из git, секреты, лицензии; судья другого семейства
+e_factory_dguards -> e_github_drepo : статус factory/verdict и комментарий
+e_factory_dcoord -> e_eng_dreviewer : Discord: готово для человека (фаза ревью ждёт решения)
+alt доработать
+  e_eng_dreviewer -> e_github_drepo : замечания
+  e_factory_dcoord -> e_bitbucket : повтор исполнения с замечаниями
+else принять
+  e_eng_dreviewer -> e_github_drepo : одобрение и слияние (управление)
+end
+e_github_drepo -> e_github_dactions : main: образ в GHCR
+e_factory_dcd -> e_factory_dcd : тянет образ, выкладывает на стенд, проверяет доступность
+e_factory_dcoord -> e_jira : задача закрыта: ссылки на PR и выкладку, цена в учёте
+@enduml
