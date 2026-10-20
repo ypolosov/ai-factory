@@ -4,7 +4,18 @@
 
 import assert from 'node:assert/strict';
 import { afterAll, beforeAll, describe, it } from 'vitest';
-import { type Forge, type JobRunner, type JobState, type Knowledge, PortError, type Tracker, type Wiki } from '../ports.ts';
+import { diffViews } from '../diagrams.ts';
+import {
+  type Diagrams,
+  type DiagramView,
+  type Forge,
+  type JobRunner,
+  type JobState,
+  type Knowledge,
+  PortError,
+  type Tracker,
+  type Wiki,
+} from '../ports.ts';
 
 export interface TrackerFixture {
   tracker: Tracker;
@@ -432,5 +443,148 @@ export function wikiContract(name: string, setup: () => Promise<WikiFixture>) {
         'нет поиска по тексту',
       );
     }, 60_000);
+  });
+}
+
+export interface DiagramsFixture {
+  diagrams: Diagrams;
+  cleanup(): Promise<void>; // убирает опубликованные тестами виды
+}
+
+// Вид с тем, что носители любят терять: кириллица, кавычки, обратная косая, перевод строки,
+// точка, дефис и подчёркивание в идентификаторах, группа, связь без подписи, технология,
+// контейнер и база внутри узла развёртывания.
+export function sampleView(id: string, version = 'v1'): DiagramView {
+  return {
+    id,
+    title: 'Проверка: контекст "фабрики"',
+    version,
+    nodes: [
+      { id: '@gr1', kind: '@group', title: 'Предмет демо' },
+      {
+        id: 'factory',
+        kind: 'system',
+        title: 'Фабрика ПО на ИИ',
+        description: 'Координирует работу;\nпроверяет "стражами" & правилами',
+        parent: '@gr1',
+        box: { x: 0, y: 0, width: 320, height: 180 },
+      },
+      { id: 'target', kind: 'system', title: 'Цель (демо)', parent: '@gr1' },
+      { id: 'eng', kind: 'person', title: 'Инженеры', description: 'Архитектор, QA' },
+      { id: 'ext.jira', kind: 'external', title: 'Jira' },
+      { id: 'my_kb-1', kind: 'external', title: 'База знаний \\ индекс' },
+      { id: 'stand', kind: 'node', title: 'compose: factory', technology: 'Docker' },
+      {
+        id: 'stand.mcp',
+        kind: 'container',
+        title: 'MCP фабрики и бот',
+        technology: 'TypeScript, MCP',
+        description: 'MCP для экзокортексов;\nбот Discord',
+        parent: 'stand',
+      },
+      { id: 'stand.kb', kind: 'database', title: 'База знаний', technology: 'PostgreSQL; Onyx на переходе', parent: 'stand' },
+    ],
+    edges: [
+      { source: 'eng', target: 'factory', label: 'работают через MCP, правила' },
+      { source: 'factory', target: 'ext.jira', label: 'читает и ведёт задачи' },
+      { source: 'factory', target: 'my_kb-1', label: 'ищет (индекс)' },
+      { source: 'factory', target: 'target' },
+      { source: 'stand.mcp', target: 'stand.kb', label: 'поиск' },
+    ],
+  };
+}
+
+// Носитель показывает то же, что опубликовано: узлы, подписи, группы, связи и версию.
+function assertSame(model: DiagramView, shown: DiagramView | undefined) {
+  assert.ok(shown, 'вид не прочитан');
+  assert.equal(shown.id, model.id);
+  assert.equal(shown.title, model.title);
+  assert.deepEqual(diffViews(model, shown), { added: [], removed: [], changed: [], edgesAdded: [], edgesRemoved: [] });
+}
+
+// Последовательность с тем, что носители любят терять: перевод строки в имени участника, вызов
+// себя, ответ, заметка, связь без подписи, ветки alt, loop и par.
+export function sampleSequence(id: string, version = 'v1'): DiagramView {
+  return {
+    id,
+    title: 'Проверка: сценарий "задача -> слияние"',
+    version,
+    nodes: [
+      { id: 'eng.dev', kind: 'person', title: 'Разработчик\n(оркестратор)' },
+      { id: 'exo', kind: 'external', title: 'Экзокортекс' },
+      { id: 'factory.mcp', kind: 'container', title: 'MCP фабрики' },
+      { id: 'factory.cd', kind: 'container', title: 'Выкладка' },
+      { id: 'github.repo', kind: 'external', title: 'GitHub' },
+    ],
+    edges: [
+      { source: 'eng.dev', target: 'exo', label: 'беру задачу DRAW-12' },
+      { source: 'exo', target: 'factory.mcp', label: 'контекст задачи' },
+      { source: 'factory.mcp', target: 'exo', label: 'требования; ссылки: ADR-3, "DRAW-7"' },
+      { source: 'eng.dev', target: 'github.repo', label: 'PR спецификации', note: 'HITL: замысел' },
+      { source: 'eng.dev', target: 'github.repo', label: 'замечания' },
+      { source: 'eng.dev', target: 'github.repo', label: 'одобрение и слияние' },
+      { source: 'factory.cd', target: 'factory.cd', label: 'тянет образ' },
+      { source: 'factory.cd', target: 'exo', label: 'готово' },
+      { source: 'exo', target: 'github.repo' },
+    ],
+    flow: [
+      0,
+      1,
+      2,
+      3,
+      {
+        kind: 'alt',
+        branches: [
+          { title: 'доработать', flow: [4] },
+          { title: 'принять', flow: [5] },
+        ],
+      },
+      { kind: 'loop', title: 'пока стенд не ответит', flow: [6] },
+      { kind: 'par', flow: [7, 8] },
+    ],
+  };
+}
+
+export function diagramsContract(name: string, setup: () => Promise<DiagramsFixture>, opts: { sequence?: boolean } = {}) {
+  describe(`схемы ${name}`, () => {
+    let fx: DiagramsFixture;
+    let d: Diagrams;
+    beforeAll(async () => {
+      fx = await setup();
+      d = fx.diagrams;
+    });
+    afterAll(async () => fx?.cleanup());
+
+    it('вид читается обратно тем же: узлы, подписи, группы, связи, версия', async () => {
+      const v = sampleView(`contract-${uniq()}`);
+      const { url } = await d.publish(v);
+      assert.ok(url);
+      assertSame(v, await d.read(v.id));
+    });
+
+    it('повторная публикация заменяет вид на месте', async () => {
+      const v = sampleView(`contract-${uniq()}`);
+      await d.publish(v);
+      const next: DiagramView = {
+        ...v,
+        version: 'v2',
+        title: 'Проверка: после правки',
+        nodes: v.nodes.filter((n) => n.id !== 'target').map((n) => (n.id === 'eng' ? { ...n, title: 'Инженеры и QA' } : n)),
+        edges: [...v.edges.filter((e) => e.target !== 'target'), { source: 'eng', target: 'ext.jira', label: 'смотрят задачи' }],
+      };
+      await d.publish(next);
+      assertSame(next, await d.read(v.id));
+    });
+
+    it('неизвестный вид - пусто', async () => {
+      assert.equal(await d.read(`missing-${uniq()}`), undefined);
+    });
+
+    if (opts.sequence)
+      it('последовательность читается обратно той же: участники, шаги по порядку, заметки, блоки', async () => {
+        const v = sampleSequence(`contract-${uniq()}`);
+        await d.publish(v);
+        assertSame(v, await d.read(v.id));
+      });
   });
 }

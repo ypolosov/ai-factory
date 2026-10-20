@@ -1,0 +1,117 @@
+{
+  "_stage": "layouted",
+  "views": {
+    "context": {
+      "id": "context",
+      "title": "C4 L1 - контекст: кто работает с фабрикой и с какими системами она связана",
+      "nodes": [
+        {
+          "id": "eng",
+          "kind": "person",
+          "title": "Инженеры",
+          "description": {
+            "txt": "Архитектор, дизайнер, разработчики BE и FE, QA, DevOps"
+          },
+          "parent": null,
+          "x": 1078,
+          "y": 0,
+          "width": 364,
+          "height": 180
+        },
+        {
+          "id": "exo",
+          "kind": "external",
+          "title": "Экзокортекс человека",
+          "description": {
+            "txt": "У каждого свой: обвязка агентов (Claude Code, Codex, Cursor), навыки, практики"
+          },
+          "parent": null,
+          "x": 1075,
+          "y": 323,
+          "width": 370,
+          "height": 180
+        },
+        {
+          "id": "@gr1",
+          "kind": "@group",
+          "title": "Предмет демо",
+          "description": null,
+          "parent": null,
+          "x": 1027,
+          "y": 594,
+          "width": 1176,
+          "height": 281
+        },
+        {
+          "id": "factory",
+          "kind": "system",
+          "title": "Фабрика ПО на ИИ",
+          "description": {
+            "txt": "Координирует работу, исполняет задачи агентами, проверяет результат стражами правил и управлением, ведёт базу знаний"
+          },
+          "parent": "@gr1",
+          "x": 1067,
+          "y": 655,
+          "width": 385,
+          "height": 180
+        },
+        {
+          "id": "jira",
+          "kind": "external",
+          "title": "Jira",
+          "description": {
+            "txt": "Задачи и статусы"
+          },
+          "parent": null,
+          "x": 430,
+          "y": 978,
+          "width": 320,
+          "height": 180
+        },
+        {
+          "id": "target",
+          "kind": "system",
+          "title": "Целевая система Розыгрыш призов",
+          "description": {
+            "txt": "Фронтенд и бэкенд: розыгрыши, заявки, честный выбор победителей"
+          },
+          "parent": "@gr1",
+          "x": 1777,
+          "y": 655,
+          "width": 385,
+          "height": 180
+        }
+      ],
+      "edges": [
+        {
+          "source": "factory",
+          "target": "target",
+          "label": "выкладка на стенд, наблюдение"
+        },
+        {
+          "source": "factory",
+          "target": "jira",
+          "label": "читает и ведёт задачи"
+        },
+        {
+          "source": "eng",
+          "target": "exo",
+          "label": "работают через"
+        },
+        {
+          "source": "exo",
+          "target": "factory",
+          "label": "MCP фабрики; правила из git"
+        }
+      ],
+      "sourcePath": "views.c4"
+    },
+    "index": {
+      "id": "index",
+      "title": "Landscape view",
+      "sourcePath": null,
+      "nodes": [],
+      "edges": []
+    }
+  }
+}

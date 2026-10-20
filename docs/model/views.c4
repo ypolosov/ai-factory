@@ -1,0 +1,88 @@
+// Виды модели - представления из манифеста публикаций.
+views {
+  view context {
+    title 'C4 L1 - контекст: кто работает с фабрикой и с какими системами она связана'
+    group 'Предмет демо' {
+      include factory, target
+    }
+    include product, eng, ops, users, exo, jira, confluence, discord, bitbucket, github, llm
+    // Связи, выведенные из контейнеров, на контексте не нужны: он показывает связи систем.
+    exclude target -> discord, bitbucket -> factory, github -> factory
+  }
+
+  view factoryContainers of factory {
+    title 'C4 L2 - контейнеры фабрики (экземпляр демо на Bitbucket + Pipelines)'
+    include *
+    include human
+    exclude target.*
+  }
+
+  view targetContainers of target {
+    title 'C4 L2 - контейнеры целевой системы Розыгрыш призов (платформа цели: GitHub + Actions)'
+    include *
+  }
+
+  deployment view deployment {
+    title 'Развёртывание демо: ноутбук и облачные сервисы; все соединения - исходящие с ноутбука'
+    include laptop, laptop.**, bbc, bbc.**, ghc, ghc.**, atl, atl.**, dsc, dsc.**, vend, vend.**
+  }
+
+  dynamic view uc4 {
+    title 'UC4 Задача -> PR -> стражи -> слияние (ядро демо)'
+    variant sequence
+    eng.developer -> exo 'беру задачу DRAW-12'
+    exo -> factory.mcp 'контекст задачи'
+    exo <- factory.mcp 'требования, решения, ссылки на Jira, Confluence, ADR'
+    eng.developer -> exo 'спецификация и сценарии приёмки - вместе с агентом' {
+      notes 'HITL: замысел'
+    }
+    exo -> github.repo 'PR "spec: DRAW-12"'
+    eng.developer -> github.repo 'слияние PR спецификации = утверждение'
+    eng.developer -> jira 'метка agent'
+    factory.coord -> jira 'опрос: DRAW-12 готова к исполнению'
+    factory.coord -> bitbucket 'запуск задания с ключом задачи'
+    bitbucket -> factory.runner 'тесты до кода, затем реализация' {
+      notes 'HOOTL: исполнение в песочнице'
+    }
+    factory.runner -> factory.mcp 'правила проекта и контекст (только чтение)'
+    bitbucket <- factory.runner 'патч, журнал, цена; права записи нет'
+    bitbucket -> github.repo 'шаг публикации: ветка и PR (свой токен, без ключа модели)'
+    github.repo -> github.actions 'PR запускает CI цели'
+    github.repo <- github.actions 'сборка, тесты, e2e - статусы'
+    bitbucket -> factory.guards 'стражи: правила из git, секреты, лицензии; судья другого семейства'
+    factory.guards -> github.repo 'статус factory/verdict и комментарий'
+    factory.coord -> eng.reviewer 'Discord: готово для человека (фаза ревью ждёт решения)'
+    alt {
+      when 'доработать' {
+        eng.reviewer -> github.repo 'замечания'
+        factory.coord -> bitbucket 'повтор исполнения с замечаниями'
+      }
+      else 'принять' {
+        eng.reviewer -> github.repo 'одобрение и слияние (управление)'
+      }
+    }
+    github.repo -> github.actions 'main: образ в GHCR'
+    factory.cd -> factory.cd 'тянет образ, выкладывает на стенд, проверяет доступность'
+    factory.coord -> jira 'задача закрыта: ссылки на PR и выкладку, цена в учёте'
+  }
+
+  dynamic view uc1 {
+    title 'UC1 Требование -> согласование знаний -> решение архитектора'
+    variant sequence
+    product.po -> factory.bot 'что известно про невостребованные призы?'
+    factory.bot -> factory.kb 'поиск'
+    factory.bot <- factory.kb 'ADR-3 "результат воспроизводим из зафиксированного зерна", задача DRAW-7, обсуждение в канале'
+    product.po <- factory.bot 'выжимка со ссылками'
+    product.po -> confluence 'стори "разыграть невостребованный приз заново среди всех участников"'
+    factory.kb -> confluence 'опрос изменений: новая версия страницы'
+    factory.kb -> factory.reconciler 'сверить новое утверждение'
+    factory.reconciler -> factory.kb 'связь: стори и ADR-3 - противоречие'
+    factory.reconciler -> jira 'задача архитектору: цитаты обеих сторон, ссылки'
+    factory.reconciler -> factory.bot 'уведомление в канал продукта'
+    eng.architect -> github.repo 'PR: ADR-3 уточнён - повтор берёт следующего кандидата из той же последовательности, правило-страж' {
+      notes 'слияние PR = решение; страж запрещает новый случайный выбор вне drawWinners'
+    }
+    github.repo -> factory.kb 'правила и решения обновлены'
+    product.po <- factory.bot 'согласовано, ссылка на ADR-3; можно нарезать задачи (UC2)'
+  }
+}

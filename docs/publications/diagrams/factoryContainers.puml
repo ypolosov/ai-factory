@@ -1,0 +1,62 @@
+@startuml factoryContainers
+' Сгенерировано из модели (docs/model): правка - в модели, а не здесь.
+!include <C4/C4_Deployment>
+!include ../../demo/diagrams/common.puml
+
+title C4 L2 - контейнеры фабрики (экземпляр демо на Bitbucket + Pipelines)
+footer Источник: модель, версия d13ec5240e8f
+
+System_Ext(e_bitbucket, "Bitbucket Cloud", "Платформа фабрики: репозиторий и Pipelines")
+System_Ext(e_github, "GitHub", "Платформа цели: репозиторий, Actions, GHCR")
+Person(e_human, "Человек-агент", "Любая роль; оркестратор своей команды агентов")
+System_Ext(e_exo, "Экзокортекс человека", "У каждого свой: обвязка агентов (Claude Code, Codex, Cursor), навыки, практики")
+System_Boundary(e_factory, "Фабрика ПО на ИИ") {
+  Container(e_factory_dmcp, "MCP фабрики", "TypeScript, MCP", "Вход для экзокортексов: контекст задачи, поиск со ссылками, предложение правки")
+  Container(e_factory_drunner, "Свой раннер и образ исполнителя", "Bitbucket runner, Docker", "Claude Code, Codex, OpenCode за одним контрактом; выход в сеть - через прокси")
+  Container(e_factory_dcd, "Выкладка и наблюдение", "deployer, Gatus, GlitchTip", "Образ из GHCR на стенд; сбой - задача в трекере")
+  Container(e_factory_dcoord, "Координатор", "TypeScript, Mastra core", "Фазы задачи с режимом HITL/HOTL/HOOTL; ждёт решения человека; запускает задания")
+  Container(e_factory_dreconciler, "Сверщик (агент)", "агент фабрики", "Сверяет новые утверждения со знанием: противоречия, правила-кандидаты")
+  Container(e_factory_dcollect, "Сборщики", "хаб MCP проекта", "Jira, Confluence, GitHub, Discord: ссылка и отпечаток версии")
+  Container(e_factory_dpipes, "Задания фабрики", "Bitbucket Pipelines, POSIX sh", "Тесты до кода, исполнение, публикация PR, стражи, сверка")
+  Container(e_factory_dgw, "Шлюз моделей", "agentgateway", "Ключи ролей, маршруты, учёт цены по задаче")
+  Container(e_factory_degress, "Прокси выхода", "allowlist", "Единственный выход в сеть для заданий")
+  Container(e_factory_dbot, "Бот", "TypeScript, Discord", "Вопросы к базе, уведомления, команды: перезапуск проверок")
+  Container(e_factory_dguards, "Стражи и управление", "правила из git, судьи", "Проверки по правилам; судья другого семейства; политика слияния")
+  ContainerDb(e_factory_dkb, "База знаний", "PostgreSQL; на переходе Onyx", "Правда - git; индексы, граф связей, конфликты, правила-стражи")
+}
+System(e_target, "Целевая система Розыгрыш призов", "Фронтенд и бэкенд: розыгрыши, заявки, честный выбор победителей")
+System_Ext(e_jira, "Jira", "Задачи и статусы")
+System_Ext(e_confluence, "Confluence", "Требования, страницы продукта")
+System_Ext(e_llm, "Вендоры моделей", "Anthropic, OpenAI - подписки; OpenRouter - эмбеддинги")
+System_Ext(e_discord, "Discord", "Каналы команды, бот фабрики")
+
+Rel(e_exo, e_factory_dmcp, "MCP фабрики; правила из git")
+Rel(e_bitbucket, e_factory_drunner, "шаги задания")
+Rel(e_github, e_factory_dcd, "образы в GHCR")
+Rel(e_factory_dmcp, e_factory_dkb, "поиск, контекст")
+Rel(e_factory_dbot, e_factory_dkb, "поиск")
+Rel(e_factory_dcoord, e_factory_dbot, "уведомления, ожидание решения")
+Rel(e_factory_dreconciler, e_factory_dbot, "уведомления")
+Rel(e_factory_dguards, e_factory_dkb, "правила-стражи")
+Rel(e_factory_dcollect, e_factory_dkb, "записи со ссылками")
+Rel(e_factory_dreconciler, e_factory_dkb, "связи и противоречия")
+Rel(e_factory_dpipes, e_factory_dguards, "проверяет результат")
+Rel(e_factory_drunner, e_factory_dpipes, "исполняет")
+Rel(e_factory_drunner, e_factory_dgw, "модели")
+Rel(e_factory_drunner, e_factory_degress, "весь выход")
+Rel(e_factory_dbot, e_discord, "сообщения")
+Rel(e_factory_dcoord, e_jira, "события задач, статусы")
+Rel(e_factory_dcoord, e_bitbucket, "запуск задания с ключом задачи")
+Rel(e_factory_dcollect, e_jira, "опрос изменений")
+Rel(e_factory_dcollect, e_confluence, "опрос изменений")
+Rel(e_factory_dgw, e_llm, "подписки и ключи")
+Rel(e_factory_degress, e_github, "клон; PR и статусы - отдельным шагом публикации")
+Rel(e_factory_degress, e_llm, "подписки вендора")
+Rel(e_factory_dcd, e_target, "выкладка, доступность")
+Rel(e_factory_dcd, e_jira, "сбой - задача")
+Rel(e_factory_dreconciler, e_jira, "задачи архитектору")
+Rel(e_human, e_exo, "работает через")
+Rel(e_human, e_discord, "вопросы, решения")
+
+SHOW_LEGEND()
+@enduml

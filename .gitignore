@@ -2,3 +2,4 @@
 .state/
 node_modules/
 kb/onyx/deployment/docker_compose/.env
+.publications/

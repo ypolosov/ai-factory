@@ -1,0 +1,56 @@
+// Развёртывание демо: ноутбук и облачные сервисы; все соединения - исходящие с ноутбука.
+// Экземпляры ссылаются на элементы модели: связи между ними - те же, что в модели.
+deployment {
+  node laptop 'Ноутбук владельца' {
+    technology 'Windows 11, WSL2, Docker Desktop, 24 ГБ для WSL'
+    node exonode 'Экзокортекс владельца' {
+      technology 'Claude Code, Codex в терминале'
+      exo = instanceOf exo 'Обвязка агентов'
+    }
+    node fstand 'compose: factory' {
+      technology 'Docker'
+      coord = instanceOf factory.coord
+      mcp = instanceOf factory.mcp
+      bot = instanceOf factory.bot
+      kb = instanceOf factory.kb
+      collect = instanceOf factory.collect
+      gw = instanceOf factory.gw
+      egress = instanceOf factory.egress
+      cd = instanceOf factory.cd
+    }
+    node runnernode 'Свой раннер Bitbucket' {
+      technology 'Linux Docker runner'
+      node jobs 'Docker заданий' {
+        technology 'отдельный dind, сеть jobs'
+        step = instanceOf factory.runner 'Шаг задания'
+      }
+    }
+    node tstand 'compose: prize-draw (стенд цели)' {
+      technology 'Docker'
+      spa = instanceOf target.spa
+      api = instanceOf target.api
+      db = instanceOf target.db
+    }
+  }
+  node bbc 'Bitbucket Cloud' {
+    technology 'SaaS'
+    pl = instanceOf bitbucket 'Pipelines фабрики'
+  }
+  node ghc 'GitHub' {
+    technology 'SaaS'
+    gh = instanceOf github 'Actions и GHCR цели'
+  }
+  node atl 'Atlassian Cloud' {
+    technology 'SaaS'
+    jira = instanceOf jira
+    conf = instanceOf confluence
+  }
+  node dsc 'Discord' {
+    technology 'SaaS'
+    chan = instanceOf discord 'Сервер команды'
+  }
+  node vend 'Вендоры моделей' {
+    technology 'SaaS'
+    models = instanceOf llm 'Модели'
+  }
+}

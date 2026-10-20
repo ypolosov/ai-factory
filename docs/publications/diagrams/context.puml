@@ -1,0 +1,43 @@
+@startuml context
+' Сгенерировано из модели (docs/model): правка - в модели, а не здесь.
+!include <C4/C4_Deployment>
+!include ../../demo/diagrams/common.puml
+
+title C4 L1 - контекст: кто работает с фабрикой и с какими системами она связана
+footer Источник: модель, версия d13ec5240e8f
+
+Person(e_users, "Участники и организаторы", "Пользователи приложения")
+Person(e_product, "Продукт", "Product Owner, Project Manager: требования, планирование, отчёты")
+Person(e_eng, "Инженеры", "Архитектор, дизайнер, разработчики BE и FE, QA, DevOps")
+Person(e_ops, "Эксплуатация и релиз", "Инженер эксплуатации, релиз-менеджер")
+System_Ext(e_exo, "Экзокортекс человека", "У каждого свой: обвязка агентов (Claude Code, Codex, Cursor), навыки, практики")
+System_Boundary(e__agr1, "Предмет демо") {
+  System(e_factory, "Фабрика ПО на ИИ", "Координирует работу, исполняет задачи агентами, проверяет результат стражами правил и управлением, ведёт базу знаний")
+  System(e_target, "Целевая система Розыгрыш призов", "Фронтенд и бэкенд: розыгрыши, заявки, честный выбор победителей")
+}
+System_Ext(e_jira, "Jira", "Задачи и статусы")
+System_Ext(e_confluence, "Confluence", "Требования, страницы продукта")
+System_Ext(e_discord, "Discord", "Каналы команды, бот фабрики")
+System_Ext(e_bitbucket, "Bitbucket Cloud", "Платформа фабрики: репозиторий и Pipelines")
+System_Ext(e_github, "GitHub", "Платформа цели: репозиторий, Actions, GHCR")
+System_Ext(e_llm, "Вендоры моделей", "Anthropic, OpenAI - подписки; OpenRouter - эмбеддинги")
+
+Rel(e_factory, e_target, "выкладка на стенд, наблюдение")
+Rel(e_users, e_target, "участвуют, проводят розыгрыши")
+Rel(e_product, e_exo, "работают через")
+Rel(e_eng, e_exo, "работают через")
+Rel(e_ops, e_exo, "работают через")
+Rel(e_exo, e_factory, "MCP фабрики; правила из git")
+Rel(e_factory, e_jira, "читает и ведёт задачи")
+Rel(e_product, e_jira, "задачи, планы")
+Rel(e_factory, e_confluence, "собирает знание")
+Rel(e_product, e_confluence, "требования")
+Rel(e_factory, e_discord, "ответы, уведомления")
+Rel(e_ops, e_discord, "алерты, команды боту")
+Rel(e_factory, e_bitbucket, "свои задания на своём раннере")
+Rel(e_factory, e_github, "PR, статусы стражей")
+Rel(e_github, e_target, "CI собирает образы")
+Rel(e_factory, e_llm, "модели через шлюз")
+
+SHOW_LEGEND()
+@enduml

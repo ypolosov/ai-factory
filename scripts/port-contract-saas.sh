@@ -4,7 +4,8 @@
 # стенда должен работать: docker compose --profile bitbucket up -d). Учётки - из
 # .state/atlassian.env, .state/github-target.env и .state/bitbucket.env; токены попадают
 # в Node только через файл окружения, не через аргументы команд.
-# Запуск из корня репозитория: scripts/port-contract-saas.sh [jira|github|confluence|bitbucket]
+# Доска Miro - песочница MIRO_TEST_BOARD из .state/miro.env.
+# Запуск из корня репозитория: scripts/port-contract-saas.sh [jira|github|confluence|bitbucket|miro]
 set -eu
 
 NODE_IMAGE=docker.io/library/node:24.21.0-alpine3.24
@@ -64,6 +65,16 @@ if [ "$only" = all ] || [ "$only" = bitbucket ]; then
 		printf 'BITBUCKET_TEST_TOKEN=%s\n' "$BITBUCKET_TOKEN"
 	} >>"$tmp/test.env"
 	files="$files images/ports/test/bitbucket.test.ts"
+fi
+if [ "$only" = all ] || [ "$only" = miro ]; then
+	sed 's/\r$//' "$state/miro.env" >"$tmp/env"
+	# shellcheck disable=SC1091
+	. "$tmp/env"
+	{
+		printf 'MIRO_TEST_TOKEN=%s\n' "$MIRO_TOKEN"
+		printf 'MIRO_TEST_BOARD=%s\n' "$MIRO_TEST_BOARD"
+	} >>"$tmp/test.env"
+	files="$files images/ports/test/miro.test.ts"
 fi
 rm -f "$tmp/env"
 

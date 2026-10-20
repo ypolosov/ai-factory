@@ -1,0 +1,25 @@
+@startuml targetContainers
+' Сгенерировано из модели (docs/model): правка - в модели, а не здесь.
+!include <C4/C4_Deployment>
+!include ../../demo/diagrams/common.puml
+
+title C4 L2 - контейнеры целевой системы Розыгрыш призов (платформа цели: GitHub + Actions)
+footer Источник: модель, версия d13ec5240e8f
+
+Person(e_participant, "Участник", "Подаёт заявку, смотрит результаты, подтверждает получение приза")
+Person(e_organizer, "Организатор", "Создаёт розыгрыш: призы, период, число победителей; запускает выбор")
+System_Boundary(e_target, "Целевая система Розыгрыш призов") {
+  Container(e_target_dspa, "Веб-приложение", "TypeScript, React, Vite; nginx", "Активные розыгрыши, заявка, результаты с проверкой честности, кабинет организатора")
+  Container(e_target_dapi, "API", "TypeScript, NestJS", "Розыгрыши, заявки, выбор победителей из зафиксированного зерна, подтверждение приза, повторный розыгрыш")
+  ContainerDb(e_target_ddb, "База", "PostgreSQL", "Розыгрыши, заявки, победители; одна заявка - уникальным ключом")
+}
+System_Ext(e_discord, "Discord", "Каналы команды, бот фабрики")
+
+Rel(e_participant, e_target_dspa, "участвует")
+Rel(e_organizer, e_target_dspa, "проводит розыгрыш")
+Rel(e_target_dspa, e_target_dapi, "вызывает")
+Rel(e_target_dapi, e_target_ddb, "читает и пишет")
+Rel(e_target_dapi, e_discord, "уведомления")
+
+SHOW_LEGEND()
+@enduml

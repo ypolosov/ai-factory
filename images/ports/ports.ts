@@ -256,3 +256,58 @@ export interface TargetCi {
   run(id: string): Promise<CiRun>;
   rerun(id: string): Promise<void>;
 }
+
+// Схемы: вид модели в нейтральной форме и носитель, который его показывает (PlantUML, доска).
+// Носитель публикует вид и читает его обратно; разница прочитанного с моделью - предложение
+// правки модели, а не новая правда (docs/publications/manifest.md).
+export interface DiagramBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface DiagramNode {
+  id: string; // идентификатор элемента модели, латиница; у группы вида - '@...'
+  kind: string; // вид элемента (person, system, external, container, database, node - узел развёртывания, '@group'); носитель может огрубить
+  title: string;
+  description?: string;
+  technology?: string; // технология (C4: контейнер, узел развёртывания)
+  parent?: string; // рамка вида (группа, система, узел развёртывания), в которую входит узел
+  box?: DiagramBox; // расклад модели: носители без своего расклада ставят узел сюда
+}
+
+export interface DiagramEdge {
+  source: string;
+  target: string;
+  label?: string;
+  note?: string; // заметка к шагу последовательности
+}
+
+// Последовательность: шаги по порядку (номер - индекс связи в edges) и блоки. Ответ (стрелка
+// назад) - обычный шаг в обратную сторону: пунктира ответа модель LikeC4 не передаёт.
+export type DiagramFlow = (number | DiagramBlock)[];
+
+export interface DiagramBlock {
+  kind: string; // alt, par, opt, loop, break, group
+  title?: string;
+  flow?: DiagramFlow; // все блоки, кроме alt
+  branches?: { title?: string; flow: DiagramFlow }[]; // alt: ветки по порядку
+}
+
+export type DiagramViewKind = 'structure' | 'sequence';
+
+export interface DiagramView {
+  id: string;
+  title: string;
+  version: string; // отметка версии источника: по ней страж узнаёт устаревшее представление
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  flow?: DiagramFlow; // есть только у последовательности
+}
+
+export interface Diagrams {
+  views?: DiagramViewKind[]; // какие роды видов носитель показывает; нет - только структуру
+  publish(view: DiagramView): Promise<{ url: string }>;
+  read(viewId: string): Promise<DiagramView | undefined>;
+}

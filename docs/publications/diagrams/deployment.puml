@@ -1,0 +1,72 @@
+@startuml deployment
+' Сгенерировано из модели (docs/model): правка - в модели, а не здесь.
+!include <C4/C4_Deployment>
+!include ../../demo/diagrams/common.puml
+
+title Развёртывание демо: ноутбук и облачные сервисы; все соединения - исходящие с ноутбука
+footer Источник: модель, версия d13ec5240e8f
+
+Deployment_Node(e_laptop, "Ноутбук владельца", "Windows 11, WSL2, Docker Desktop, 24 ГБ для WSL") {
+  Deployment_Node(e_laptop_dtstand, "compose: prize-draw (стенд цели)", "Docker") {
+    Container(e_laptop_dtstand_dspa, "Веб-приложение", "TypeScript, React, Vite; nginx", "Активные розыгрыши, заявка, результаты с проверкой честности, кабинет организатора")
+    Container(e_laptop_dtstand_dapi, "API", "TypeScript, NestJS", "Розыгрыши, заявки, выбор победителей из зафиксированного зерна, подтверждение приза, повторный розыгрыш")
+    ContainerDb(e_laptop_dtstand_ddb, "База", "PostgreSQL", "Розыгрыши, заявки, победители; одна заявка - уникальным ключом")
+  }
+  Deployment_Node(e_laptop_dexonode, "Экзокортекс владельца", "Claude Code, Codex в терминале") {
+    System_Ext(e_laptop_dexonode_dexo, "Обвязка агентов", "У каждого свой: обвязка агентов (Claude Code, Codex, Cursor), навыки, практики")
+  }
+  Deployment_Node(e_laptop_drunnernode, "Свой раннер Bitbucket", "Linux Docker runner") {
+    Container(e_laptop_drunnernode_djobs_dstep, "Шаг задания", "Bitbucket runner, Docker", "Claude Code, Codex, OpenCode за одним контрактом; выход в сеть - через прокси")
+  }
+  Deployment_Node(e_laptop_dfstand, "compose: factory", "Docker") {
+    Container(e_laptop_dfstand_dcoord, "Координатор", "TypeScript, Mastra core", "Фазы задачи с режимом HITL/HOTL/HOOTL; ждёт решения человека; запускает задания")
+    Container(e_laptop_dfstand_dmcp, "MCP фабрики", "TypeScript, MCP", "Вход для экзокортексов: контекст задачи, поиск со ссылками, предложение правки")
+    Container(e_laptop_dfstand_dcollect, "Сборщики", "хаб MCP проекта", "Jira, Confluence, GitHub, Discord: ссылка и отпечаток версии")
+    Container(e_laptop_dfstand_dgw, "Шлюз моделей", "agentgateway", "Ключи ролей, маршруты, учёт цены по задаче")
+    Container(e_laptop_dfstand_degress, "Прокси выхода", "allowlist", "Единственный выход в сеть для заданий")
+    Container(e_laptop_dfstand_dbot, "Бот", "TypeScript, Discord", "Вопросы к базе, уведомления, команды: перезапуск проверок")
+    ContainerDb(e_laptop_dfstand_dkb, "База знаний", "PostgreSQL; на переходе Onyx", "Правда - git; индексы, граф связей, конфликты, правила-стражи")
+    Container(e_laptop_dfstand_dcd, "Выкладка и наблюдение", "deployer, Gatus, GlitchTip", "Образ из GHCR на стенд; сбой - задача в трекере")
+  }
+}
+Deployment_Node(e_bbc, "Bitbucket Cloud", "SaaS") {
+  System_Ext(e_bbc_dpl, "Pipelines фабрики", "Платформа фабрики: репозиторий и Pipelines")
+}
+Deployment_Node(e_ghc, "GitHub", "SaaS") {
+  System_Ext(e_ghc_dgh, "Actions и GHCR цели", "Платформа цели: репозиторий, Actions, GHCR")
+}
+Deployment_Node(e_vend, "Вендоры моделей", "SaaS") {
+  System_Ext(e_vend_dmodels, "Модели", "Anthropic, OpenAI - подписки; OpenRouter - эмбеддинги")
+}
+Deployment_Node(e_dsc, "Discord", "SaaS") {
+  System_Ext(e_dsc_dchan, "Сервер команды", "Каналы команды, бот фабрики")
+}
+Deployment_Node(e_atl, "Atlassian Cloud", "SaaS") {
+  System_Ext(e_atl_djira, "Jira", "Задачи и статусы")
+  System_Ext(e_atl_dconf, "Confluence", "Требования, страницы продукта")
+}
+
+Rel(e_laptop_dfstand_dcoord, e_laptop_dfstand_dbot, "уведомления, ожидание решения")
+Rel(e_laptop_dfstand_dmcp, e_laptop_dfstand_dkb, "поиск, контекст")
+Rel(e_laptop_dfstand_dbot, e_laptop_dfstand_dkb, "поиск")
+Rel(e_laptop_dfstand_dcollect, e_laptop_dfstand_dkb, "записи со ссылками")
+Rel(e_laptop_dtstand_dspa, e_laptop_dtstand_dapi, "вызывает")
+Rel(e_laptop_dtstand_dapi, e_laptop_dtstand_ddb, "читает и пишет")
+Rel(e_laptop_dexonode_dexo, e_laptop_dfstand_dmcp, "MCP фабрики; правила из git")
+Rel(e_laptop_drunnernode_djobs_dstep, e_laptop_dfstand_dgw, "модели")
+Rel(e_laptop_drunnernode_djobs_dstep, e_laptop_dfstand_degress, "весь выход")
+Rel(e_laptop_dfstand_dcoord, e_bbc_dpl, "запуск задания с ключом задачи")
+Rel(e_bbc_dpl, e_laptop_drunnernode_djobs_dstep, "шаги задания")
+Rel(e_laptop_dfstand_degress, e_ghc_dgh, "клон; PR и статусы - отдельным шагом публикации")
+Rel(e_ghc_dgh, e_laptop_dfstand_dcd, "образы в GHCR")
+Rel(e_laptop_dfstand_dcoord, e_atl_djira, "события задач, статусы")
+Rel(e_laptop_dfstand_dcollect, e_atl_djira, "опрос изменений")
+Rel(e_laptop_dfstand_dcollect, e_atl_dconf, "опрос изменений")
+Rel(e_laptop_dfstand_dcd, e_atl_djira, "сбой - задача")
+Rel(e_laptop_dfstand_dbot, e_dsc_dchan, "сообщения")
+Rel(e_laptop_dtstand_dapi, e_dsc_dchan, "уведомления")
+Rel(e_laptop_dfstand_dgw, e_vend_dmodels, "подписки и ключи")
+Rel(e_laptop_dfstand_degress, e_vend_dmodels, "подписки вендора")
+
+SHOW_LEGEND()
+@enduml
