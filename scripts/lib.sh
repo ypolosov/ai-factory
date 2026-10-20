@@ -174,7 +174,9 @@ ensure_deployer() {
 
 # ensure_gatus - настройки проверок доступности в .state/gatus/ (монтируется целиком):
 # по проверке на каждое приложение из DEPLOY_APPS, задачи о сбоях - от учётки эксплуатации
-# в репозитории приложения.
+# в репозитории приложения. Поднят экземпляр демо (scripts/demo-up.sh положил учётку цели
+# службе cd) - ещё проверки стенда цели демо (demo-endpoints.yaml.tmpl). Вызывают stand-up.sh
+# и demo-up.sh: настройки одни и те же, кто бы ни вызвал.
 ensure_gatus() {
 	mkdir -p .state/gatus
 	chmod 700 .state/gatus
@@ -188,12 +190,14 @@ ensure_gatus() {
 			_r=${_e%%=*}
 			sed -e "s|@APP@|${_r##*/}|" -e "s|@PORT@|${_e#*=}|" -e "s|@REPO@|$_r|" config/gatus/app-endpoint.yaml.tmpl
 		done
+		# Признак демо - только наличие файла, содержимое не читается.
+		[ ! -s .state/cd/github-target.env ] || cat config/gatus/demo-endpoints.yaml.tmpl
 	) >.state/gatus/config.yaml.new
 	if cmp -s .state/gatus/config.yaml.new .state/gatus/config.yaml; then
 		rm -f .state/gatus/config.yaml.new
 	else
 		mv .state/gatus/config.yaml.new .state/gatus/config.yaml
-		# shellcheck disable=SC2034 # читает scripts/stand-up.sh
+		# shellcheck disable=SC2034 # читают scripts/stand-up.sh и scripts/demo-up.sh
 		GATUS_CHANGED=1
 	fi
 }

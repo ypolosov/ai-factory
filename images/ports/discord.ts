@@ -51,6 +51,20 @@ export async function heard(
 
 type Json = Record<string, unknown>;
 
+// Служебная роль бота среди ролей сервера (managed role интеграции): у неё tags.bot_id - id бота.
+export function botRole(roles: Json[], me: string): string | undefined {
+  if (!me) return undefined;
+  const role = roles.find((r) => String((r.tags as Json | undefined)?.bot_id ?? '') === me);
+  return role ? String(role.id) : undefined;
+}
+
+// Обращение к боту: упоминание его учётки или его служебной роли. Discord подсказывает роль
+// рядом с ботом под тем же именем, и в сообщении тогда <@&id роли>, а mentions пуст.
+// Упоминание любой другой роли - не обращение к боту.
+export function mentionsBot(users: string[], roles: string[], me: string, myRole?: string): boolean {
+  return users.includes(me) || (!!myRole && roles.includes(myRole));
+}
+
 const API = 'https://discord.com/api/v10';
 // GUILDS | GUILD_MESSAGES | MESSAGE_CONTENT
 const INTENTS = (1 << 0) | (1 << 9) | (1 << 15);
@@ -110,6 +124,17 @@ export function discordChat(cfg: DiscordBotConfig): Chat {
     }
   }
   const ids = new Map<string, string>(); // id сообщения -> id канала, для ответов
+  // id сервера -> служебная роль бота: роли сервера запрашиваются один раз, при первом упоминании
+  // роли; сбой запроса не запоминается.
+  const roles = new Map<string, Promise<string | undefined>>();
+  function myRole(guild: string, me: string) {
+    const known = roles.get(guild);
+    if (known) return known;
+    const role = call<Json[]>('GET', `/guilds/${guild}/roles`).then((list) => botRole(list, me));
+    roles.set(guild, role);
+    role.catch(() => roles.get(guild) === role && roles.delete(guild));
+    return role;
+  }
   return {
     listen(onMessage) {
       let closed = false;
@@ -167,13 +192,25 @@ export function discordChat(cfg: DiscordBotConfig): Chat {
           else if (p.op === 0 && p.t === 'READY') {
             me = String((p.d?.user as Json | undefined)?.id ?? '');
             cfg.log?.('бот Discord на связи');
+          } else if (p.op === 0 && (p.t === 'GUILD_ROLE_CREATE' || p.t === 'GUILD_ROLE_DELETE') && p.d) {
+            // Роли сервера сменились (бота пригласили заново - у него новая служебная роль).
+            roles.delete(String(p.d.guild_id));
           } else if (p.op === 0 && p.t === 'MESSAGE_CREATE' && p.d) {
             const d = p.d;
             const author = (d.author as Json | undefined) ?? {};
             const mentions = ((d.mentions as Json[] | undefined) ?? []).map((u) => String(u.id));
+            const mentionRoles = ((d.mention_roles as unknown[] | undefined) ?? []).map(String);
             void (async () => {
               // Свои сообщения и чужие боты, кроме разрешённых, - мимо; вебхуки (объявления, проверки) - читаются.
               if (!(await heard({ id: String(author.id), bot: author.bot === true }, !!d.webhook_id, me, cfg.allowBot))) return;
+              // Упомянута роль - не служебная ли это роль бота; сбой запроса ролей - не обращение.
+              const role =
+                mentionRoles.length && !mentions.includes(me)
+                  ? await myRole(String(d.guild_id ?? cfg.guild), me).catch((e) => {
+                      cfg.log?.(`роли Discord: ${(e as Error).message}`);
+                      return undefined;
+                    })
+                  : undefined;
               const ch =
                 (await channels()).get(String(d.channel_id)) ?? (await channels(true)).get(String(d.channel_id)) ?? String(d.channel_id);
               ids.set(String(d.id), String(d.channel_id));
@@ -190,7 +227,7 @@ export function discordChat(cfg: DiscordBotConfig): Chat {
                 // У вебхука нет учётки: id автора - id вебхука, имя может быть любым.
                 authorId: String(author.id ?? ''),
                 ...(d.webhook_id ? { viaWebhook: true } : {}),
-                mentionsMe: mentions.includes(me),
+                mentionsMe: mentionsBot(mentions, mentionRoles, me, role),
                 ...(attachments.length ? { attachments } : {}),
               });
             })().catch((e) => cfg.log?.(`сообщение Discord: ${(e as Error).message}`));
