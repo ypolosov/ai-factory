@@ -426,13 +426,16 @@ export function wikiContract(name: string, setup: () => Promise<WikiFixture>) {
       const a = await w.upsertPage(`Проверка фабрики ${uniq()}`, `Стори со словом ${word}`);
       await w.addLabel(a.id, label);
       await w.comment(a.id, 'комментарий фабрики');
-      // Поиск носителя отстаёт от записи (индекс Confluence): ждём до 30 с.
-      let byLabel: { id: string; version: number; author?: string }[] = [];
-      let byText: { id: string }[] = [];
-      for (let n = 0; n < 30 && (!byLabel.length || !byText.length); n++) {
+      // Поиск носителя отстаёт от записи (индекс Confluence): ждём до 30 с, пока новая страница
+      // не появится в обоих поисках. Поиск по тексту находит и прежние страницы песочницы, поэтому
+      // непустой ответ - ещё не повод перестать ждать.
+      const until = Date.now() + 30_000;
+      let byLabel = await w.pagesByLabel(label);
+      let byText = await w.search(`слово ${word}`);
+      while (!(byLabel.some((p) => p.id === a.id) && byText.some((p) => p.id === a.id)) && Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 1000));
         byLabel = await w.pagesByLabel(label);
         byText = await w.search(`слово ${word}`);
-        if (!byLabel.length || !byText.length) await new Promise((r) => setTimeout(r, 1000));
       }
       assert.equal(byLabel[0]?.id, a.id);
       assert.ok((byLabel[0]?.version ?? 0) >= 1);

@@ -26,7 +26,7 @@ sed 's/\r$//' "$state/miro.env" >"$tmp/env"
 rm -f "$tmp/env"
 
 mkdir -p .publications
-docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/docs/model":/model:ro -v "$PWD/.publications":/out \
+docker run --rm -u "$(scripts/host-user.sh)" -e HOME=/tmp -v "$PWD/docs/model":/model:ro -v "$PWD/.publications":/out \
 	"$LIKEC4_IMAGE" export json -o /out/likec4.json /model
-docker run --rm -u "$(id -u):$(id -g)" --env-file "$tmp/run.env" -v "$PWD":/w -w /w "$NODE_IMAGE" \
+docker run --rm -u "$(scripts/host-user.sh)" --env-file "$tmp/run.env" -v "$PWD":/w -w /w "$NODE_IMAGE" \
 	node --no-warnings images/publisher/publish.ts .publications/likec4.json docs/model miro docs/publications/miro.json

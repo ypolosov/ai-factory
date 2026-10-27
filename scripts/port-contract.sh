@@ -46,5 +46,5 @@ umask 077
 		--token-name contract --scopes all --raw
 } >"$tmp/env"
 
-docker run --rm --network "$name" -u "$(id -u):$(id -g)" -e HOME=/tmp --env-file "$tmp/env" \
+docker run --rm --network "$name" -u "$(scripts/host-user.sh)" -e HOME=/tmp --env-file "$tmp/env" \
 	-v "$PWD":/w -w /w "$NODE_IMAGE" sh -c 'npm ci --no-audit --no-fund --silent && npx vitest run images/ports/test/forgejo.test.ts'

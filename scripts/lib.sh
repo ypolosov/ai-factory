@@ -163,6 +163,27 @@ ensure_gateway() {
 	fi
 }
 
+# share_mounts - открыть каталоги .state, которые монтируются в контейнеры, их пользователям.
+# Службы читают секреты от uid 1000 внутри контейнера. В rootless Docker это не владелец
+# файлов на хосте (тот внутри - root), и с правами 600 служба их не прочитает. Поэтому
+# смонтированные каталоги - 755, файлы - 644; на хосте их закрывает .state (700).
+# Журнал шлюза (gateway-db) пишут шлюз и координатор, читают отчёты на хосте: каталог 777,
+# файлы 666 - SQLite создаёт -wal и -shm с правами файла базы. Права журнала меняет
+# контейнер: файлы, созданные службой в rootless, принадлежат подчинённому uid хоста.
+# Вызывать после записи секретов и до запуска или перезапуска служб.
+share_mounts() {
+	chmod 700 .state
+	for _d in runner-agent runner-ci runner-deploy claude-cli deployer errbridge gateway gatus coordinator kbsync cd; do
+		[ -d ".state/$_d" ] || continue
+		find ".state/$_d" -type d -exec chmod 755 {} +
+		find ".state/$_d" -type f -exec chmod 644 {} +
+	done
+	mkdir -p .state/gateway-db
+	[ -e .state/gateway-db/gateway.sqlite ] || : >.state/gateway-db/gateway.sqlite
+	docker run --rm -v "$PWD/.state/gateway-db:/db" docker.io/library/node:24.21.0-alpine3.24 \
+		sh -c 'chmod 777 /db && chmod 666 /db/*'
+}
+
 # ensure_deployer - токен бота для статусов выкладки в .state/deployer/ (монтируется целиком).
 ensure_deployer() {
 	mkdir -p .state/deployer
@@ -309,8 +330,9 @@ dind() {
 	docker compose exec -T "$_n-dind" docker -H unix:///var/run/dind/docker.sock "$@"
 }
 
-# build_job_image КАТАЛОГ ОБРАЗ DIND... - собирает образ заданий на хосте и загружает
-# в Docker заданий, если содержимое каталога изменилось с прошлой сборки.
+# build_job_image КАТАЛОГ ОБРАЗ DIND... - собирает образ заданий на хосте, если содержимое
+# каталога изменилось с прошлой сборки, и загружает в Docker заданий, где его нет или он
+# другой: том dind мог смениться (перенос стенда, сброс Docker), а метка сборки - остаться.
 # Docker заданий в интернет не ходит, поэтому собирать в нём нельзя.
 build_job_image() {
 	_dir=$1
@@ -318,16 +340,17 @@ build_job_image() {
 	shift 2
 	_sumf=.state/$(basename "$_dir")-image.sum
 	_sum=$(find "$_dir" -type f -exec sha256sum {} + | sort | sha256sum | cut -c1-16)
-	if [ "$(cat "$_sumf" 2>/dev/null)" = "$_sum" ]; then
-		return 0
+	if [ "$(cat "$_sumf" 2>/dev/null)" != "$_sum" ] || ! docker image inspect "$_img" >/dev/null 2>&1; then
+		log "образ $_img: сборка (несколько минут при первом запуске)"
+		docker build -q -t "$_img" "$_dir" >/dev/null
+		printf '%s' "$_sum" >"$_sumf"
 	fi
-	log "образ $_img: сборка (несколько минут при первом запуске)"
-	docker build -q -t "$_img" "$_dir" >/dev/null
+	_id=$(docker image inspect -f '{{.Id}}' "$_img")
 	for _d in "$@"; do
+		[ "$(dind "$_d" image inspect -f '{{.Id}}' "$_img" 2>/dev/null)" != "$_id" ] || continue
 		docker save "$_img" | dind "$_d" load -q >/dev/null
+		log "образ $_img загружен в Docker заданий $_d"
 	done
-	printf '%s' "$_sum" >"$_sumf"
-	log "образ $_img готов"
 }
 
 # build_agent_image - образ исполнителя (агенты и проверки) и образ ревьюера (ворота ИИ).

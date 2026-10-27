@@ -97,4 +97,5 @@ printf '%s\n' "$pair" >.state/kbsync/cc_pair
 
 # 5. Загрузка из Forgejo: токен учётки эксплуатации (чтение репозиториев и задач).
 cmp -s .state/ops.token .state/kbsync/forgejo.token || cp .state/ops.token .state/kbsync/forgejo.token
+share_mounts
 log "база знаний настроена: http://127.0.0.1:$KB_PORT, вход $KB_ADMIN_EMAIL, пароль в $st/admin.password"
