@@ -6,12 +6,21 @@
 # - вход в Onyx (nginx) - только 127.0.0.1:${KB_PORT:-8300}; в сетях фабрики и заданий он
 #   же под именем kb: оттуда идут загрузка из Forgejo и MCP для агентов;
 # - песочница кода Onyx (code-interpreter) выключена: ей нужен сокет Docker хоста;
-# - файлы - в Postgres, без MinIO; MCP-сервер Onyx включён.
+# - файлы - в Postgres, без MinIO; MCP-сервер Onyx включён;
+# - OpenSearch без закрепления памяти: Docker без root (rootless) не даёт снять предел
+#   memlock (runc: "error setting rlimit type 8"); цена - куча JVM может уйти в подкачку.
 services:
   api_server:
     networks: [default, factory]
   background:
     networks: [default, factory]
+  opensearch:
+    environment:
+      - bootstrap.memory_lock=false
+    ulimits:
+      memlock:
+        soft: 65536
+        hard: 65536
   nginx:
     ports: !override
       - "127.0.0.1:${KB_PORT:-8300}:80"

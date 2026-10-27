@@ -10,7 +10,7 @@ LIKEC4_IMAGE=docker.io/likec4/likec4:1.59.4
 state=${STATE_DIR:-.state}
 
 mkdir -p .publications
-docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/docs/model":/model:ro -v "$PWD/.publications":/out \
+docker run --rm -u "$(scripts/host-user.sh)" -e HOME=/tmp -v "$PWD/docs/model":/model:ro -v "$PWD/.publications":/out \
 	"$LIKEC4_IMAGE" export json -o /out/likec4.json /model
 
 if [ "${1:-}" = --confluence ]; then

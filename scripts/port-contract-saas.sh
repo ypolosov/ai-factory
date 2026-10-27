@@ -78,5 +78,5 @@ if [ "$only" = all ] || [ "$only" = miro ]; then
 fi
 rm -f "$tmp/env"
 
-docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp --env-file "$tmp/test.env" \
+docker run --rm -u "$(scripts/host-user.sh)" -e HOME=/tmp --env-file "$tmp/test.env" \
 	-v "$PWD":/w -w /w "$NODE_IMAGE" sh -c "npm ci --no-audit --no-fund --silent && npx vitest run$files"

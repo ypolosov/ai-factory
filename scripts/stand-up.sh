@@ -30,6 +30,7 @@ ensure_claude_cli
 ensure_deployer
 ensure_gatus
 ensure_glitchtip_env
+share_mounts
 
 log "runner, шлюз, прокси выхода, служба выкладки и сбор ошибок: запуск"
 docker compose build -q deployer egress errbridge claude-cli
@@ -46,6 +47,7 @@ if [ -n "${GATEWAY_CHANGED:-}${CLAUDE_CLI_CHANGED:-}" ]; then
 	docker compose restart gateway claude-cli >/dev/null
 fi
 ensure_glitchtip
+share_mounts
 if [ -n "${ERRBRIDGE_CHANGED:-}" ]; then
 	docker compose restart errbridge >/dev/null
 fi

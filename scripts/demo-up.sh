@@ -57,6 +57,7 @@ done
 	exit 1
 }
 
+share_mounts
 docker compose --profile bitbucket up -d bb-dind bb-registry bb-runner egress
 # Шаг агента берёт образ из реестра шагов: Docker заданий в интернет не ходит.
 docker build -q -t factory/e2e:stand images/e2e >/dev/null
@@ -67,6 +68,7 @@ docker compose --profile bitbucket up -d --build coordinator cd
 
 # Gatus: учётка цели теперь у службы cd - ensure_gatus дописывает проверки стенда цели демо.
 ensure_gatus
+share_mounts
 [ -z "${GATUS_CHANGED:-}" ] || docker compose restart gatus >/dev/null
 # Портал документации: репозиторий цели на GitHub (открытый) и пространство Confluence. Из
 # файлов учёток берутся только эти имена, без печати; токены не читаются.
