@@ -4,7 +4,7 @@
 !include ../../demo/diagrams/common.puml
 
 title C4 L1 - контекст: кто работает с фабрикой и с какими системами она связана
-footer Источник: модель, версия d13ec5240e8f
+footer Источник: модель, версия 4b81bbe6e7a1
 
 Person(e_users, "Участники и организаторы", "Пользователи приложения")
 Person(e_product, "Продукт", "Product Owner, Project Manager: требования, планирование, отчёты")

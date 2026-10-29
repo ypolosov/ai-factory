@@ -6,10 +6,9 @@
 # - открытые модели по API провайдера (OpenRouter): ключ провайдера знает только шлюз;
 # - подписка Claude: запрос уходит в Anthropic как есть, с токеном самого клиента;
 # - подписка Codex: запрос уходит в бэкенд ChatGPT как есть, с токеном клиента.
-# - база знаний (Onyx): свои псевдонимы kb-* - ответы через OpenRouter, через API-кредиты
-#   подписки Max (ключ Console) или через обёртку над claude -p; эмбеддинги - OpenRouter.
+# - база знаний Hindsight: kb-openrouter для ответов и фактов, kb-embed для поиска.
 # Каждый клиент предъявляет ключ шлюза в заголовке x-gateway-key (или, если клиент так
-# не умеет, как Onyx, - в Authorization: Bearer), задача помечается заголовком x-task-id -
+# не умеет, - в Authorization: Bearer), задача помечается заголовком x-task-id -
 # по нему считается цена принятого изменения.
 config:
   adminAddr: "off"
@@ -69,7 +68,7 @@ llm:
     apiKey:
       mode: strict
       location:
-        # x-gateway-key, а без него - Authorization: Bearer (так ключ шлёт Onyx). Подписки
+        # x-gateway-key, а без него - Authorization: Bearer. Подписки
         # приходят с обоими заголовками: Authorization у них - токен самого клиента.
         expression: '"x-gateway-key" in request.headers ? request.headers["x-gateway-key"] : request.headers["authorization"].split(" ")[1]'
       keys:
@@ -94,7 +93,7 @@ llm:
             name: agent-sub
             role: agent
           allowedModels: ["claude-*", "gpt-*"]
-        # База знаний (Onyx): только псевдонимы kb-*, дневной бюджет на OpenRouter и API-кредиты.
+        # Ключ прежней базы остается у судей координатора; его бюджет не сбрасывается.
         - keyHash: "sha256:@KB_HASH@"
           metadata:
             name: kb
@@ -105,6 +104,20 @@ llm:
               limit:
                 unit: USD
                 amount: @KB_DAILY_USD@
+              window:
+                rolling: 24h
+              onBudgetExceeded: Block
+        # У Hindsight собственный ограниченный бюджет, без доступа к Claude.
+        - keyHash: "sha256:@HINDSIGHT_HASH@"
+          metadata:
+            name: hindsight
+            role: kb
+          allowedModels: ["kb-openrouter", "kb-embed"]
+          budgets:
+            - name: daily
+              limit:
+                unit: USD
+                amount: @HINDSIGHT_DAILY_USD@
               window:
                 rolling: 24h
               onBudgetExceeded: Block
@@ -156,31 +169,13 @@ llm:
       params:
         baseUrl: https://chatgpt.com/backend-api/codex
       passthrough: detect
-    # База знаний: три сменных пути к модели ответов (scripts/kb-model.sh) и эмбеддинги.
-    # 1. OpenRouter.
+    # Hindsight: недорогая модель OpenRouter и многоязычные эмбеддинги.
     - name: kb-openrouter
       provider: openrouter
       params:
         model: deepseek/deepseek-v4.1-flash
         apiKey:
           file: /state/openrouter.key
-    # 2. API-кредиты подписки Max: ключ организации Console, связанной с подпиской.
-    - name: kb-claude-api
-      provider: anthropic
-      params:
-        model: claude-sonnet-5-5
-        apiKey:
-          file: /state/anthropic-kb.key
-    # 3. Обёртка над официальным claude -p по подписке (images/claude-cli).
-    - name: kb-claude-cli
-      provider:
-        custom:
-          formats:
-            - type: completions
-      params:
-        baseUrl: http://claude-cli:8000/v1
-        apiKey:
-          file: /state/claude-cli.key
     # Эмбеддинги: многоязычная bge-m3 (1024 измерения) через OpenRouter.
     - name: kb-embed
       provider:

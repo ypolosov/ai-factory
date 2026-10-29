@@ -2,20 +2,20 @@
 # Сверщик базы знаний: ищет утверждения вики и записей решений (ADR), которые противоречат
 # коду или действующей спецификации, и заводит по каждому задачу хозяину сведений -
 # с дословными цитатами и ссылками на строки обеих сторон. Решает человек (HOTL).
-# Модель - Claude Code по подписке, только чтение (Read, Grep, Glob) и поиск базы знаний
-# через MCP Onyx, если есть токен; без токенов Forgejo (factory-untrusted).
+# Модель - DeepSeek через OpenRouter и OpenCode; только чтение файлов и MCP Hindsight.
+# Ни вход Claude Code, ни вход Codex этому заданию не нужны.
 #
-# Окружение: FORGEJO_URL, REPO, BOT_TOKEN, GATEWAY_URL, GATEWAY_KEY (ключ подписок),
-#   CLAUDE_CODE_OAUTH_TOKEN; KB_MCP_URL и KB_MCP_TOKEN - поиск базы знаний (необязательно);
-#   RECONCILE_MODEL (по умолчанию sonnet).
+# Окружение: FORGEJO_URL, REPO, BOT_TOKEN, GATEWAY_URL, GATEWAY_KEY (ключ открытых моделей);
+#   KB_MCP_URL и KB_MCP_TOKEN - поиск базы знаний (необязательно);
+#   RECONCILE_MODEL - псевдоним шлюза, по умолчанию kb-openrouter (DeepSeek V4.1 Flash).
 set -eu
-: "${FORGEJO_URL:?}" "${REPO:?}" "${BOT_TOKEN:?}" "${GATEWAY_URL:?}" "${GATEWAY_KEY:?}" "${CLAUDE_CODE_OAUTH_TOKEN:?}"
-model=${RECONCILE_MODEL:-sonnet}
+: "${FORGEJO_URL:?}" "${REPO:?}" "${BOT_TOKEN:?}" "${GATEWAY_URL:?}" "${GATEWAY_KEY:?}"
+model=${RECONCILE_MODEL:-kb-openrouter}
 label=kb:расхождение
 
 tmp=$(mktemp -d)
 work=$(mktemp -d)
-trap 'rm -rf "$tmp" "$work"' EXIT
+trap 'if [ -n "${server:-}" ]; then pkill -TERM -u node 2>/dev/null || true; kill "$server" 2>/dev/null || true; fi; if [ -n "${watch:-}" ]; then kill "$watch" 2>/dev/null || true; fi; rm -rf "$tmp" "$work"' EXIT
 printf 'Authorization: token %s\n' "$BOT_TOKEN" >"$tmp/auth"
 chmod 600 "$tmp/auth"
 api() {
@@ -32,26 +32,78 @@ sha=$(git -C "$work/repo" rev-parse HEAD)
 web=$(api GET "/repos/$REPO" | jq -r .html_url)
 rm -rf "$work/repo/.git" "$work/wiki/.git"
 
-set -- --tools Read Grep Glob
-if [ -n "${KB_MCP_URL:-}" ] && [ -n "${KB_MCP_TOKEN:-}" ]; then
-	jq -n --arg u "$KB_MCP_URL" --arg t "$KB_MCP_TOKEN" \
-		'{mcpServers: {kb: {type: "http", url: $u, headers: {Authorization: ("Bearer " + $t)}}}}' >"$work/mcp.json"
-	set -- --mcp-config "$work/mcp.json" --strict-mcp-config --allowedTools "mcp__kb__search_indexed_documents" "$@"
-fi
-chown -R node:node "$work"
-chmod 700 "$work"
-# shellcheck disable=SC2086 # флаги - через set --
-(cd "$work" && ANTHROPIC_BASE_URL=$GATEWAY_URL \
-	ANTHROPIC_CUSTOM_HEADERS="$(printf 'x-gateway-key: %s\nx-task-id: %s-reconcile-%s' "$GATEWAY_KEY" "${REPO#*/}" "$(date +%s)")" \
-	factory-untrusted -e GATEWAY_URL -e ANTHROPIC_BASE_URL -e ANTHROPIC_CUSTOM_HEADERS -e CLAUDE_CODE_OAUTH_TOKEN \
-	claude -p --model "$model" --no-session-persistence --output-format json \
-	--json-schema "$(cat /etc/factory/prompts/reconcile.schema.json)" "$@" \
-	</etc/factory/prompts/reconcile.md >"$tmp/out.json") || {
-	echo "сверщик: Claude Code завершился с ошибкой" >&2
-	head -c 2000 "$tmp/out.json" >&2 || true
-	exit 1
+# Берем штатную настройку OpenCode фабрики, оставляем только чтение и поиск.
+jq --arg model "gateway/$model" --arg url "${KB_MCP_URL:-}" '
+	.model = $model | .small_model = $model
+	| .permission = {"*": "deny", read: "allow", glob: "allow", grep: "allow", list: "allow",
+		kb_recall: "allow", kb_reflect: "allow", StructuredOutput: "allow"}
+	| if $url == "" then . else
+		.mcp.kb = {type: "remote", url: $url, enabled: true,
+			headers: {Authorization: "Bearer {env:KB_MCP_TOKEN}"}} end
+	' /etc/factory/opencode.json >"$work/opencode.json"
+cp /etc/factory/prompts/reconcile.md "$work/prompt.md"
+# Даже при ошибке разрешений модели снимки исходников не доступны node на запись.
+chmod -R a-w "$work/repo" "$work/wiki"
+chmod 755 "$work"
+task_id="${REPO#*/}-reconcile-$(date +%s)"
+gw="-e GATEWAY_URL -e GATEWAY_KEY -e TASK_ID -e OPENCODE_CONFIG -e KB_MCP_TOKEN"
+# Как в factory-agent: OpenCode повторяет 429 без конца, поэтому квоту проверяет обвязка.
+printf 'x-gateway-key: %s\nx-task-id: %s\n' "$GATEWAY_KEY" "$task_id" >"$tmp/gateway.header"
+chmod 600 "$tmp/gateway.header"
+jq -n --arg model "$model" '{model: $model, max_tokens: 1, messages: [{role: "user", content: "ok"}]}' >"$tmp/probe.json"
+budget_exceeded() {
+	code=$(curl -s -m 30 -o "$tmp/probe.out" -w '%{http_code}' -H @"$tmp/gateway.header" \
+		-H 'content-type: application/json' --data @"$tmp/probe.json" "$GATEWAY_URL/v1/chat/completions" || true)
+	[ "$code" = 429 ] && grep -q 'Budget exceeded' "$tmp/probe.out"
 }
-jq -e '.structured_output.findings // (.result | fromjson? | .findings)' "$tmp/out.json" >"$tmp/findings.json" ||
+if budget_exceeded; then
+	echo "сверщик: бюджет ключа шлюза исчерпан" >&2
+	exit 75
+fi
+(
+	size=-1
+	while sleep 60; do
+		now=$(wc -c <"$tmp/server.log")
+		if [ "$now" = "$size" ] && budget_exceeded; then
+			: >"$tmp/budget-exceeded"
+			pkill -TERM -u node || true
+			exit 0
+		fi
+		size=$now
+	done
+) &
+watch=$!
+# API закрепленного OpenCode передает схему в штатный StructuredOutput:
+# --format json у CLI возвращает лишь события, а не валидированный JSON модели.
+# Сервер виден только внутри контейнера задания.
+# shellcheck disable=SC2086 # список флагов через пробел
+(cd "$work" && TASK_ID=$task_id OPENCODE_CONFIG=$work/opencode.json factory-untrusted $gw \
+	opencode serve --pure --hostname 127.0.0.1 --port 4096 >"$tmp/server.log" 2>&1) &
+server=$!
+i=0
+until curl -fsS -o /dev/null http://127.0.0.1:4096/global/health 2>/dev/null; do
+	i=$((i + 1))
+	[ "$i" -le 30 ] || { echo "сверщик: OpenCode не запустился" >&2 && exit 1; }
+	sleep 1
+done
+session=$(curl -fsS -H 'content-type: application/json' -d '{"title":"Сверка базы знаний"}' \
+	http://127.0.0.1:4096/session | jq -er .id)
+jq -n --arg model "$model" --rawfile prompt "$work/prompt.md" \
+	--slurpfile schema /etc/factory/prompts/reconcile.schema.json '{
+		model: {providerID: "gateway", modelID: $model}, parts: [{type: "text", text: $prompt}],
+		format: {type: "json_schema", schema: $schema[0]}
+	}' >"$tmp/request.json"
+if ! curl -fsS --max-time 900 -H 'content-type: application/json' --data @"$tmp/request.json" \
+	"http://127.0.0.1:4096/session/$session/message" >"$tmp/response.json"; then
+	if [ -f "$tmp/budget-exceeded" ]; then
+		echo "сверщик: бюджет ключа шлюза исчерпан" >&2
+		exit 75
+	fi
+	echo "сверщик: OpenCode завершился с ошибкой" >&2
+	exit 1
+fi
+jq -e 'select(.info.error == null) | .info.structured.findings | select(type == "array")' \
+	"$tmp/response.json" >"$tmp/findings.json" ||
 	{ echo "сверщик: нет ответа по схеме" >&2 && exit 1; }
 echo "расхождений: $(jq length "$tmp/findings.json")"
 

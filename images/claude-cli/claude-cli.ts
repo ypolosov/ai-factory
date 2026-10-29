@@ -1,8 +1,9 @@
 // Обёртка над официальным `claude -p`: отдаёт подписку Claude приложениям, которые умеют
 // только API в формате OpenAI Chat Completions (база знаний Onyx). Каждый запрос - отдельный
 // запуск Claude Code без инструментов; вызовы инструментов клиента (tools) модель
-// возвращает JSON по схеме, обёртка переводит его в tool_calls. Поток (stream) - SSE
-// с готовым ответом: Claude Code отвечает целиком.
+// возвращает JSON по схеме, обёртка переводит его в tool_calls. Обязательный вызов (tool_choice
+// required или имя инструмента) требуют и схема, и проверка ответа: ответ без вызова - ошибка
+// 502, а не текст. Поток (stream) - SSE с готовым ответом: Claude Code отвечает целиком.
 //
 //   POST /v1/chat/completions   GET /v1/models   GET /health
 //
@@ -109,8 +110,11 @@ export function forceFirst(plan: Plan, tool: string): Plan {
   return { ...plan, toolChoice: tool };
 }
 
-// Схема ответа, когда клиент дал инструменты.
+// Схема ответа, когда клиент дал инструменты. Обязательный вызов схема требует сама: хотя бы
+// один вызов, а при имени инструмента - только его.
 export function replySchema(plan: Plan): Json {
+  const forced = plan.toolChoice !== 'auto' && plan.toolChoice !== 'none';
+  const names = forced && plan.toolChoice !== 'required' ? [plan.toolChoice] : plan.tools.map((t) => t.name);
   return {
     type: 'object',
     additionalProperties: false,
@@ -119,12 +123,13 @@ export function replySchema(plan: Plan): Json {
       content: { type: 'string' },
       tool_calls: {
         type: 'array',
+        ...(forced ? { minItems: 1 } : {}),
         items: {
           type: 'object',
           additionalProperties: false,
           required: ['name', 'arguments_json'],
           properties: {
-            name: { type: 'string', enum: plan.tools.map((t) => t.name) },
+            name: { type: 'string', enum: names },
             arguments_json: { type: 'string' },
           },
         },
@@ -165,7 +170,7 @@ export function parseClaude(stdout: string, plan: Plan): Reply {
     try {
       structured = JSON.parse(out.result) as Json;
     } catch {
-      return { content: out.result, toolCalls: [], usage };
+      structured = { content: out.result, tool_calls: [] };
     }
   }
   const calls = Array.isArray(structured?.tool_calls) ? (structured.tool_calls as Json[]) : [];
@@ -180,6 +185,12 @@ export function parseClaude(stdout: string, plan: Plan): Reply {
       }
       return { name: String(c.name), arguments: args };
     });
+  // Модель может ответить мимо схемы: обязательный вызов проверяется и после разбора, иначе клиент
+  // получил бы текст вместо вызова (так Hindsight не смог начать reflect, проба РП 64).
+  const wanted = plan.toolChoice === 'required' ? '' : plan.toolChoice;
+  if (plan.toolChoice !== 'auto' && (toolCalls.length === 0 || (wanted && toolCalls.some((c) => c.name !== wanted)))) {
+    throw new Error(`Claude Code не вызвал ${wanted ? `инструмент ${wanted}` : 'ни одного инструмента'}, а вызов обязателен`);
+  }
   return { content: toolCalls.length > 0 ? '' : String(structured?.content ?? ''), toolCalls, usage };
 }
 

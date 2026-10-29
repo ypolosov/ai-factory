@@ -1,14 +1,8 @@
-// Загрузка Forgejo -> база знаний (Onyx). Коннектора Forgejo у Onyx нет: служба сама
-// забирает из репозиториев основную ветку (текстовые файлы, разбитые по заголовкам и
-// кускам с номерами строк), вики, задачи и PR с комментариями и кладёт их в Onyx через его API
-// загрузки. Ссылка каждого куска ведёт на файл в Forgejo на этом коммите с номером строки:
-// по ней ответ базы цитирует источник. Удалённое из репозитория удаляется и из базы.
-//
-// Окружение: FORGEJO_URL (внутренний адрес), FORGEJO_PUBLIC_URL (адрес для ссылок),
-// KB_URL (Onyx), KB_REPOS ("владелец/имя ..."), KB_SYNC_INTERVAL (с, по умолчанию 120).
-// Секреты - файлы в SECRETS_DIR (/secrets): forgejo.token (чтение репозиториев и задач),
-// onyx.token (личный токен администратора Onyx), cc_pair - номер связки "forgejo" в Onyx
-// (её заводит scripts/kb-setup.sh: без своего коннектора Onyx не даёт модели поиск).
+// Загрузка Forgejo -> Hindsight. Служба забирает основную ветку, вики,
+// задачи и PR с комментариями и сохраняет каждую исходную запись одним документом.
+// Ссылки секций ведут на исходный файл или обсуждение в Forgejo.
+// Окружение: FORGEJO_URL, FORGEJO_PUBLIC_URL, KB_URL, KB_BANK_ID, KB_REPOS,
+// KB_SYNC_INTERVAL. Секреты в SECRETS_DIR: forgejo.token, hindsight.token.
 import { readFileSync } from 'node:fs';
 
 export type Fetch = typeof fetch;
@@ -17,10 +11,10 @@ export interface Config {
   forgejoUrl: string;
   publicUrl: string;
   kbUrl: string;
+  bankId: string;
   forgejoToken: string;
-  onyxToken: string;
+  hindsightToken: string;
   repos: string[];
-  ccPairId: number | null;
 }
 
 export interface Section {
@@ -31,18 +25,19 @@ export interface Section {
 
 export interface Doc {
   id: string;
-  semantic_identifier: string;
   title: string;
-  source: 'ingestion_api';
   sections: Section[];
   metadata: Record<string, string>;
-  doc_updated_at?: string;
+  strategy: 'documents' | 'discussions';
+  timestamp?: string;
 }
 
 const TEXT_FILE = /\.(md|markdown|txt|ts|js|mjs|json|ya?ml|feature|sh|toml|html|css)$|(^|\/)(Dockerfile|Makefile|AGENTS\.md|README)$/i;
 const SKIP_PATH = /(^|\/)(node_modules|\.git|dist|coverage|reports)\/|package-lock\.json$/;
 const FILE_LIMIT = 200_000;
 const CHUNK_LINES = 60;
+const SOURCE_PAGE_SIZE = 50;
+const HINDSIGHT_PAGE_SIZE = 100;
 
 export function isIndexed(path: string, size: number): boolean {
   return TEXT_FILE.test(path) && !SKIP_PATH.test(path) && size <= FILE_LIMIT;
@@ -82,16 +77,33 @@ async function forgejo(cfg: Config, fetchFn: Fetch, path: string): Promise<Respo
   return res;
 }
 
-async function onyx(cfg: Config, fetchFn: Fetch, method: string, path: string, body?: unknown): Promise<unknown> {
-  const res = await fetchFn(`${cfg.kbUrl}/api${path}`, {
-    method,
-    headers: { authorization: `Bearer ${cfg.onyxToken}`, 'content-type': 'application/json' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(120000),
-  });
-  if (!res.ok) throw new Error(`Onyx ${method} ${path}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
+async function forgejoPages<T>(cfg: Config, fetchFn: Fetch, path: string): Promise<T[]> {
+  const result: T[] = [];
+  for (let page = 1; ; page++) {
+    const separator = path.includes('?') ? '&' : '?';
+    const batch = (await (await forgejo(cfg, fetchFn, `${path}${separator}limit=${SOURCE_PAGE_SIZE}&page=${page}`)).json()) as T[];
+    result.push(...batch);
+    if (batch.length < SOURCE_PAGE_SIZE) return result;
+  }
+}
+
+interface ForgejoIssue {
+  number: number;
+  title: string;
+  body: string;
+  html_url: string;
+  updated_at: string;
+  state: string;
+}
+
+interface ForgejoComment {
+  body: string;
+  html_url: string;
+  user: { login: string };
+}
+
+function documentStrategy(path: string): Doc['strategy'] {
+  return /(^|\/)(?:adr|adrs|decisions)(\/|$)|(^|\/)design\.md$/i.test(path) ? 'discussions' : 'documents';
 }
 
 export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promise<{ sha: string; docs: Doc[] }> {
@@ -101,7 +113,9 @@ export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promi
   const sha = branch.commit.id;
   const tree = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/git/trees/${sha}?recursive=true&per_page=10000`)).json()) as {
     tree: { path: string; type: string; size: number }[];
+    truncated?: boolean;
   };
+  if (tree.truncated) throw new Error(`Forgejo tree ${repo}@${sha} is incomplete`);
   const docs: Doc[] = [];
   const name = repo.split('/')[1]!;
   for (const f of tree.tree) {
@@ -112,22 +126,29 @@ export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promi
     if (sections.length === 0) continue;
     docs.push({
       id: `forgejo:${repo}:file:${f.path}`,
-      semantic_identifier: `${name}: ${f.path}`,
       title: `${name}: ${f.path}`,
-      source: 'ingestion_api',
       sections,
       metadata: { repo, kind: 'file', path: f.path, commit: sha },
-      ...(branch.commit.timestamp ? { doc_updated_at: branch.commit.timestamp } : {}),
+      strategy: documentStrategy(f.path),
+      ...(branch.commit.timestamp ? { timestamp: branch.commit.timestamp } : {}),
     });
   }
-  // Вики репозитория: нет вики - 404, пропускаем.
-  const pagesRes = await fetchFn(`${cfg.forgejoUrl}/api/v1/repos/${repo}/wiki/pages?limit=50`, {
+
+  // Вики репозитория: 404 означает отсутствие вики; остальные ошибки прерывают синхронизацию.
+  const wikiPath = `/repos/${repo}/wiki/pages?limit=${SOURCE_PAGE_SIZE}&page=1`;
+  const firstWikiPage = await fetchFn(`${cfg.forgejoUrl}/api/v1${wikiPath}`, {
     headers: { authorization: `token ${cfg.forgejoToken}` },
     signal: AbortSignal.timeout(30000),
   });
-  if (pagesRes.ok) {
-    for (const pg of (await pagesRes.json()) as { title: string; sub_url: string }[]) {
-      const page = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/wiki/page/${pg.sub_url}`)).json()) as {
+  if (firstWikiPage.ok) {
+    const pages = [...((await firstWikiPage.json()) as { title: string; sub_url: string }[])];
+    if (pages.length === SOURCE_PAGE_SIZE) {
+      pages.push(
+        ...(await forgejoPages<{ title: string; sub_url: string }>(cfg, fetchFn, `/repos/${repo}/wiki/pages`)).slice(SOURCE_PAGE_SIZE),
+      );
+    }
+    for (const pg of pages) {
+      const page = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/wiki/page/${encodeURI(pg.sub_url)}`)).json()) as {
         content_base64: string;
         html_url: string;
         last_commit?: { created?: string };
@@ -137,38 +158,27 @@ export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promi
       if (sections.length === 0) continue;
       docs.push({
         id: `forgejo:${repo}:wiki:${pg.sub_url}`,
-        semantic_identifier: `${name} вики: ${pg.title}`,
         title: `${name} вики: ${pg.title}`,
-        source: 'ingestion_api',
         sections,
         metadata: { repo, kind: 'wiki', page: pg.title },
-        ...(page.last_commit?.created ? { doc_updated_at: page.last_commit.created } : {}),
+        strategy: 'documents',
+        ...(page.last_commit?.created ? { timestamp: page.last_commit.created } : {}),
       });
     }
+  } else if (firstWikiPage.status !== 404) {
+    throw new Error(`Forgejo ${wikiPath}: HTTP ${firstWikiPage.status}`);
   }
+
   // Задачи и PR - с обсуждением: там решения человека и причины изменений.
   for (const type of ['issues', 'pulls'] as const) {
-    const items = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/issues?state=all&type=${type}&limit=50`)).json()) as {
-      number: number;
-      title: string;
-      body: string;
-      html_url: string;
-      updated_at: string;
-      state: string;
-    }[];
+    const items = await forgejoPages<ForgejoIssue>(cfg, fetchFn, `/repos/${repo}/issues?state=all&type=${type}`);
     for (const it of items) {
-      const comments = (await (await forgejo(cfg, fetchFn, `/repos/${repo}/issues/${it.number}/comments?limit=50`)).json()) as {
-        body: string;
-        html_url: string;
-        user: { login: string };
-      }[];
+      const comments = await forgejoPages<ForgejoComment>(cfg, fetchFn, `/repos/${repo}/issues/${it.number}/comments`);
       const link = it.html_url.replace(cfg.forgejoUrl, cfg.publicUrl);
       const kind = type === 'issues' ? 'issue' : 'pr';
       docs.push({
         id: `forgejo:${repo}:${kind}:${it.number}`,
-        semantic_identifier: `${name} ${kind === 'issue' ? 'задача' : 'PR'} #${it.number}: ${it.title}`,
         title: `${name} ${kind === 'issue' ? 'задача' : 'PR'} #${it.number}: ${it.title}`,
-        source: 'ingestion_api',
         sections: [
           { type: 'text', text: `${it.title}\n\n${it.body ?? ''}`.trim(), link },
           ...comments
@@ -180,23 +190,69 @@ export async function repoDocs(cfg: Config, fetchFn: Fetch, repo: string): Promi
             })),
         ],
         metadata: { repo, kind, number: String(it.number), state: it.state },
-        doc_updated_at: it.updated_at,
+        strategy: 'discussions',
+        timestamp: it.updated_at,
       });
     }
   }
   return { sha, docs };
 }
 
-// Один проход: загрузить документы репозитория, удалить из базы пропавшие.
+interface HindsightDocument {
+  id: string;
+}
+
+async function hindsight(cfg: Config, fetchFn: Fetch, method: string, path: string, body?: unknown): Promise<unknown> {
+  const res = await fetchFn(`${cfg.kbUrl}/v1/default/banks/${encodeURIComponent(cfg.bankId)}${path}`, {
+    method,
+    headers: { authorization: `Bearer ${cfg.hindsightToken}`, 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    signal: AbortSignal.timeout(330000),
+  });
+  if (!res.ok) throw new Error(`Hindsight ${method} ${path}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function hindsightDocuments(cfg: Config, fetchFn: Fetch): Promise<HindsightDocument[]> {
+  const documents: HindsightDocument[] = [];
+  let offset = 0;
+  let total = Infinity;
+  while (offset < total) {
+    const result = (await hindsight(cfg, fetchFn, 'GET', `/documents?limit=${HINDSIGHT_PAGE_SIZE}&offset=${offset}`)) as {
+      items: HindsightDocument[];
+      total: number;
+    };
+    documents.push(...result.items);
+    total = result.total;
+    offset += result.items.length;
+    if (result.items.length === 0 && offset < total) throw new Error('Hindsight documents pagination returned no items before total');
+  }
+  return documents;
+}
+
+function retainItems(doc: Doc): Record<string, unknown>[] {
+  return doc.sections.map((section) => ({
+    content: section.text,
+    context: `${doc.title}\nSource: ${section.link}\nRepository: ${doc.metadata.repo}\nKind: ${doc.metadata.kind}`,
+    metadata: { ...doc.metadata, title: doc.title, source_url: section.link },
+    document_id: doc.id,
+    ...(doc.timestamp ? { timestamp: doc.timestamp } : {}),
+    strategy: doc.strategy,
+  }));
+}
+
+// Загрузить все источники и текущий список до записей; удалять устаревшее только
+// если все retain завершились успешно.
 export async function syncRepo(cfg: Config, fetchFn: Fetch, repo: string): Promise<{ upserted: number; deleted: number }> {
   const { docs } = await repoDocs(cfg, fetchFn, repo);
-  const pair = cfg.ccPairId === null ? {} : { cc_pair_id: cfg.ccPairId };
-  for (const doc of docs) await onyx(cfg, fetchFn, 'POST', '/onyx-api/ingestion', { document: doc, ...pair });
-  const listPath = cfg.ccPairId === null ? '/onyx-api/ingestion' : `/onyx-api/connector-docs/${cfg.ccPairId}`;
-  const have = ((await onyx(cfg, fetchFn, 'GET', listPath)) ?? []) as { document_id: string }[];
+  const have = await hindsightDocuments(cfg, fetchFn);
+  for (const doc of docs) {
+    await hindsight(cfg, fetchFn, 'POST', '/memories', { items: retainItems(doc), async: false });
+  }
   const keep = new Set(docs.map((d) => d.id));
-  const stale = have.map((d) => d.document_id).filter((id) => id.startsWith(`forgejo:${repo}:`) && !keep.has(id));
-  for (const id of stale) await onyx(cfg, fetchFn, 'DELETE', `/onyx-api/ingestion/${encodeURIComponent(id)}`);
+  const stale = have.map((d) => d.id).filter((id) => id.startsWith(`forgejo:${repo}:`) && !keep.has(id));
+  for (const id of stale) await hindsight(cfg, fetchFn, 'DELETE', `/documents/${encodeURIComponent(id)}`);
   return { upserted: docs.length, deleted: stale.length };
 }
 
@@ -224,19 +280,13 @@ export async function loop(cfg: Config, fetchFn: Fetch, intervalMs: number, log:
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
   const dir = env.SECRETS_DIR ?? '/secrets';
   const secret = (name: string): string => readFileSync(`${dir}/${name}`, 'utf-8').trim();
-  let ccPairId: number | null = null;
-  try {
-    ccPairId = Number(secret('cc_pair')) || null;
-  } catch {
-    ccPairId = null;
-  }
   return {
-    ccPairId,
     forgejoUrl: env.FORGEJO_URL ?? 'http://forgejo:3000',
     publicUrl: env.FORGEJO_PUBLIC_URL ?? 'http://127.0.0.1:3000',
-    kbUrl: env.KB_URL ?? 'http://kb',
+    kbUrl: env.KB_URL ?? 'http://kb:8888',
+    bankId: env.KB_BANK_ID ?? 'factory',
     forgejoToken: secret('forgejo.token'),
-    onyxToken: secret('onyx.token'),
+    hindsightToken: secret('hindsight.token'),
     repos: (env.KB_REPOS ?? '').split(/\s+/).filter(Boolean),
   };
 }
@@ -244,6 +294,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
 if (import.meta.main) {
   const cfg = configFromEnv();
   const interval = Number(process.env.KB_SYNC_INTERVAL ?? 120) * 1000;
-  console.log(`kbsync: ${cfg.repos.join(' ')} -> ${cfg.kbUrl}, раз в ${interval / 1000} с`);
+  console.log(`kbsync: ${cfg.repos.join(' ')} -> ${cfg.kbUrl}, банк ${cfg.bankId}, раз в ${interval / 1000} с`);
   void loop(cfg, fetch, interval, console.log);
 }

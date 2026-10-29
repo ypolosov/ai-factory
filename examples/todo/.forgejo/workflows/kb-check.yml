@@ -18,9 +18,9 @@ jobs:
           REPO: ${{ github.repository }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GATEWAY_URL: http://gateway:4000
-          GATEWAY_KEY: ${{ secrets.AGENT_SUB_GATEWAY_KEY }}
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Поиск базы знаний (MCP Onyx) - если база поднята (scripts/kb-up.sh).
-          KB_MCP_URL: http://kb/mcp
+          GATEWAY_KEY: ${{ secrets.HINDSIGHT_GATEWAY_KEY }}
+          RECONCILE_MODEL: kb-openrouter
+          # Поиск базы знаний (MCP Hindsight) - если база поднята (scripts/kb-up.sh).
+          KB_MCP_URL: http://kb:8888/mcp/factory/
           KB_MCP_TOKEN: ${{ secrets.KB_MCP_TOKEN }}
         run: factory-reconcile

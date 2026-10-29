@@ -4,7 +4,7 @@
 !include ../../demo/diagrams/common.puml
 
 title Развёртывание демо: ноутбук и облачные сервисы; все соединения - исходящие с ноутбука
-footer Источник: модель, версия d13ec5240e8f
+footer Источник: модель, версия 4b81bbe6e7a1
 
 Deployment_Node(e_laptop, "Ноутбук владельца", "Windows 11, WSL2, Docker Desktop, 24 ГБ для WSL") {
   Deployment_Node(e_laptop_dtstand, "compose: prize-draw (стенд цели)", "Docker") {
@@ -25,7 +25,7 @@ Deployment_Node(e_laptop, "Ноутбук владельца", "Windows 11, WSL2
     Container(e_laptop_dfstand_dgw, "Шлюз моделей", "agentgateway", "Ключи ролей, маршруты, учёт цены по задаче")
     Container(e_laptop_dfstand_degress, "Прокси выхода", "allowlist", "Единственный выход в сеть для заданий")
     Container(e_laptop_dfstand_dbot, "Бот", "TypeScript, Discord", "Вопросы к базе, уведомления, команды: перезапуск проверок")
-    ContainerDb(e_laptop_dfstand_dkb, "База знаний", "PostgreSQL; на переходе Onyx", "Правда - git; индексы, граф связей, конфликты, правила-стражи")
+    ContainerDb(e_laptop_dfstand_dkb, "База знаний", "Hindsight 1.1.0, PostgreSQL", "Правда - git; индексы, граф связей, конфликты, правила-стражи")
     Container(e_laptop_dfstand_dcd, "Выкладка и наблюдение", "deployer, Gatus, GlitchTip", "Образ из GHCR на стенд; сбой - задача в трекере")
   }
 }

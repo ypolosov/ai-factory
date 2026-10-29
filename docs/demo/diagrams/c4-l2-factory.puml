@@ -14,7 +14,7 @@ System_Boundary(factory, "Фабрика ПО на ИИ") {
   Container(mcp, "MCP фабрики", "TypeScript, MCP", "Вход для экзокортексов: контекст\nзадачи, поиск со ссылками,\nпредложение правки")
   Container(bot, "Бот", "TypeScript, Discord", "Вопросы к базе, уведомления,\nкоманды: перезапуск проверок")
   Container(coord, "Координатор", "TypeScript, Mastra core", "Фазы задачи с режимом\nHITL/HOTL/HOOTL; ждёт решения\nчеловека; запускает задания")
-  ContainerDb(kb, "База знаний", "PostgreSQL; на переходе Onyx", "Правда - git; индексы, граф\nсвязей, конфликты, правила-стражи")
+  ContainerDb(kb, "База знаний", "Hindsight 1.1.0, PostgreSQL", "Правда - git; индексы, граф\nсвязей, конфликты, правила-стражи")
   Container(guards, "Стражи и управление", "правила из git, судьи", "Проверки по правилам; судья\nдругого семейства; политика слияния")
   Container(pipes, "Задания фабрики", "Bitbucket Pipelines, POSIX sh", "Тесты до кода, исполнение,\nпубликация PR, стражи, сверка")
   Container(collect, "Сборщики", "хаб MCP проекта", "Jira, Confluence, GitHub, Discord:\nссылка + отпечаток версии")

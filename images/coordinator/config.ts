@@ -193,7 +193,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     knowledgeWeb: `https://github.com/${target}`,
     judge: {
       url: env.JUDGE_GATEWAY_URL ?? 'http://gateway:4000',
-      model: env.JUDGE_MODEL ?? 'kb-claude-cli',
+      model: env.JUDGE_MODEL ?? 'kb-openrouter',
       key: () => file('gw-kb.key').trim(),
     },
     notifier: discord.DISCORD_DRAW_WEBHOOK_URL ? { kind: 'discord', webhook: discord.DISCORD_DRAW_WEBHOOK_URL } : { kind: 'none' },

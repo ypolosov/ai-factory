@@ -58,7 +58,7 @@ model {
       description 'Фазы задачи с режимом HITL/HOTL/HOOTL; ждёт решения человека; запускает задания'
     }
     kb = database 'База знаний' {
-      technology 'PostgreSQL; на переходе Onyx'
+      technology 'Hindsight 1.1.0, PostgreSQL'
       description 'Правда - git; индексы, граф связей, конфликты, правила-стражи'
     }
     guards = container 'Стражи и управление' {

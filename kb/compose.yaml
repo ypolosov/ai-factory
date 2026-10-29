@@ -1,0 +1,63 @@
+# Hindsight заменяет Onyx; данные прежней базы не удаляются.
+# Запуск и секреты - scripts/kb-up.sh. Модели доступны только через шлюз.
+name: kb
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:1.1.0
+    restart: unless-stopped
+    env_file:
+      - path: ../.state/kb/hindsight.env
+        required: false
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_BASE_URL: http://gateway:4000/v1
+      HINDSIGHT_API_LLM_MODEL: kb-openrouter
+      HINDSIGHT_API_LLM_DEFAULT_HEADERS: '{"x-task-id":"hindsight-kb"}'
+      HINDSIGHT_API_LLM_MAX_CONCURRENT: "2"
+      HINDSIGHT_API_LLM_TEMPERATURE: none
+      HINDSIGHT_API_LLM_REASONING_EFFORT: low
+      HINDSIGHT_API_LLM_STRICT_SCHEMA: "true"
+      HINDSIGHT_API_LLM_TIMEOUT: "300"
+      HINDSIGHT_API_REFLECT_LLM_TIMEOUT: "300"
+      HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS: "16384"
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://gateway:4000/v1
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: kb-embed
+      HINDSIGHT_API_RERANKER_PROVIDER: rrf
+      HINDSIGHT_API_TEXT_SEARCH_EXTENSION: native
+      HINDSIGHT_API_TEXT_SEARCH_EXTENSION_NATIVE_LANGUAGE: russian
+      HINDSIGHT_API_LLM_OUTPUT_LANGUAGE: Russian
+      HINDSIGHT_API_RETAIN_EXTRACTION_MODE: chunks
+      HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION: "false"
+      HINDSIGHT_API_MCP_ENABLED_TOOLS: recall,reflect
+      HINDSIGHT_API_MCP_STATELESS: "true"
+      HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
+      HINDSIGHT_CP_DATAPLANE_API_URL: http://localhost:8888
+    ports:
+      - "127.0.0.1:${KB_PORT:-8300}:8888"
+      - "127.0.0.1:${KB_UI_PORT:-8301}:9999"
+    volumes:
+      - hindsight-data:/home/hindsight/.pg0
+    networks:
+      factory:
+        aliases: [kb]
+      jobs:
+        aliases: [kb]
+    shm_size: 512m
+    mem_limit: 4g
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8888/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+networks:
+  factory:
+    external: true
+    name: ai-factory_factory
+  jobs:
+    external: true
+    name: ai-factory_jobs
+volumes:
+  hindsight-data:

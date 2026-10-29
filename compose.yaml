@@ -246,26 +246,25 @@ services:
       - ./.state/errbridge:/secrets:ro
     networks: [factory]
 
-  # Подписка Claude для приложений с API OpenAI (база знаний): каждый запрос - запуск
-  # официального claude -p без инструментов; запросы Claude Code - через шлюз (учёт).
-  # Вызывает её только шлюз (путь kb-claude-cli) с ключом из .state/claude-cli/token.
+  # Архивная обертка Claude Code. Для Hindsight не используется:
+  # профиль выключен, маршрута подписки базы в шлюзе нет.
   claude-cli:
     build: images/claude-cli
     image: factory/claude-cli:stand
+    # Приостановлена владельцем: обычный запуск стенда Claude Code не поднимает.
+    profiles: [claude]
     restart: unless-stopped
     environment:
       GATEWAY_URL: http://gateway:4000
       CLAUDE_MODEL: ${KB_CLAUDE_CLI_MODEL:-sonnet}
       MAX_PARALLEL: "3"
-      # Onyx: первым шагом - поиск базы знаний (модель по подписке иначе часто отвечает без него).
-      FORCE_FIRST_TOOL: internal_search
     volumes:
       - ./.state/claude-cli:/secrets:ro
     tmpfs: [/tmp]
     networks: [factory]
 
-  # Загрузка Forgejo -> база знаний (Onyx, scripts/kb-up.sh): основная ветка, задачи и PR
-  # репозиториев приложений; профиль kb - только вместе с базой.
+  # Загрузка Forgejo -> Hindsight (scripts/kb-up.sh): основная ветка, задачи и PR.
+  # Профиль kb - только вместе с базой.
   kbsync:
     build: images/kbsync
     image: factory/kbsync:stand
@@ -275,7 +274,8 @@ services:
     environment:
       FORGEJO_URL: http://forgejo:3000
       FORGEJO_PUBLIC_URL: http://127.0.0.1:${FORGEJO_HTTP_PORT:-3000}
-      KB_URL: http://kb
+      KB_URL: http://kb:8888
+      KB_BANK_ID: ${KB_BANK_ID:-factory}
       KB_REPOS: ${KB_REPOS:-factory-admin/todo factory-admin/hello}
     volumes:
       - ./.state/kbsync:/secrets:ro

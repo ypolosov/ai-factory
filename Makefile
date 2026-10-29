@@ -3,7 +3,7 @@
 SCRIPTS := scripts/lib.sh scripts/stand-up.sh scripts/smoke.sh scripts/gateway-check.sh \
 	scripts/setup-repo.sh scripts/new-task.sh images/agent/factory-agent \
 	images/agent/factory-publish images/agent/factory-untrusted images/agent/factory-role images/agent/factory-feedback images/agent/factory-tasks images/agent/factory-acceptance images/agent/factory-mutation images/agent/factory-npm-ci images/agent/factory-pr-comment images/agent/factory-gate images/agent/factory-judge images/agent/factory-deps images/agent/factory-scan images/agent/factory-test-first images/agent/factory-utf8-head images/agent/factory-reconcile images/agent/factory-job images/agent/factory-design images/portal/portal.sh images/deployer/deployer \
-	scripts/deploy.sh scripts/rollback.sh scripts/rework.sh scripts/task-report.sh scripts/kb-up.sh scripts/kb-setup.sh scripts/kb-model.sh scripts/kb-ask.sh scripts/factory-report.sh scripts/demo.sh scripts/port-contract.sh scripts/platforms-check.sh scripts/bb-api.sh scripts/bb-commit.sh scripts/bb-images.sh scripts/jira-api.sh scripts/port-contract-saas.sh scripts/publish-miro.sh scripts/make-guides.sh scripts/demo-up.sh scripts/persona-atlassian-add.sh scripts/persona-github-app-add.sh images/cd/factory-cd scripts/host-user.sh
+	scripts/deploy.sh scripts/rollback.sh scripts/rework.sh scripts/task-report.sh scripts/kb-up.sh scripts/kb-setup.sh scripts/kb-ask.sh scripts/factory-report.sh scripts/demo.sh scripts/port-contract.sh scripts/platforms-check.sh scripts/bb-api.sh scripts/bb-commit.sh scripts/bb-images.sh scripts/jira-api.sh scripts/port-contract-saas.sh scripts/publish-miro.sh scripts/make-guides.sh scripts/demo-up.sh scripts/persona-atlassian-add.sh scripts/persona-github-app-add.sh images/cd/factory-cd scripts/host-user.sh
 
 # Пользователь контейнеров, которые пишут в каталоги репозитория (scripts/host-user.sh).
 HOST_USER := $(shell scripts/host-user.sh)
@@ -12,6 +12,7 @@ check:
 	shellcheck -x -P . $(SCRIPTS)
 	shfmt -d $(SCRIPTS)
 	docker compose config -q
+	docker compose -f kb/compose.yaml config -q
 
 # Код фабрики на TypeScript в Node 24 стенда: типы (tsc), стиль и линтер (Biome),
 # архитектура (dependency-cruiser), модульные тесты (Vitest). Образ с git: тесты координатора

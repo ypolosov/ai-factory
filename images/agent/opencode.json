@@ -17,7 +17,8 @@
       "models": {
         "default": { "name": "GLM-5.3-Flash" },
         "hard": { "name": "GLM-5.3" },
-        "alt": { "name": "DeepSeek-V4.1-Flash" }
+        "alt": { "name": "DeepSeek-V4.1-Flash" },
+        "kb-openrouter": { "name": "DeepSeek-V4.1-Flash: knowledge" }
       }
     }
   }

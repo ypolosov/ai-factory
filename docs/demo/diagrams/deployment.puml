@@ -11,7 +11,7 @@ Deployment_Node(laptop, "Ноутбук владельца", "Windows 11, WSL2, 
   Deployment_Node(fstand, "compose: factory", "Docker") {
     Container(coord, "Координатор", "Mastra core", "Опрашивает Jira, запускает\nзадания, ждёт людей")
     Container(mcp, "MCP фабрики и бот", "TypeScript", "MCP для экзокортексов;\nбот Discord")
-    ContainerDb(kb, "База знаний и сборщики", "PostgreSQL; Onyx на переходе", "Опрос Jira, Confluence,\nGitHub, Discord")
+    ContainerDb(kb, "База знаний и сборщики", "Hindsight 1.1.0, PostgreSQL", "Опрос Jira, Confluence,\nGitHub, Discord")
     Container(gw, "Шлюз моделей", "agentgateway", "Учёт цены по задаче")
     Container(egress, "Прокси выхода", "allowlist", "Единственный выход\nдля заданий")
     Container(cd, "Выкладка и наблюдение", "deployer, Gatus, GlitchTip", "Тянет образы из GHCR")
