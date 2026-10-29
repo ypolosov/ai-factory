@@ -38,13 +38,13 @@ preflight)
 	for e in $DEPLOY_APPS; do check "стенд ${e%%=*} :${e#*=}" "http://127.0.0.1:${e#*=}/health"; done
 	check "Gatus" "http://127.0.0.1:$GATUS_PORT/"
 	check "GlitchTip" "http://127.0.0.1:$GLITCHTIP_PORT/_health/"
-	check "база знаний (Onyx)" "http://127.0.0.1:$KB_PORT/api/health"
+	check "база знаний (Hindsight)" "http://127.0.0.1:$KB_PORT/health"
 	check "портал" "http://127.0.0.1:$PORTAL_PORT/"
 	log "исполнители и учёт:"
-	for f in claude-oauth.token codex/auth.json gw-agent-sub.key kb/admin.header; do
+	for f in codex/auth.json gw-agent-sub.key kb/api.header kb/mcp.token; do
 		if [ -s ".state/$f" ]; then printf '  ок      .state/%s\n' "$f"; else printf '  НЕТ     .state/%s\n' "$f" && bad=1; fi
 	done
-	printf '  модель ответов базы: %s\n' "$(./scripts/kb-model.sh 2>/dev/null || echo '?')"
+	printf '  модель ответов базы: kb-openrouter (DeepSeek V4.1 Flash)\n'
 	running=$(api GET "/repos/$FORGEJO_ADMIN_USER/todo/actions/runs?limit=10" | jq '[.workflow_runs[] | select(.status == "running" or .status == "waiting")] | length')
 	printf '  прогонов Actions сейчас: %s\n' "$running"
 	printf '  открытых PR в todo: %s\n' "$(api GET "/repos/$FORGEJO_ADMIN_USER/todo/pulls?state=open" | jq length)"

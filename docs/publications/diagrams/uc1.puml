@@ -3,7 +3,7 @@
 !include ../../demo/diagrams/common-uml.puml
 
 title UC1 Требование -> согласование знаний -> решение архитектора
-footer Источник: модель, версия d13ec5240e8f
+footer Источник: модель, версия 4b81bbe6e7a1
 
 actor "Product Owner" as e_product_dpo
 participant "Бот" as e_factory_dbot

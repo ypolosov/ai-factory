@@ -4,7 +4,7 @@
 !include ../../demo/diagrams/common.puml
 
 title C4 L2 - контейнеры фабрики (экземпляр демо на Bitbucket + Pipelines)
-footer Источник: модель, версия d13ec5240e8f
+footer Источник: модель, версия 4b81bbe6e7a1
 
 System_Ext(e_bitbucket, "Bitbucket Cloud", "Платформа фабрики: репозиторий и Pipelines")
 System_Ext(e_github, "GitHub", "Платформа цели: репозиторий, Actions, GHCR")
@@ -22,7 +22,7 @@ System_Boundary(e_factory, "Фабрика ПО на ИИ") {
   Container(e_factory_degress, "Прокси выхода", "allowlist", "Единственный выход в сеть для заданий")
   Container(e_factory_dbot, "Бот", "TypeScript, Discord", "Вопросы к базе, уведомления, команды: перезапуск проверок")
   Container(e_factory_dguards, "Стражи и управление", "правила из git, судьи", "Проверки по правилам; судья другого семейства; политика слияния")
-  ContainerDb(e_factory_dkb, "База знаний", "PostgreSQL; на переходе Onyx", "Правда - git; индексы, граф связей, конфликты, правила-стражи")
+  ContainerDb(e_factory_dkb, "База знаний", "Hindsight 1.1.0, PostgreSQL", "Правда - git; индексы, граф связей, конфликты, правила-стражи")
 }
 System(e_target, "Целевая система Розыгрыш призов", "Фронтенд и бэкенд: розыгрыши, заявки, честный выбор победителей")
 System_Ext(e_jira, "Jira", "Задачи и статусы")

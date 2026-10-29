@@ -122,6 +122,35 @@ test('ответ Claude Code: текст, плохие аргументы, ош�
   assert.throws(() => parseClaude(JSON.stringify({ is_error: true, result: 'лимит' }), none), /лимит/);
 });
 
+const twoTools: Plan = { ...withTools, tools: [...withTools.tools, { name: 'web_search', description: '', parameters: {} }] };
+
+test('обязательный вызов: схема требует вызов, а по имени - только этот инструмент', () => {
+  type Schema = { properties: { tool_calls: { minItems?: number; items: { properties: { name: { enum: string[] } } } } } };
+  const calls = (toolChoice: string) => {
+    const schema = replySchema({ ...twoTools, toolChoice }) as Schema; // replySchema отдаёт Json, форма схемы - наша
+    return schema.properties.tool_calls;
+  };
+  assert.equal(calls('auto').minItems, undefined);
+  assert.equal(calls('required').minItems, 1);
+  assert.deepEqual(calls('required').items.properties.name.enum, ['internal_search', 'web_search']);
+  assert.equal(calls('web_search').minItems, 1);
+  assert.deepEqual(calls('web_search').items.properties.name.enum, ['web_search']);
+});
+
+test('обязательный вызов: ответ без него или с другим инструментом - ошибка, а не текст', () => {
+  // Так ответил Haiku на первом шаге reflect Hindsight (проба РП 64, Q1): текст вместо вызова.
+  const text = JSON.stringify({ result: 'данных нет', structured_output: { content: 'данных нет', tool_calls: [] } });
+  const call = (name: string) => JSON.stringify({ structured_output: { content: '', tool_calls: [{ name, arguments_json: '{}' }] } });
+  const named: Plan = { ...twoTools, toolChoice: 'internal_search' };
+  assert.throws(() => parseClaude(text, named), /internal_search/);
+  assert.throws(() => parseClaude(JSON.stringify({ result: 'просто текст' }), named), /internal_search/);
+  assert.throws(() => parseClaude(call('web_search'), named), /internal_search/);
+  assert.throws(() => parseClaude(text, { ...twoTools, toolChoice: 'required' }), /ни одного инструмента/);
+  assert.equal(parseClaude(call('internal_search'), named).toolCalls.length, 1);
+  assert.equal(parseClaude(call('web_search'), { ...twoTools, toolChoice: 'required' }).toolCalls.length, 1);
+  assert.equal(parseClaude(text, twoTools).content, 'данных нет'); // auto: текст - законный ответ
+});
+
 const textReply: Reply = { content: 'Потому что ADR-10.', toolCalls: [], usage: { prompt_tokens: 3, completion_tokens: 4 } };
 const callReply: Reply = {
   content: '',
