@@ -124,6 +124,7 @@ link() {
 	*) printf '%s' "$1" ;;
 	esac
 }
+jq -c '.[]' "$tmp/findings.json" >"$tmp/findings.ndjson"
 n=0
 while IFS= read -r f; do
 	title="Расхождение знаний: $(printf '%s' "$f" | jq -r '.title' | cut -c1-120)"
@@ -143,9 +144,9 @@ while IFS= read -r f; do
 			+ (.evidence.quote | gsub("\n"; "\n> ")) + "\n\n"
 			+ .explanation + "\n\n**Что сделать:** " + .action)
 	}' >"$tmp/issue.json"
-	echo "заведена #$(api POST "/repos/$REPO/issues" --data @"$tmp/issue.json" | jq -r .number): $title"
+	api POST "/repos/$REPO/issues" --data @"$tmp/issue.json" >"$tmp/created.json"
+	number=$(jq -r .number "$tmp/created.json")
+	echo "заведена #$number: $title"
 	n=$((n + 1))
-done <<EOF2
-$(jq -c '.[]' "$tmp/findings.json")
-EOF2
+done <"$tmp/findings.ndjson"
 echo "новых задач: $n"
